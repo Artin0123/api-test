@@ -14,6 +14,7 @@ html { font-size: 16px; }
   --danger: #dc2626;
   --danger-hover: #b91c1c;
   --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --ring: rgba(15, 118, 110, 0.16);
 }
 body {
   font-family: "Segoe UI", "Noto Sans TC", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
@@ -29,6 +30,8 @@ body {
 .hidden { display: none !important; }
 .loading { text-align: center; padding: 2rem; color: var(--muted); }
 .error { color: #dc2626; font-size: 0.875rem; margin-top: 0.25rem; }
+.cell-empty { text-align: center; color: var(--muted); padding: 1rem 0.75rem !important; }
+.muted-inline { color: var(--muted); font-size: 0.75rem; }
 .badge {
   display: inline-block;
   padding: 0.125rem 0.5rem;
@@ -54,24 +57,44 @@ body {
 }
 .overlay.active { opacity: 1; pointer-events: auto; }
 .overlay-card {
-  background: #fff;
-  padding: 2rem;
-  border-radius: 0.75rem;
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(247, 252, 255, 0.98));
+  padding: 1.7rem;
+  border-radius: 1rem;
+  border: 1px solid #d8e4f3;
   width: 90%;
-  max-width: 24rem;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  max-width: 25rem;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
 }
-.overlay-card h2 { margin-bottom: 0.5rem; }
-.overlay-card p { color: #6b7280; margin-bottom: 1rem; }
+.overlay-card h2 {
+  margin-bottom: 0.25rem;
+  font-size: 1.2rem;
+}
+.overlay-subtitle {
+  color: var(--muted);
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+}
 .overlay-card input {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.375rem;
+  padding: 0.58rem 0.72rem;
+  border: 1px solid #c7d7ea;
+  border-radius: 0.6rem;
   font-size: 1rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.8rem;
+  background: #ffffff;
 }
-.overlay-card input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px #bfdbfe; }
+.overlay-card input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
+}
+#auth-btn {
+  width: 100%;
+}
+#auth-error {
+  min-height: 1.1rem;
+  margin-top: 0.6rem;
+}
 
 /* ── Header ── */
 .app-header {
@@ -162,6 +185,14 @@ body {
 main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+.section-surface {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #dbe6f3;
+  border-radius: 1rem;
+  box-shadow: var(--shadow-soft);
+  padding: 1rem 1rem 0.5rem;
+  margin-bottom: 1rem;
+}
 .panel-header {
   display: flex;
   align-items: center;
@@ -170,6 +201,11 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
   gap: 0.75rem;
 }
 .panel-header h2 { font-size: 1.125rem; font-weight: 600; }
+.panel-title-group p {
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin-top: 0.2rem;
+}
 
 /* ── Cards ── */
 .card {
@@ -191,6 +227,7 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
   margin-bottom: 1rem;
 }
 .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.alert-info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
 
 /* ── Tables ── */
 .table-wrap { overflow-x: auto; }
@@ -217,6 +254,7 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
   top: 0;
 }
 .data-table tbody tr:hover { background: #f8fbff; }
+.data-table tbody tr:nth-child(even) { background: #fcfdff; }
 .data-table td code {
   background: #f1f5f9;
   padding: 0.125rem 0.25rem;
@@ -244,7 +282,7 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
 .field input:focus, .field select:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 .field-span-2 { grid-column: span 2; }
 .field-inline { flex-direction: row; align-items: center; gap: 0.5rem; }
@@ -285,6 +323,8 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
   font-weight: 700;
   color: #0f172a;
 }
+.summary-card .value-success { color: #047857; }
+.summary-card .value-failed { color: #b91c1c; }
 .summary-card .label {
   font-size: 0.75rem;
   color: var(--muted);
@@ -329,5 +369,15 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
   .panel-header {
     flex-wrap: wrap;
     align-items: flex-start;
+  }
+
+  .section-surface {
+    border-radius: 0.85rem;
+    padding: 0.85rem 0.85rem 0.4rem;
+  }
+
+  .tab-btn {
+    font-size: 0.82rem;
+    padding: 0.58rem 0.75rem;
   }
 }

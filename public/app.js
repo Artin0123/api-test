@@ -152,7 +152,7 @@ async function loadConfig() {
 function renderProviders() {
   providersTbody.innerHTML = '';
   if (currentProviders.length === 0) {
-    providersTbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6b7280">尚無 Provider</td></tr>';
+    providersTbody.innerHTML = '<tr><td colspan="9" class="cell-empty">尚無 Provider</td></tr>';
     return;
   }
   currentProviders.forEach((p, i) => {
@@ -164,7 +164,7 @@ function renderProviders() {
       <td><code>${esc(p.api_base)}</code></td>
       <td><code>${esc(p.endpoint_path)}</code></td>
       <td><code>${esc(p.models_endpoint || '-')}</code></td>
-      <td>${p.enabled ? '<span class="status-ok">是</span>' : '<span class="status-fail">否</span>'}</td>
+      <td>${p.enabled ? '<span class="status-ok">啟用</span>' : '<span class="status-fail">停用</span>'}</td>
       <td>${esc(p.api_key)}</td>
       <td class="cell-actions">
         <button class="btn btn-sm btn-ghost" data-idx="${i}" data-action="edit">編輯</button>
@@ -185,7 +185,7 @@ function renderProviders() {
 function editProvider(idx) {
   const p = currentProviders[idx];
   formIndex.value = idx;
-  formTitle.textContent = '編輯 Provider';
+  formTitle.textContent = '編輯供應商';
   document.getElementById('p-provider_id').value = p.provider_id;
   document.getElementById('p-provider_type').value = p.provider_type;
   document.getElementById('p-mode').value = p.mode;
@@ -199,7 +199,7 @@ function editProvider(idx) {
 }
 
 async function deleteProvider(idx) {
-  if (!confirm(`確定刪除 provider "${currentProviders[idx].provider_id}"？`)) return;
+  if (!confirm(`確定刪除供應商 "${currentProviders[idx].provider_id}"？`)) return;
   currentProviders.splice(idx, 1);
   const ok = await saveConfig(currentProviders);
   if (ok) renderProviders();
@@ -208,7 +208,7 @@ async function deleteProvider(idx) {
 
 function resetForm() {
   formIndex.value = -1;
-  formTitle.textContent = '新增 Provider';
+  formTitle.textContent = '新增供應商';
   providerForm.reset();
   document.getElementById('p-enabled').checked = true;
   formError.textContent = '';
@@ -266,17 +266,17 @@ async function loadResults() {
 function renderResults(data) {
   const meta = data.meta || {};
   runMetaGrid.innerHTML = `
-    <div class="kv-item"><span class="kv-key">run_id</span><span class="kv-val">${esc(meta.run_id || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">started_at</span><span class="kv-val">${esc(meta.started_at || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">finished_at</span><span class="kv-val">${esc(meta.finished_at || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">執行 ID</span><span class="kv-val">${esc(meta.run_id || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">開始時間</span><span class="kv-val">${esc(meta.started_at || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">結束時間</span><span class="kv-val">${esc(meta.finished_at || '-')}</span></div>
   `;
 
   const sc = data.scorecard || {};
   const summary = sc.summary || { total: 0, success: 0, failed: 0 };
   summaryCards.innerHTML = `
-    <div class="summary-card"><div class="value">${summary.total}</div><div class="label">Total</div></div>
-    <div class="summary-card"><div class="value" style="color:#059669">${summary.success}</div><div class="label">Success</div></div>
-    <div class="summary-card"><div class="value" style="color:#dc2626">${summary.failed}</div><div class="label">Failed</div></div>
+    <div class="summary-card"><div class="value">${summary.total}</div><div class="label">總數</div></div>
+    <div class="summary-card"><div class="value value-success">${summary.success}</div><div class="label">成功</div></div>
+    <div class="summary-card"><div class="value value-failed">${summary.failed}</div><div class="label">失敗</div></div>
   `;
 
   const items = (sc.items || []).slice().sort((a, b) => {
@@ -289,7 +289,7 @@ function renderResults(data) {
 
   scorecardTbody.innerHTML = '';
   if (items.length === 0) {
-    scorecardTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#6b7280">無資料</td></tr>';
+    scorecardTbody.innerHTML = '<tr><td colspan="10" class="cell-empty">無資料</td></tr>';
   } else {
     items.forEach(it => {
       const tr = document.createElement('tr');
@@ -298,9 +298,9 @@ function renderResults(data) {
         <td><code>${esc(it.model)}</code></td>
         <td>${esc(it.provider_type)}</td>
         <td>${esc(it.mode)}</td>
-        <td>${it.success ? '<span class="status-ok">true</span>' : '<span class="status-fail">false</span>'}</td>
-        <td>${it.has_answer ? '<span class="status-ok">true</span>' : '<span class="status-fail">false</span>'}</td>
-        <td>${it.has_thinking ? '<span class="status-ok">true</span>' : '<span class="status-warn">false</span>'}</td>
+        <td>${it.success ? '<span class="status-ok">成功</span>' : '<span class="status-fail">失敗</span>'}</td>
+        <td>${it.has_answer ? '<span class="status-ok">有</span>' : '<span class="status-fail">無</span>'}</td>
+        <td>${it.has_thinking ? '<span class="status-ok">有</span>' : '<span class="status-warn">無</span>'}</td>
         <td>${fmtNum(it.total_time_ms)}</td>
         <td>${esc(it.error_type || '-')}</td>
         <td>${it.retry_count ?? 0}</td>
@@ -315,7 +315,7 @@ function renderResults(data) {
 
   benchmarkTbody.innerHTML = '';
   if (bItems.length === 0) {
-    benchmarkTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#6b7280">無資料</td></tr>';
+    benchmarkTbody.innerHTML = '<tr><td colspan="6" class="cell-empty">無資料</td></tr>';
   } else {
     bItems.forEach(it => {
       const runs = it.runs || [];
@@ -334,8 +334,8 @@ function renderResults(data) {
 }
 
 function runCell(run) {
-  if (!run) return '<span style="color:#9ca3af">-</span>';
-  return `<code>${fmtNum(run.total_time_ms)}</code> <span style="color:#6b7280;font-size:0.75rem">ttft:${fmtNum(run.ttft_ms)} chars:${run.output_chars ?? '-'}</span>`;
+  if (!run) return '<span class="muted-inline">-</span>';
+  return `<code>${fmtNum(run.total_time_ms)}</code> <span class="muted-inline">首字延遲:${fmtNum(run.ttft_ms)} 字元:${run.output_chars ?? '-'}</span>`;
 }
 
 /* ── Helpers ── */

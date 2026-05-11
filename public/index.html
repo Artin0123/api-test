@@ -12,9 +12,9 @@
     <div id="auth-overlay" class="overlay active">
       <div class="overlay-card">
         <h2>API Test Admin</h2>
-        <p>請輸入 MASTER_API_TOKEN 以繼續</p>
-        <input type="password" id="auth-token" placeholder="Bearer token" />
-        <button id="auth-btn">登入</button>
+        <p class="overlay-subtitle">請輸入 MASTER_API_TOKEN 以繼續</p>
+        <input type="password" id="auth-token" placeholder="請輸入 Bearer Token" />
+        <button id="auth-btn" class="btn btn-primary">登入</button>
         <p id="auth-error" class="error"></p>
       </div>
     </div>
@@ -24,22 +24,25 @@
       <h1>API Test Admin</h1>
       <div class="header-actions">
         <span id="auth-status" class="badge">已登入</span>
-        <a id="run-now-btn" class="btn btn-primary" href="#" target="_blank">Run Now</a>
+        <a id="run-now-btn" class="btn btn-primary" href="#" target="_blank">立即執行</a>
         <button id="logout-btn" class="btn btn-ghost">登出</button>
       </div>
     </header>
 
     <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="config">Providers Config</button>
-      <button class="tab-btn" data-tab="results">Results</button>
+      <button class="tab-btn active" data-tab="config">供應商設定</button>
+      <button class="tab-btn" data-tab="results">測試結果</button>
     </nav>
 
     <main>
       <!-- Config Tab -->
-      <section id="tab-config" class="tab-panel active">
+      <section id="tab-config" class="tab-panel active section-surface">
         <div class="panel-header">
-          <h2>Provider 設定</h2>
-          <button id="add-provider-btn" class="btn btn-primary">新增 Provider</button>
+          <div class="panel-title-group">
+            <h2>供應商設定</h2>
+            <p>管理 API 供應商連線設定與模型端點來源</p>
+          </div>
+          <button id="add-provider-btn" class="btn btn-primary">新增供應商</button>
         </div>
 
         <div id="config-loading" class="loading">載入中…</div>
@@ -50,12 +53,12 @@
             <thead>
               <tr>
                 <th>provider_id</th>
-                <th>type</th>
-                <th>mode</th>
+                <th>類型 (type)</th>
+                <th>模式 (mode)</th>
                 <th>api_base</th>
                 <th>endpoint</th>
                 <th>models_endpoint</th>
-                <th>enabled</th>
+                <th>啟用</th>
                 <th>api_key</th>
                 <th></th>
               </tr>
@@ -65,7 +68,7 @@
         </div>
 
         <div id="provider-form-card" class="card hidden">
-          <h3 id="form-title">新增 Provider</h3>
+          <h3 id="form-title">新增供應商</h3>
           <form id="provider-form">
             <input type="hidden" id="form-index" value="-1">
 
@@ -75,7 +78,7 @@
                 <input type="text" id="p-provider_id" required placeholder="nvidia">
               </div>
               <div class="field">
-                <label for="p-provider_type">provider_type *</label>
+                <label for="p-provider_type">供應商類型 (provider_type) *</label>
                 <select id="p-provider_type" required>
                   <option value="openai">openai</option>
                   <option value="ollama">ollama</option>
@@ -83,7 +86,7 @@
                 </select>
               </div>
               <div class="field">
-                <label for="p-mode">mode *</label>
+                <label for="p-mode">模式 (mode) *</label>
                 <select id="p-mode" required>
                   <option value="thinking">thinking</option>
                   <option value="vision">vision</option>
@@ -108,7 +111,7 @@
               <div class="field field-inline">
                 <label>
                   <input type="checkbox" id="p-enabled" checked>
-                  enabled
+                  啟用 (enabled)
                 </label>
               </div>
             </div>
@@ -124,40 +127,43 @@
       </section>
 
       <!-- Results Tab -->
-      <section id="tab-results" class="tab-panel">
+      <section id="tab-results" class="tab-panel section-surface">
         <div class="panel-header">
-          <h2>最新測試結果</h2>
+          <div class="panel-title-group">
+            <h2>最新測試結果</h2>
+            <p>檢視最近一次跑分與效能基準表現</p>
+          </div>
           <button id="refresh-results-btn" class="btn btn-ghost">重新整理</button>
         </div>
 
         <div id="results-loading" class="loading">載入中…</div>
         <div id="results-error" class="alert alert-error hidden"></div>
-        <div id="no-results" class="alert hidden">尚無測試結果</div>
+        <div id="no-results" class="alert alert-info hidden">尚無測試結果</div>
 
         <div id="results-content" class="hidden">
           <div class="meta-card card">
-            <h3>Run Meta</h3>
+            <h3>執行資訊</h3>
             <div class="kv-grid" id="run-meta-grid"></div>
           </div>
 
           <div class="summary-cards" id="summary-cards"></div>
 
           <div class="card">
-            <h3>Scorecard <small>(依 success / total_time_ms 排序)</small></h3>
+            <h3>評分總覽 <small>(依成功狀態與總耗時排序)</small></h3>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>provider</th>
-                    <th>model</th>
-                    <th>type</th>
-                    <th>mode</th>
-                    <th>success</th>
-                    <th>has_answer</th>
-                    <th>has_thinking</th>
-                    <th>total_time_ms</th>
-                    <th>error_type</th>
-                    <th>retries</th>
+                    <th>供應商</th>
+                    <th>模型</th>
+                    <th>類型</th>
+                    <th>模式</th>
+                    <th>成功 (success)</th>
+                    <th>有回答 (has_answer)</th>
+                    <th>有思考 (has_thinking)</th>
+                    <th>總耗時 ms</th>
+                    <th>錯誤類型 (error_type)</th>
+                    <th>重試次數</th>
                   </tr>
                 </thead>
                 <tbody id="scorecard-tbody"></tbody>
@@ -166,17 +172,17 @@
           </div>
 
           <div class="card">
-            <h3>Benchmark <small>(avg_total_time_ms 排序)</small></h3>
+            <h3>效能基準 <small>(依平均總耗時排序)</small></h3>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>provider</th>
-                    <th>model</th>
-                    <th>avg_total_time_ms</th>
-                    <th>run 0</th>
-                    <th>run 1</th>
-                    <th>run 2</th>
+                    <th>供應商</th>
+                    <th>模型</th>
+                    <th>平均總耗時 ms</th>
+                    <th>第 1 次</th>
+                    <th>第 2 次</th>
+                    <th>第 3 次</th>
                   </tr>
                 </thead>
                 <tbody id="benchmark-tbody"></tbody>
