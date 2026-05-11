@@ -3,6 +3,12 @@ main = "worker/index.js"
 compatibility_date = "2026-05-11"
 keep_vars = true
 
+# Bundle worker/ui/* files as string modules at deploy time
+[[rules]]
+type = "Text"
+globs = ["worker/ui/*"]
+fallthrough = true
+
 [[kv_namespaces]]
 binding = "KV_STORE"
 id = "aaa9f923bf5d4d539f7cafef426fd682"

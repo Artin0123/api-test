@@ -10,7 +10,14 @@
  *   GITHUB_ACTIONS_URL  (used by frontend Run Now button)
  */
 
+import html from './ui/index.html';
+import css from './ui/style.css';
+import appJs from './ui/app.js';
+
 const ROUTES = {
+  "GET /": handleGetRoot,
+  "GET /style.css": handleGetStyle,
+  "GET /app.js": handleGetAppJs,
   "GET /api/config": handleGetConfig,
   "POST /api/config": handlePostConfig,
   "GET /api/checkpoint": handleGetCheckpoint,
@@ -59,9 +66,38 @@ function text(msg, status = 200) {
   return new Response(msg, { status });
 }
 
+function serveText(content, contentType, status = 200) {
+  return new Response(content, {
+    status,
+    headers: { "Content-Type": contentType },
+  });
+}
+
 function maskKey(key) {
   if (!key || key.length <= 6) return "***";
   return key.slice(0, 4) + "***" + key.slice(-2);
+}
+
+// ── GET / (Admin UI) ───────────────────────────────────────────────────────────
+
+async function handleGetRoot(request, env) {
+  const injected = html.replace(
+    /\{\{GITHUB_ACTIONS_URL\}\}/g,
+    env.GITHUB_ACTIONS_URL || "#"
+  );
+  return serveText(injected, "text/html");
+}
+
+// ── GET /style.css ────────────────────────────────────────────────────────────
+
+async function handleGetStyle() {
+  return serveText(css, "text/css");
+}
+
+// ── GET /app.js ───────────────────────────────────────────────────────────────
+
+async function handleGetAppJs() {
+  return serveText(appJs, "application/javascript");
 }
 
 // ── GET /api/config ───────────────────────────────────────────────────────────

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Test Admin</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Auth overlay -->
+    <div id="auth-overlay" class="overlay active">
+      <div class="overlay-card">
+        <h2>API Test Admin</h2>
+        <p>請輸入 MASTER_API_TOKEN 以繼續</p>
+        <input type="password" id="auth-token" placeholder="Bearer token" />
+        <button id="auth-btn">登入</button>
+        <p id="auth-error" class="error"></p>
+      </div>
+    </div>
+
+    <!-- Main app -->
+    <header class="app-header">
+      <h1>API Test Admin</h1>
+      <div class="header-actions">
+        <span id="auth-status" class="badge">已登入</span>
+        <a id="run-now-btn" class="btn btn-primary" href="{{GITHUB_ACTIONS_URL}}" target="_blank">Run Now</a>
+        <button id="logout-btn" class="btn btn-ghost">登出</button>
+      </div>
+    </header>
+
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="config">Providers Config</button>
+      <button class="tab-btn" data-tab="results">Results</button>
+    </nav>
+
+    <main>
+      <!-- Config Tab -->
+      <section id="tab-config" class="tab-panel active">
+        <div class="panel-header">
+          <h2>Provider 設定</h2>
+          <button id="add-provider-btn" class="btn btn-primary">新增 Provider</button>
+        </div>
+
+        <div id="config-loading" class="loading">載入中…</div>
+        <div id="config-error" class="alert alert-error hidden"></div>
+
+        <div id="providers-table-wrap" class="table-wrap hidden">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>provider_id</th>
+                <th>type</th>
+                <th>mode</th>
+                <th>api_base</th>
+                <th>endpoint</th>
+                <th>models_endpoint</th>
+                <th>models</th>
+                <th>enabled</th>
+                <th>api_key</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="providers-tbody"></tbody>
+          </table>
+        </div>
+
+        <div id="provider-form-card" class="card hidden">
+          <h3 id="form-title">新增 Provider</h3>
+          <form id="provider-form">
+            <input type="hidden" id="form-index" value="-1">
+
+            <div class="form-grid">
+              <div class="field">
+                <label for="p-provider_id">provider_id *</label>
+                <input type="text" id="p-provider_id" required placeholder="nvidia">
+              </div>
+              <div class="field">
+                <label for="p-provider_type">provider_type *</label>
+                <select id="p-provider_type" required>
+                  <option value="openai">openai</option>
+                  <option value="ollama">ollama</option>
+                  <option value="gemini">gemini</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="p-mode">mode *</label>
+                <select id="p-mode" required>
+                  <option value="thinking">thinking</option>
+                  <option value="vision">vision</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="p-api_base">api_base *</label>
+                <input type="text" id="p-api_base" required placeholder="https://integrate.api.nvidia.com">
+              </div>
+              <div class="field">
+                <label for="p-endpoint_path">endpoint_path *</label>
+                <input type="text" id="p-endpoint_path" required placeholder="/v1/chat/completions">
+              </div>
+              <div class="field">
+                <label for="p-models_endpoint">models_endpoint</label>
+                <input type="text" id="p-models_endpoint" placeholder="(依 provider_type 預設)">
+              </div>
+              <div class="field field-span-2">
+                <label for="p-models">models (逗號分隔)</label>
+                <input type="text" id="p-models" placeholder="model-a, model-b">
+              </div>
+              <div class="field">
+                <label for="p-api_key">api_key *</label>
+                <input type="password" id="p-api_key" required placeholder="nvapi-xxx">
+              </div>
+              <div class="field field-inline">
+                <label>
+                  <input type="checkbox" id="p-enabled" checked>
+                  enabled
+                </label>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">儲存</button>
+              <button type="button" id="cancel-form-btn" class="btn btn-ghost">取消</button>
+            </div>
+            <p id="form-error" class="error"></p>
+          </form>
+        </div>
+      </section>
+
+      <!-- Results Tab -->
+      <section id="tab-results" class="tab-panel">
+        <div class="panel-header">
+          <h2>最新測試結果</h2>
+          <button id="refresh-results-btn" class="btn btn-ghost">重新整理</button>
+        </div>
+
+        <div id="results-loading" class="loading">載入中…</div>
+        <div id="results-error" class="alert alert-error hidden"></div>
+        <div id="no-results" class="alert hidden">尚無測試結果</div>
+
+        <div id="results-content" class="hidden">
+          <div class="meta-card card">
+            <h3>Run Meta</h3>
+            <div class="kv-grid" id="run-meta-grid"></div>
+          </div>
+
+          <div class="summary-cards" id="summary-cards"></div>
+
+          <div class="card">
+            <h3>Scorecard <small>(依 success / total_time_ms 排序)</small></h3>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>provider</th>
+                    <th>model</th>
+                    <th>type</th>
+                    <th>mode</th>
+                    <th>success</th>
+                    <th>has_answer</th>
+                    <th>has_thinking</th>
+                    <th>total_time_ms</th>
+                    <th>error_type</th>
+                    <th>retries</th>
+                  </tr>
+                </thead>
+                <tbody id="scorecard-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Benchmark <small>(avg_total_time_ms 排序)</small></h3>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>provider</th>
+                    <th>model</th>
+                    <th>avg_total_time_ms</th>
+                    <th>run 0</th>
+                    <th>run 1</th>
+                    <th>run 2</th>
+                  </tr>
+                </thead>
+                <tbody id="benchmark-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
