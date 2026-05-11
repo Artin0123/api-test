@@ -33,8 +33,7 @@ Namespace: `KV_STORE`（單一）
       "endpoint_path": "/v1/chat/completions",
       "api_key": "nvapi-xxx",
       "mode": "thinking",
-      "models_endpoint": "/v1/models",
-      "models": ["model-a", "model-b"]
+      "models_endpoint": "/v1/models"
     }
   ],
   "updated_at": "2026-05-11T00:00:00Z"
@@ -52,7 +51,7 @@ Namespace: `KV_STORE`（單一）
 | `ollama` | `/api/tags` |
 | `gemini` | `/v1beta/models` |
 
-**邏輯**：`models_endpoint` 存在 → runner 執行時自動 GET 抓取最新模型列表；不存在（或抓取失敗）→ 使用 `models` 陣列作為 fallback。`models` 陣列也可作為手動 override。
+**邏輯**：`models_endpoint` 為必填。runner 執行時一律 GET `models_endpoint` 抓取最新模型列表；若抓取失敗或回傳空列表，該 provider 會被跳過。
 
 只有跑完後的 JSON 結果（scorecard / benchmark）才需要保存至 KV，模型列表本身不做持久化。
 
@@ -309,7 +308,7 @@ TTFT 規則：
 3. `GET /api/checkpoint`
    - 若 checkpoint 存在且 `run_id` 相符 → 從 checkpoint 位置續跑
    - 否則 → 從頭開始新 run
-4. 對每個 provider，自動 GET `models_endpoint` 取得最新模型列表（失敗則 fallback 到 `models` 陣列）
+4. 對每個 provider，自動 GET `models_endpoint` 取得最新模型列表（失敗或空列表則跳過該 provider）
 5. 執行 tester（含重試、thinking 偵測、計時，每 N 個模型 `POST /api/checkpoint`）
 6. 執行 benchmark（success models，固定 3 次）
 7. `POST /api/results`（scorecard + benchmark + run_meta）
@@ -328,7 +327,7 @@ TTFT 規則：
 3. 結果頁可依 `total_time_ms` 穩定排序
 4. `has_thinking` 與 `error_type` 有固定欄位且可顯示
 5. 不在 log 出現完整 API key
-6. models_endpoint 抓取失敗時自動 fallback 到靜態 `models` 陣列
+6. models_endpoint 抓取失敗或空列表時，該 provider 會被跳過
 
 ## 14. 實作批次順序
 

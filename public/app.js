@@ -96,7 +96,6 @@ providerForm.addEventListener('submit', async (e) => {
     api_base: document.getElementById('p-api_base').value.trim(),
     endpoint_path: document.getElementById('p-endpoint_path').value.trim(),
     models_endpoint: document.getElementById('p-models_endpoint').value.trim() || undefined,
-    models: document.getElementById('p-models').value.split(',').map(s => s.trim()).filter(Boolean),
     api_key: document.getElementById('p-api_key').value.trim(),
     enabled: document.getElementById('p-enabled').checked,
   };
@@ -106,8 +105,8 @@ providerForm.addEventListener('submit', async (e) => {
     return;
   }
 
-  if (!p.models_endpoint && p.models.length === 0) {
-    formError.textContent = '請提供 models_endpoint 或至少一個 model';
+  if (!p.models_endpoint) {
+    formError.textContent = '請填寫 models_endpoint';
     return;
   }
 
@@ -153,7 +152,7 @@ async function loadConfig() {
 function renderProviders() {
   providersTbody.innerHTML = '';
   if (currentProviders.length === 0) {
-    providersTbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#6b7280">尚無 Provider</td></tr>';
+    providersTbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#6b7280">尚無 Provider</td></tr>';
     return;
   }
   currentProviders.forEach((p, i) => {
@@ -165,7 +164,6 @@ function renderProviders() {
       <td><code>${esc(p.api_base)}</code></td>
       <td><code>${esc(p.endpoint_path)}</code></td>
       <td><code>${esc(p.models_endpoint || '-')}</code></td>
-      <td>${p.models.map(m => `<code>${esc(m)}</code>`).join(' ')}</td>
       <td>${p.enabled ? '<span class="status-ok">是</span>' : '<span class="status-fail">否</span>'}</td>
       <td>${esc(p.api_key)}</td>
       <td class="cell-actions">
@@ -194,7 +192,6 @@ function editProvider(idx) {
   document.getElementById('p-api_base').value = p.api_base;
   document.getElementById('p-endpoint_path').value = p.endpoint_path;
   document.getElementById('p-models_endpoint').value = p.models_endpoint || '';
-  document.getElementById('p-models').value = (p.models || []).join(', ');
   document.getElementById('p-api_key').value = p.api_key;
   document.getElementById('p-enabled').checked = p.enabled;
   providerFormCard.classList.remove('hidden');

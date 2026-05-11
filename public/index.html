@@ -55,7 +55,6 @@
                 <th>api_base</th>
                 <th>endpoint</th>
                 <th>models_endpoint</th>
-                <th>models</th>
                 <th>enabled</th>
                 <th>api_key</th>
                 <th></th>
@@ -102,10 +101,6 @@
                 <label for="p-models_endpoint">models_endpoint</label>
                 <input type="text" id="p-models_endpoint" placeholder="(依 provider_type 預設)">
               </div>
-              <div class="field field-span-2">
-                <label for="p-models">models (逗號分隔)</label>
-                <input type="text" id="p-models" placeholder="model-a, model-b">
-              </div>
               <div class="field">
                 <label for="p-api_key">api_key *</label>
                 <input type="password" id="p-api_key" required placeholder="nvapi-xxx">
@@ -122,6 +117,7 @@
               <button type="submit" class="btn btn-primary">儲存</button>
               <button type="button" id="cancel-form-btn" class="btn btn-ghost">取消</button>
             </div>
+            <p class="form-note">模型僅從 <code>models_endpoint</code> 抓取；若抓取失敗，該 Provider 會被跳過。</p>
             <p id="form-error" class="error"></p>
           </form>
         </div>

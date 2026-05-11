@@ -113,6 +113,8 @@ async function handlePostConfig(request, env) {
       return json({ error: `Invalid provider_type: ${p.provider_type}` }, 400);
     if (!VALID_MODES.has(p.mode))
       return json({ error: `Invalid mode: ${p.mode}` }, 400);
+    if (typeof p.models_endpoint !== "string" || !p.models_endpoint.trim())
+      return json({ error: `models_endpoint required for provider: ${p.provider_id}` }, 400);
   }
 
   body.updated_at = new Date().toISOString();

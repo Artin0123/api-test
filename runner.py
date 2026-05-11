@@ -358,11 +358,10 @@ def fetch_models(provider: dict) -> list[str]:
     ptype    = provider["provider_type"]
     api_base = provider["api_base"]
     api_key  = provider.get("api_key", "")
-    endpoint = provider.get("models_endpoint") or {
-        "openai": "/v1/models",
-        "ollama": "/api/tags",
-        "gemini": "/v1beta/models",
-    }.get(ptype, "/v1/models")
+    endpoint = provider.get("models_endpoint")
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        print("  [models endpoint missing] → skip provider (models_endpoint is required)")
+        return []
     url      = normalize_url(api_base, endpoint)
 
     headers: dict = {"User-Agent": "api-tester/2.0 runner"}
@@ -376,8 +375,8 @@ def fetch_models(provider: dict) -> list[str]:
         with urllib_request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode())
     except Exception as exc:
-        print(f"  [models fetch failed: {exc}] → fallback to models[]")
-        return list(provider.get("models") or [])
+        print(f"  [models fetch failed: {exc}] → skip provider (models_endpoint only)")
+        return []
 
     models: list[str] = []
     if ptype == "openai":
@@ -396,8 +395,8 @@ def fetch_models(provider: dict) -> list[str]:
                 models.append(name.split("/")[-1])
 
     if not models:
-        print(f"  [models endpoint returned empty] → fallback to models[]")
-        return list(provider.get("models") or [])
+        print("  [models endpoint returned empty] → skip provider")
+        return []
 
     return models
 

@@ -19,7 +19,7 @@
   1) 生成 run_id（{UTC_datetime}_{random_6chars}）
   2) GET /api/config
   3) GET /api/checkpoint（run_id 不符則重頭，符合則續跑）
-  4) 自動 GET models_endpoint 取模型列表（失敗 fallback models[]）
+  4) 自動 GET models_endpoint 取模型列表（失敗或空列表則跳過該 provider）
   5) 執行 tester（timeout/retry/thinking detect/計時 total_time_ms）
      └─ 每 CHECKPOINT_EVERY_N 個模型 POST /api/checkpoint
   6) 執行 benchmark（success models，3 runs）
