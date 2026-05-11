@@ -3,21 +3,17 @@
 ## 1. 架構流程（文字圖）
 
 ```text
-[Cloudflare Pages Admin UI]
-        |
-        | (Run Now 按鈕 -> 開啟 GitHub Actions URL，由你手動按 Run workflow)
-        | (Bearer MASTER_API_TOKEN for config/results API)
-        v
-[Cloudflare Worker API]                    [Cloudflare KV]
-  - GET  /api/config     <─────────────────  API_KEYS_VAULT
-  - POST /api/config      ──────────────────>   providers_config
-  - GET  /api/checkpoint <─────────────────     run_checkpoint
-  - POST /api/checkpoint  ──────────────────>
-  - DELETE /api/checkpoint ─────────────────>
-  - POST /api/results     ──────────────────> TEST_RESULTS
-  - GET  /api/results    <─────────────────     latest_scorecard
-                                                latest_benchmark
-                                                latest_run_meta
+[Cloudflare Worker]
+  GET /               → Admin UI (HTML, inline in Worker)
+  GET /api/config     ←──────────────────── [Cloudflare KV]
+  POST /api/config     ──────────────────── API_KEYS_VAULT
+  GET /api/checkpoint ←────────────────────   providers_config
+  POST /api/checkpoint ────────────────────   run_checkpoint
+  DELETE /api/checkpoint ──────────────────
+  POST /api/results    ────────────────────  TEST_RESULTS
+  GET /api/results    ←────────────────────   latest_scorecard
+                                              latest_benchmark
+                                              latest_run_meta
         ^
         |
 [GitHub Actions Runner (runner.py, cron or manual)]
@@ -30,16 +26,19 @@
   6) 執行 benchmark（success models，3 runs）
   7) POST /api/results（scorecard + benchmark + run_meta）
   8) DELETE /api/checkpoint（僅上傳成功後）
+
+  觸發方式：
+    - 自動：schedule (cron)
+    - 手動：Admin UI 的 Run Now 按鈕開啟 GitHub Actions 頁面
 ```
 
 ## 2. 元件職責表
 
 | 元件 | 職責 |
 | :-- | :-- |
-| Cloudflare Worker (JS) | API 閘道、Auth（MASTER_API_TOKEN）、KV 讀寫、Anti-IDOR |
+| Cloudflare Worker (JS) | API 閘道 + Admin UI 前端（同一個 Worker）、Auth、KV 讀寫、Anti-IDOR |
 | Cloudflare KV | providers_config、run_checkpoint、最新測試結果儲存 |
 | GitHub Actions | 執行 runner.py（Python）：抓模型、測試、benchmark、上傳結果 |
-| Cloudflare Pages | Admin UI：config 管理、結果查看、Run Now 跳轉連結（Batch 3） |
 
 ## 3. 端點對照表
 
@@ -87,13 +86,14 @@ KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 
 ```
 api-test/
-├── runner.py              # 唯一 Python 執行腳本（取代 api_tester.py + consolidate_results.py）
+├── runner.py              # 唯一 Python 執行腳本
 ├── worker/
-│   └── index.js           # Cloudflare Worker（Batch 1）
+│   └── index.js           # Cloudflare Worker（API + 前端 HTML）
+├── wrangler.toml          # Worker 部署設定
 ├── .github/
 │   └── workflows/
-│       └── run.yml        # GitHub Actions workflow（Batch 2）
-├── WEB_PLAN_FINAL.md
+│       └── run.yml        # GitHub Actions workflow
+├── WEB_PLAN.md
 └── DEPLOYMENT_ARCHITECTURE.md
 ```
 
@@ -102,22 +102,23 @@ api-test/
 ## 6. 部署順序（最短路徑）
 
 **Batch 1 — Worker API**
-1. 建立 Cloudflare KV（`API_KEYS_VAULT`、`TEST_RESULTS`）並綁到 Worker
+1. 建立 Cloudflare KV（`API_KEYS_VAULT`、`TEST_RESULTS`），取得 KV ID 填入 `wrangler.toml`
 2. 在 Worker 設定第 4.1 節變數（`MASTER_API_TOKEN`、`GITHUB_ACTIONS_URL`）
-3. 部署 `worker/index.js`
+3. 執行 `npx wrangler deploy` 部署 `worker/index.js`
 4. 用 curl 手動測試 7 個 endpoint（驗證 auth、KV 讀寫、409 邏輯）
 
 **Batch 2 — runner.py + GHA**
 1. 在 GitHub repo 設定第 4.2 節 secrets
-2. 新增 `runner.py`
+2. 確認 `runner.py` 就位
 3. 新增 `.github/workflows/run.yml`（含 `workflow_dispatch` + `schedule` + `concurrency`）
 4. 手動觸發 workflow，做一次完整端到端驗證
 
-**Batch 3 — 前端 Admin UI**
-1. 建立 Cloudflare Pages 專案
+**Batch 3 — 前端 Admin UI（內嵌在 Worker）**
+1. 在 `worker/index.js` 新增 `GET /` 路由，回傳 Admin UI HTML
 2. 實作 config 管理頁（CRUD providers）
 3. 實作結果查看頁（scorecard + benchmark 排序展示）
-4. Run Now 按鈕跳轉到 `GITHUB_ACTIONS_URL`
+4. Run Now 按鈕連結到 `GITHUB_ACTIONS_URL`
+5. 重新 `npx wrangler deploy`
 
 ## 7. 並行保護
 

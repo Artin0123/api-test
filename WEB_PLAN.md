@@ -332,5 +332,5 @@ TTFT 規則：
 ## 14. 實作批次順序
 
 **Batch 1**：Cloudflare Worker API（7 endpoints + KV binding）→ 語言：JavaScript
-**Batch 2**：`runner.py`（取代 `api_tester.py` + `consolidate_results.py`）+ GHA workflow YAML
-**Batch 3**：Cloudflare Pages 前端 Admin UI（config 管理 + 結果展示）
+**Batch 2**：`runner.py` + GHA workflow YAML
+**Batch 3**：Admin UI（內嵌在 Worker，`GET /` 回傳 HTML），不需要 Cloudflare Pages
