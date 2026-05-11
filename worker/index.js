@@ -89,11 +89,12 @@ function normalizeProvider(p) {
     ...p,
     endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
     models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
-    benchmark_enabled:
-      typeof p.benchmark_enabled === "boolean"
-        ? p.benchmark_enabled
-        : (typeof p.enabled === "boolean" ? p.enabled : true),
+    benchmark_enabled: typeof p.benchmark_enabled === "boolean" ? p.benchmark_enabled : true,
   };
+}
+
+function providerKey(p) {
+  return `${p.provider_type}::${p.mode}::${p.api_base}`;
 }
 
 // ── GET /api/env ──────────────────────────────────────────────────────────────
@@ -139,14 +140,24 @@ async function handlePostConfig(request, env) {
   }
 
   for (const p of body.providers) {
-    if (!p.provider_id) return json({ error: "provider_id required" }, 400);
     if (!VALID_TYPES.has(p.provider_type))
       return json({ error: `Invalid provider_type: ${p.provider_type}` }, 400);
     if (!VALID_MODES.has(p.mode))
       return json({ error: `Invalid mode: ${p.mode}` }, 400);
+    if (typeof p.api_base !== "string" || !p.api_base.trim())
+      return json({ error: "api_base required" }, 400);
+    if (typeof p.api_key !== "string" || !p.api_key.trim())
+      return json({ error: "api_key required" }, 400);
   }
 
   body.providers = body.providers.map(normalizeProvider);
+
+  const keys = new Set();
+  for (const p of body.providers) {
+    const k = providerKey(p);
+    if (keys.has(k)) return json({ error: "Duplicate provider (provider_type + mode + api_base)" }, 400);
+    keys.add(k);
+  }
 
   body.updated_at = new Date().toISOString();
   await env.KV_STORE.put("providers_config", JSON.stringify(body));
@@ -202,15 +213,18 @@ async function handlePostResults(request, env) {
     if (body[field] == null) return json({ error: `Missing field: ${field}` }, 400);
   }
 
-  // Anti-IDOR: all provider_ids must be registered in config
+  // Anti-IDOR: all items must refer to a registered provider
   const configRaw = await env.KV_STORE.get("providers_config");
   if (configRaw) {
     const config = JSON.parse(configRaw);
-    const validIds = new Set((config.providers || []).map((p) => p.provider_id));
+    const validKeys = new Set((config.providers || []).map(providerKey));
     for (const item of body.scorecard.items || []) {
-      if (!validIds.has(item.provider_id)) {
-        return json({ error: `Unknown provider_id: ${item.provider_id}` }, 400);
-      }
+      const k = `${item.provider_type}::${item.mode}::${item.api_base}`;
+      if (!validKeys.has(k)) return json({ error: `Unknown provider: ${k}` }, 400);
+    }
+    for (const item of body.benchmark.items || []) {
+      const k = `${item.provider_type}::${item.mode}::${item.api_base}`;
+      if (!validKeys.has(k)) return json({ error: `Unknown provider: ${k}` }, 400);
     }
   }
 

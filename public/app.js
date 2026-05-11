@@ -94,12 +94,6 @@ function getDefaultModelsEndpoint(providerType) {
   return DEFAULT_MODELS_ENDPOINT[providerType] || '';
 }
 
-function isBenchmarkEnabled(provider) {
-  if (typeof provider?.benchmark_enabled === 'boolean') return provider.benchmark_enabled;
-  if (typeof provider?.enabled === 'boolean') return provider.enabled;
-  return true;
-}
-
 addProviderBtn.addEventListener('click', () => {
   resetForm();
   providerFormCard.classList.remove('hidden');
@@ -119,7 +113,6 @@ providerForm.addEventListener('submit', async (e) => {
   const endpointPathInput = document.getElementById('p-endpoint_path').value.trim();
   const modelsEndpointInput = document.getElementById('p-models_endpoint').value.trim();
   const p = {
-    provider_id: document.getElementById('p-provider_id').value.trim(),
     provider_type: providerType,
     mode: document.getElementById('p-mode').value,
     api_base: document.getElementById('p-api_base').value.trim(),
@@ -129,7 +122,7 @@ providerForm.addEventListener('submit', async (e) => {
     benchmark_enabled: document.getElementById('p-benchmark-enabled').checked,
   };
 
-  if (!p.provider_id || !p.provider_type || !p.mode || !p.api_base || !p.api_key) {
+  if (!p.provider_type || !p.mode || !p.api_base || !p.api_key) {
     formError.textContent = '請填寫所有必填欄位';
     return;
   }
@@ -137,8 +130,9 @@ providerForm.addEventListener('submit', async (e) => {
   if (idx >= 0) {
     currentProviders[idx] = p;
   } else {
-    if (currentProviders.some((x, i) => i !== idx && x.provider_id === p.provider_id)) {
-      formError.textContent = 'provider_id 已存在';
+    const key = `${p.provider_type}::${p.mode}::${p.api_base}`;
+    if (currentProviders.some((x, i) => i !== idx && `${x.provider_type}::${x.mode}::${x.api_base}` === key)) {
+      formError.textContent = '相同的 provider_type + mode + api_base 已存在';
       return;
     }
     currentProviders.push(p);
@@ -176,16 +170,15 @@ async function loadConfig() {
 function renderProviders() {
   providersTbody.innerHTML = '';
   if (currentProviders.length === 0) {
-    providersTbody.innerHTML = '<tr><td colspan="9" class="cell-empty">尚無供應商</td></tr>';
+    providersTbody.innerHTML = '<tr><td colspan="8" class="cell-empty">尚無供應商</td></tr>';
     return;
   }
   currentProviders.forEach((p, i) => {
     const endpointPath = p.endpoint_path || getDefaultEndpointPath(p.provider_type);
     const modelsEndpoint = p.models_endpoint || getDefaultModelsEndpoint(p.provider_type);
-    const benchmarkEnabled = isBenchmarkEnabled(p);
+    const benchmarkEnabled = !!p.benchmark_enabled;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><code>${esc(p.provider_id)}</code></td>
       <td>${esc(p.provider_type)}</td>
       <td>${esc(p.mode)}</td>
       <td><code>${esc(p.api_base)}</code></td>
@@ -213,20 +206,19 @@ function editProvider(idx) {
   const p = currentProviders[idx];
   formIndex.value = idx;
   formTitle.textContent = '編輯供應商';
-  document.getElementById('p-provider_id').value = p.provider_id;
   document.getElementById('p-provider_type').value = p.provider_type;
   document.getElementById('p-mode').value = p.mode;
   document.getElementById('p-api_base').value = p.api_base;
   document.getElementById('p-endpoint_path').value = p.endpoint_path || '';
   document.getElementById('p-models_endpoint').value = p.models_endpoint || '';
   document.getElementById('p-api_key').value = p.api_key;
-  document.getElementById('p-benchmark-enabled').checked = isBenchmarkEnabled(p);
+  document.getElementById('p-benchmark-enabled').checked = !!p.benchmark_enabled;
   providerFormCard.classList.remove('hidden');
   providerFormCard.scrollIntoView({ behavior: 'smooth' });
 }
 
 async function deleteProvider(idx) {
-  if (!confirm(`確定刪除供應商 "${currentProviders[idx].provider_id}"？`)) return;
+  if (!confirm(`確定刪除供應商 "${currentProviders[idx].api_base}"？`)) return;
   currentProviders.splice(idx, 1);
   const ok = await saveConfig(currentProviders);
   if (ok) renderProviders();
@@ -311,7 +303,7 @@ function renderResults(data) {
     const ta = a.total_time_ms ?? Infinity;
     const tb = b.total_time_ms ?? Infinity;
     if (ta !== tb) return ta - tb;
-    return `${a.provider_id}:${a.model}`.localeCompare(`${b.provider_id}:${b.model}`);
+    return `${a.api_base}:${a.model}`.localeCompare(`${b.api_base}:${b.model}`);
   });
 
   scorecardTbody.innerHTML = '';
@@ -321,7 +313,7 @@ function renderResults(data) {
     items.forEach(it => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><code>${esc(it.provider_id)}</code></td>
+        <td><code>${esc(it.api_base)}</code></td>
         <td><code>${esc(it.model)}</code></td>
         <td>${esc(it.provider_type)}</td>
         <td>${esc(it.mode)}</td>
@@ -348,7 +340,7 @@ function renderResults(data) {
       const runs = it.runs || [];
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td><code>${esc(it.provider_id)}</code></td>
+        <td><code>${esc(it.api_base)}</code></td>
         <td><code>${esc(it.model)}</code></td>
         <td><strong>${fmtNum(it.avg_total_time_ms)}</strong></td>
         <td>${runCell(runs[0])}</td>

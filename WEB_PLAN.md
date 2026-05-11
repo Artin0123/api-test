@@ -26,7 +26,6 @@ Namespace: `KV_STORE`（單一）
 {
   "providers": [
     {
-      "provider_id": "nvidia",
       "provider_type": "openai",
       "benchmark_enabled": true,
       "api_base": "https://integrate.api.nvidia.com",
@@ -95,7 +94,7 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - 寫入 `latest_scorecard`、`latest_benchmark`、`latest_run_meta`
 - 必帶欄位：`run_id`, `started_at`, `finished_at`
 - 只接受「較新 run」：若 `finished_at` 比目前 `latest_run_meta.finished_at` 舊，回 `409`
-- Anti-IDOR：若 `items[*].provider_id` 不在 `providers_config` 內，回 `400`
+- Anti-IDOR：若 `items[*]` 無法對應到 `providers_config` 內既有 provider（以 `provider_type + mode + api_base` 辨識），回 `400`
 
 8. `GET /api/results`
 - 前端讀最新結果（可公開或加簡單保護）
@@ -216,7 +215,7 @@ success 規則：
 scorecard 排序：
 1. `success=true` 在前
 2. 同為 success 時用 `total_time_ms` 由小到大
-3. 同時間時用 `provider_id + model` 字典序
+3. 同時間時用 `api_base + model` 字典序
 
 ## 8. Benchmark 規格
 
@@ -244,7 +243,7 @@ TTFT 規則：
   "finished_at": "2026-05-11T11:08:00Z",
   "items": [
     {
-      "provider_id": "nvidia",
+      "api_base": "https://integrate.api.nvidia.com",
       "provider_type": "openai",
       "model": "gpt-4o",
       "mode": "thinking",
@@ -270,7 +269,9 @@ TTFT 規則：
   "run_id": "2026-05-11T10-30-00Z_a3f9c2",
   "items": [
     {
-      "provider_id": "nvidia",
+      "api_base": "https://integrate.api.nvidia.com",
+      "provider_type": "openai",
+      "mode": "thinking",
       "model": "gpt-4o",
       "runs": [
         { "run_index": 0, "total_time_ms": 900.1, "ttft_ms": 210.2, "output_chars": 120 },
@@ -299,9 +300,8 @@ TTFT 規則：
 - Anti-IDOR：即使 token 正確，也只允許操作伺服器認可資源
 
 本系統單租戶簡化版 anti-IDOR：
-- `provider_id` 必須存在於 `providers_config.providers[*].provider_id`
-- 不允許任意新增未註冊 `provider_id` 的結果資料
-- `POST /api/results` 若 `items[*].provider_id` 不在設定內，回 `400`
+- 不允許任意新增未註冊 provider 的結果資料
+- `POST /api/results` 若 `items[*]` 無法對應到設定內 provider（以 `provider_type + mode + api_base` 辨識），回 `400`
 
 `GET /api/config` 回傳時，`api_key` 欄位以 masked 版本顯示（前 4 碼 + `***` + 後 2 碼），Worker 讀寫 KV 時仍使用完整值。GHA log 中同樣不允許印出完整 key（runner.py 使用 `mask_key()` 函式）。
 

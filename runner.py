@@ -85,11 +85,10 @@ def pick_endpoint(value: Any, fallback: str) -> str:
     return fallback
 
 def is_benchmark_enabled(provider: dict) -> bool:
-    if isinstance(provider.get("benchmark_enabled"), bool):
-        return provider["benchmark_enabled"]
-    if isinstance(provider.get("enabled"), bool):
-        return provider["enabled"]
-    return True
+    return bool(provider.get("benchmark_enabled", True))
+
+def provider_key(provider: dict) -> str:
+    return f"{provider['provider_type']}::{provider['mode']}::{provider['api_base']}"
 
 # ── Worker client ──────────────────────────────────────────────────────────────
 
@@ -450,7 +449,7 @@ def test_model(provider: dict, model: str) -> dict:
             has_thinking = bool(thinking.strip())
 
             return {
-                "provider_id":   provider["provider_id"],
+                "api_base":      provider["api_base"],
                 "provider_type": ptype,
                 "model":         model,
                 "mode":          mode,
@@ -469,7 +468,7 @@ def test_model(provider: dict, model: str) -> dict:
     total_ms   = round((time.perf_counter() - t0) * 1000, 2)
     error_type = classify_error(last_exc)
     return {
-        "provider_id":   provider["provider_id"],
+        "api_base":      provider["api_base"],
         "provider_type": ptype,
         "model":         model,
         "mode":          provider["mode"],
@@ -499,7 +498,7 @@ def run_tester(
     since_last_ck = 0
 
     for p_idx, provider in enumerate(providers):
-        pid    = provider["provider_id"]
+        pid    = provider_key(provider)
         models = fetch_models(provider)
         total  = len(models)
         print(f"\n[provider {p_idx+1}] {pid}  ({total} models)")
@@ -545,7 +544,7 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
     results: list[dict] = []
 
     for sc in success_items:
-        pid    = sc["provider_id"]
+        pid    = sc["api_base"]
         model  = sc["model"]
         provider = providers_by_id.get(pid)
         if not provider:
@@ -581,7 +580,9 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
         print(f"  avg={avg}ms")
 
         results.append({
-            "provider_id":     pid,
+            "api_base":        pid,
+            "provider_type":   provider["provider_type"],
+            "mode":            provider["mode"],
             "model":           model,
             "runs":            runs,
             "avg_total_time_ms": avg,
@@ -593,9 +594,9 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
 # ── Build final payload ────────────────────────────────────────────────────────
 
 def build_results(run_id: str, started_at: str, items: list[dict], benchmark: list[dict]) -> dict:
-    # Sort: success first, then by total_time_ms asc, then provider_id+model lex
+    # Sort: success first, then by total_time_ms asc, then api_base+model lex
     def sort_key(i: dict):
-        return (0 if i["success"] else 1, i["total_time_ms"] if i["success"] else 0, i["provider_id"] + i["model"])
+        return (0 if i["success"] else 1, i["total_time_ms"] if i["success"] else 0, i["api_base"] + i["model"])
 
     sorted_items = sorted(items, key=sort_key)
     total   = len(sorted_items)
@@ -651,9 +652,9 @@ def main() -> int:
         print("[error] No providers in config")
         return 1
 
-    print(f"Providers: {[p['provider_id'] for p in providers]}")
+    print(f"Providers: {[p['api_base'] for p in providers]}")
     for p in providers:
-        print(f"  {p['provider_id']}  key={mask_key(p.get('api_key',''))}")
+        print(f"  {p['api_base']}  key={mask_key(p.get('api_key',''))}")
 
     # 2. Fetch checkpoint
     checkpoint: dict = {}
@@ -671,7 +672,7 @@ def main() -> int:
     items = run_tester(worker, providers, run_id, checkpoint)
 
     # 4. Run benchmark
-    providers_by_id = {p["provider_id"]: p for p in providers}
+    providers_by_id = {p["api_base"]: p for p in providers}
     benchmark = run_benchmark(providers_by_id, items)
 
     # 5. Build and upload results
