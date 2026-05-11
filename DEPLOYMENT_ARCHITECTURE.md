@@ -18,13 +18,15 @@
 [GitHub Actions Runner (runner.py, cron or manual)]
   1) 生成 run_id（{UTC_datetime}_{random_6chars}）
   2) GET /api/config
-  3) GET /api/checkpoint（run_id 不符則重頭，符合則續跑）
-  4) 自動 GET models_endpoint 取模型列表（若留空則依 provider_type 套預設；失敗或空列表則跳過該 provider）
-  5) 執行 tester（timeout/retry/thinking detect/計時 total_time_ms）
-     └─ 每 CHECKPOINT_EVERY_N 個模型 POST /api/checkpoint
-  6) 執行 benchmark（success models，3 runs）
-  7) POST /api/results（scorecard + benchmark + run_meta）
-  8) DELETE /api/checkpoint（僅上傳成功後）
+  3) 計算 config_fingerprint（同一份 providers_config 會得到同一個值）
+  4) GET /api/checkpoint（fingerprint 相符則續跑，不符則重頭）
+  5) 自動 GET models_endpoint 取模型列表（若留空則依 provider_type 套預設；失敗或空列表則跳過該 provider）
+  6) 依 provider.tester_enabled 決定是否跑 tester
+     └─ 有跑 tester 時，每 CHECKPOINT_EVERY_N 個模型 POST /api/checkpoint（含 config_fingerprint）
+  7) 對 tester_enabled=false 且 benchmark_enabled=true 的 provider，從當前 fingerprint 歷史 scorecard 取模型
+  8) 執行 benchmark（success models，3 runs；仍受 provider.benchmark_enabled 控制）
+  9) POST /api/results（scorecard + benchmark + run_meta）
+ 10) DELETE /api/checkpoint（僅本次有跑 tester 且上傳成功後）
 
   觸發方式：
     - 自動：schedule (cron)
@@ -37,7 +39,7 @@
 | :-- | :-- |
 | Cloudflare Worker (JS) | API 閘道、Auth、KV 讀寫、Anti-IDOR、/api/env 回傳環境變數 |
 | Cloudflare Assets | Admin UI 靜態檔案（public/ 目錄：index.html、style.css、app.js） |
-| Cloudflare KV | providers_config、run_checkpoint、最新測試結果儲存 |
+| Cloudflare KV | providers_config、run_checkpoint、各 config_fingerprint 的最新測試結果儲存 |
 | GitHub Actions | 執行 runner.py（Python）：抓模型、測試、benchmark、上傳結果 |
 
 補充：`providers_config.benchmark_enabled` 只控制 benchmark 階段是否執行，不影響 tester 主流程。
@@ -65,7 +67,7 @@
 KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 - `KV_STORE`（單一 namespace，儲存全部 key）
 
-所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard`、`latest_benchmark`、`latest_run_meta`
+所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`、`latest_run_meta:{config_fingerprint}`
 
 ### 4.2 GitHub Actions Secrets / Variables
 
@@ -83,6 +85,7 @@ KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 | `RETRY_SLEEP_SECONDS` | `1.0`（每次重試前固定等待 1 秒） |
 | `BENCHMARK_RUNS_PER_MODEL` | `3` |
 | `CHECKPOINT_EVERY_N` | `3` |
+| `BENCHMARK_ERROR_PENALTY_MS` | `30000`（benchmark 單次失敗/timeout 懲罰） |
 
 ## 5. 檔案結構（目標狀態）
 

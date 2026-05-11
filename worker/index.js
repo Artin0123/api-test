@@ -89,6 +89,7 @@ function normalizeProvider(p) {
     ...p,
     endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
     models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
+    tester_enabled: typeof p.tester_enabled === "boolean" ? p.tester_enabled : true,
     benchmark_enabled: typeof p.benchmark_enabled === "boolean" ? p.benchmark_enabled : true,
   };
 }
@@ -99,6 +100,63 @@ function providerKey(p) {
 
 function looksMaskedKey(value) {
   return typeof value === "string" && value.includes("***");
+}
+
+function normalizeForFingerprint(providers) {
+  const normalized = (providers || []).map((p) => {
+    const providerType = p.provider_type;
+    return {
+      provider_type: providerType,
+      mode: p.mode || "",
+      api_base: p.api_base || "",
+      endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
+      models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
+      tester_enabled: typeof p.tester_enabled === "boolean" ? p.tester_enabled : true,
+      benchmark_enabled: typeof p.benchmark_enabled === "boolean" ? p.benchmark_enabled : true,
+    };
+  });
+
+  normalized.sort((a, b) => {
+    const ak = `${a.provider_type}::${a.mode}::${a.api_base}`;
+    const bk = `${b.provider_type}::${b.mode}::${b.api_base}`;
+    return ak.localeCompare(bk);
+  });
+
+  return normalized;
+}
+
+async function sha256Hex(input) {
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function buildConfigFingerprint(providers) {
+  const normalized = normalizeForFingerprint(providers);
+  return sha256Hex(JSON.stringify(normalized));
+}
+
+async function getCurrentConfigFingerprint(env) {
+  const configRaw = await env.KV_STORE.get("providers_config");
+  if (!configRaw) return null;
+  try {
+    const config = JSON.parse(configRaw);
+    return await buildConfigFingerprint(config.providers || []);
+  } catch {
+    return null;
+  }
+}
+
+function scorecardKey(configFingerprint) {
+  return configFingerprint ? `latest_scorecard:${configFingerprint}` : "latest_scorecard";
+}
+
+function benchmarkKey(configFingerprint) {
+  return configFingerprint ? `latest_benchmark:${configFingerprint}` : "latest_benchmark";
+}
+
+function runMetaKey(configFingerprint) {
+  return configFingerprint ? `latest_run_meta:${configFingerprint}` : "latest_run_meta";
 }
 
 // ── GET /api/env ──────────────────────────────────────────────────────────────
@@ -244,6 +302,19 @@ async function handlePostResults(request, env) {
     if (body[field] == null) return json({ error: `Missing field: ${field}` }, 400);
   }
 
+  const configFingerprint =
+    (typeof body.config_fingerprint === "string" && body.config_fingerprint.trim())
+      ? body.config_fingerprint.trim()
+      : (typeof body.scorecard?.config_fingerprint === "string" && body.scorecard.config_fingerprint.trim())
+        ? body.scorecard.config_fingerprint.trim()
+        : (typeof body.benchmark?.config_fingerprint === "string" && body.benchmark.config_fingerprint.trim())
+          ? body.benchmark.config_fingerprint.trim()
+          : null;
+
+  if (!configFingerprint) {
+    return json({ error: "Missing field: config_fingerprint" }, 400);
+  }
+
   // Anti-IDOR: all items must refer to a registered provider
   const configRaw = await env.KV_STORE.get("providers_config");
   if (configRaw) {
@@ -260,7 +331,8 @@ async function handlePostResults(request, env) {
   }
 
   // 409 if result is not newer
-  const existingMetaRaw = await env.KV_STORE.get("latest_run_meta");
+  const scopedMetaKey = runMetaKey(configFingerprint);
+  const existingMetaRaw = await env.KV_STORE.get(scopedMetaKey);
   if (existingMetaRaw) {
     const existing = JSON.parse(existingMetaRaw);
     if (body.finished_at <= existing.finished_at) {
@@ -270,11 +342,15 @@ async function handlePostResults(request, env) {
 
   const run_meta = {
     run_id: body.run_id,
+    config_fingerprint: configFingerprint,
     started_at: body.started_at,
     finished_at: body.finished_at,
   };
 
   await Promise.all([
+    env.KV_STORE.put(scorecardKey(configFingerprint), JSON.stringify(body.scorecard)),
+    env.KV_STORE.put(benchmarkKey(configFingerprint), JSON.stringify(body.benchmark)),
+    env.KV_STORE.put(runMetaKey(configFingerprint), JSON.stringify(run_meta)),
     env.KV_STORE.put("latest_scorecard", JSON.stringify(body.scorecard)),
     env.KV_STORE.put("latest_benchmark", JSON.stringify(body.benchmark)),
     env.KV_STORE.put("latest_run_meta", JSON.stringify(run_meta)),
@@ -286,16 +362,22 @@ async function handlePostResults(request, env) {
 // ── GET /api/results ──────────────────────────────────────────────────────────
 // Public endpoint �?no auth required
 
-async function handleGetResults(request, env) {
+async function handleGetResults(request, env, url) {
+  const requested = (url.searchParams.get("fingerprint") || "").trim();
+  const targetFingerprint = requested || (await getCurrentConfigFingerprint(env));
+
   const [scorecardRaw, benchmarkRaw, metaRaw] = await Promise.all([
-    env.KV_STORE.get("latest_scorecard"),
-    env.KV_STORE.get("latest_benchmark"),
-    env.KV_STORE.get("latest_run_meta"),
+    env.KV_STORE.get(scorecardKey(targetFingerprint)),
+    env.KV_STORE.get(benchmarkKey(targetFingerprint)),
+    env.KV_STORE.get(runMetaKey(targetFingerprint)),
   ]);
 
-  if (!metaRaw) return json({ exists: false });
+  if (!metaRaw) {
+    return json({ exists: false, config_fingerprint: targetFingerprint || null });
+  }
 
   return json({
+    config_fingerprint: targetFingerprint,
     meta: JSON.parse(metaRaw),
     scorecard: scorecardRaw ? JSON.parse(scorecardRaw) : null,
     benchmark: benchmarkRaw ? JSON.parse(benchmarkRaw) : null,

@@ -19,6 +19,7 @@ import re
 import string
 import sys
 import time
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 from urllib import error, request as urllib_request
@@ -30,6 +31,7 @@ MAX_RETRIES              = 1
 RETRY_SLEEP_SECONDS      = 1.0
 BENCHMARK_RUNS_PER_MODEL = 3
 CHECKPOINT_EVERY_N       = 3
+BENCHMARK_ERROR_PENALTY_MS = TIMEOUT_SECONDS * 1000
 
 TESTER_PROMPT_THINKING   = "What is 17 multiplied by 19? Think step by step."
 TESTER_PROMPT_VISION     = "Describe this image in one word."
@@ -87,8 +89,28 @@ def pick_endpoint(value: Any, fallback: str) -> str:
 def is_benchmark_enabled(provider: dict) -> bool:
     return bool(provider.get("benchmark_enabled", True))
 
+def is_tester_enabled(provider: dict) -> bool:
+    return bool(provider.get("tester_enabled", True))
+
 def provider_key(provider: dict) -> str:
     return f"{provider['provider_type']}::{provider['mode']}::{provider['api_base']}"
+
+def build_config_fingerprint(providers: list[dict]) -> str:
+    normalized: list[dict] = []
+    for p in providers:
+        ptype = p.get("provider_type", "")
+        normalized.append({
+            "provider_type": ptype,
+            "mode": p.get("mode", ""),
+            "api_base": p.get("api_base", ""),
+            "endpoint_path": pick_endpoint(p.get("endpoint_path"), DEFAULT_ENDPOINT_PATHS.get(ptype, "")),
+            "models_endpoint": pick_endpoint(p.get("models_endpoint"), DEFAULT_MODELS_ENDPOINTS.get(ptype, "")),
+            "tester_enabled": bool(p.get("tester_enabled", True)),
+            "benchmark_enabled": bool(p.get("benchmark_enabled", True)),
+        })
+    normalized.sort(key=lambda p: f"{p['provider_type']}::{p['mode']}::{p['api_base']}")
+    payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 # ── Worker client ──────────────────────────────────────────────────────────────
 
@@ -118,6 +140,8 @@ class WorkerClient:
     def get_checkpoint(self)              -> dict: return self._req("GET",    "/api/checkpoint")
     def post_checkpoint(self, ck: dict)   -> None: self._req("POST",   "/api/checkpoint", ck)
     def delete_checkpoint(self)           -> None: self._req("DELETE", "/api/checkpoint")
+    def get_results(self, config_fingerprint: str) -> dict:
+        return self._req("GET", f"/api/results?fingerprint={config_fingerprint}")
     def post_results(self, payload: dict) -> None: self._req("POST",   "/api/results", payload)
 
 # ── Thinking extraction ────────────────────────────────────────────────────────
@@ -489,10 +513,11 @@ def run_tester(
     worker: WorkerClient,
     providers: list[dict],
     run_id: str,
+    config_fingerprint: str,
     checkpoint: dict,
 ) -> list[dict]:
     """
-    Iterate all providers × models, resume from checkpoint if matching run_id.
+    Iterate all providers × models, resume from checkpoint if matching config fingerprint.
     Returns list of scorecard items.
     """
     completed_set: set[str] = set(checkpoint.get("completed", []))
@@ -524,6 +549,7 @@ def run_tester(
             if since_last_ck >= CHECKPOINT_EVERY_N:
                 ck = {
                     "run_id":    run_id,
+                    "config_fingerprint": config_fingerprint,
                     "completed": list(completed_set),
                     "updated_at": now_iso(),
                 }
@@ -538,7 +564,7 @@ def run_tester(
 
 # ── Benchmark ──────────────────────────────────────────────────────────────────
 
-def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict]) -> list[dict]:
+def run_benchmark(providers_by_key: dict[str, dict], scorecard_items: list[dict]) -> list[dict]:
     """Run 3 benchmark calls for each success model. Returns benchmark item list."""
     success_items = [i for i in scorecard_items if i["success"]]
     print(f"\n[benchmark] {len(success_items)} success models × {BENCHMARK_RUNS_PER_MODEL} runs")
@@ -546,9 +572,10 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
     results: list[dict] = []
 
     for sc in success_items:
-        pid    = sc["api_base"]
-        model  = sc["model"]
-        provider = providers_by_id.get(pid)
+        pid = sc["api_base"]
+        model = sc["model"]
+        pkey = f"{sc.get('provider_type','')}::{sc.get('mode','')}::{sc.get('api_base','')}"
+        provider = providers_by_key.get(pkey)
         if not provider:
             continue
         if not is_benchmark_enabled(provider):
@@ -577,8 +604,11 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
                               "error": classify_error(exc)})
                 print(f" err ({classify_error(exc)})", end="", flush=True)
 
-        valid_times = [r["total_time_ms"] for r in runs if "error" not in r]
-        avg = round(sum(valid_times) / len(valid_times), 2) if valid_times else None
+        penalized_times = [
+            BENCHMARK_ERROR_PENALTY_MS if "error" in r else min(float(r["total_time_ms"]), BENCHMARK_ERROR_PENALTY_MS)
+            for r in runs
+        ]
+        avg = round(sum(penalized_times) / len(penalized_times), 2) if penalized_times else None
         print(f"  avg={avg}ms")
 
         results.append({
@@ -595,7 +625,7 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
 
 # ── Build final payload ────────────────────────────────────────────────────────
 
-def build_results(run_id: str, started_at: str, items: list[dict], benchmark: list[dict]) -> dict:
+def build_results(run_id: str, started_at: str, config_fingerprint: str, items: list[dict], benchmark: list[dict]) -> dict:
     # Sort: success first, then by total_time_ms asc, then api_base+model lex
     def sort_key(i: dict):
         return (0 if i["success"] else 1, i["total_time_ms"] if i["success"] else 0, i["api_base"] + i["model"])
@@ -607,6 +637,7 @@ def build_results(run_id: str, started_at: str, items: list[dict], benchmark: li
 
     scorecard = {
         "run_id":      run_id,
+        "config_fingerprint": config_fingerprint,
         "started_at":  started_at,
         "finished_at": finished_at,
         "items":       sorted_items,
@@ -615,11 +646,13 @@ def build_results(run_id: str, started_at: str, items: list[dict], benchmark: li
 
     bm_payload = {
         "run_id": run_id,
+        "config_fingerprint": config_fingerprint,
         "items":  benchmark,
     }
 
     return {
         "run_id":      run_id,
+        "config_fingerprint": config_fingerprint,
         "started_at":  started_at,
         "finished_at": finished_at,
         "scorecard":   scorecard,
@@ -654,43 +687,110 @@ def main() -> int:
         print("[error] No providers in config")
         return 1
 
+    config_fingerprint = build_config_fingerprint(providers)
+    providers_by_key = {provider_key(p): p for p in providers}
+    tester_providers = [p for p in providers if is_tester_enabled(p)]
+    benchmark_enabled_providers = [p for p in providers if is_benchmark_enabled(p)]
+    benchmark_only_keys = {
+        provider_key(p)
+        for p in providers
+        if (not is_tester_enabled(p)) and is_benchmark_enabled(p)
+    }
+
+    if not tester_providers and not benchmark_enabled_providers:
+        print("[skip] All providers have tester_enabled=false and benchmark_enabled=false. Nothing to run.")
+        return 0
+
     print(f"Providers: {[p['api_base'] for p in providers]}")
+    print(f"config_fingerprint={config_fingerprint[:16]}...")
     for p in providers:
         print(f"  {p['api_base']}  key={mask_key(p.get('api_key',''))}")
 
-    # 2. Fetch checkpoint
+    # 2. Fetch checkpoint (only when at least one provider enables tester)
     checkpoint: dict = {}
-    try:
-        ck = worker.get_checkpoint()
-        if ck.get("exists") is not False and ck.get("run_id") == run_id:
-            checkpoint = ck
-            print(f"Resuming checkpoint: {len(checkpoint.get('completed', []))} models already done")
-        elif ck.get("run_id") and ck.get("run_id") != run_id:
-            print(f"Checkpoint run_id mismatch ({ck.get('run_id')}) — starting fresh")
-    except Exception as exc:
-        print(f"[warn] GET /api/checkpoint failed: {exc} — starting fresh")
+    if tester_providers:
+        try:
+            ck = worker.get_checkpoint()
+            ck_fingerprint = ck.get("config_fingerprint")
+            current_fp_short = config_fingerprint[:12]
+            ck_fp_short = ck_fingerprint[:12] if isinstance(ck_fingerprint, str) and ck_fingerprint else None
+            if ck.get("exists") is not False and ck_fingerprint and ck_fingerprint == config_fingerprint:
+                checkpoint = ck
+                print(
+                    f"Resuming checkpoint: completed={len(checkpoint.get('completed', []))} "
+                    f"fingerprint={current_fp_short}..."
+                )
+            elif ck_fingerprint and ck_fingerprint != config_fingerprint:
+                print(
+                    "Checkpoint fingerprint mismatch — starting fresh "
+                    f"(checkpoint={ck_fp_short}... current={current_fp_short}...)"
+                )
+            elif ck.get("run_id"):
+                print(
+                    "Checkpoint has no fingerprint (legacy format) — starting fresh "
+                    f"(current={current_fp_short}...)"
+                )
+        except Exception as exc:
+            print(f"[warn] GET /api/checkpoint failed: {exc} — starting fresh")
+    else:
+        print("[info] tester skipped for all providers (tester_enabled=false)")
 
-    # 3. Run tester
-    items = run_tester(worker, providers, run_id, checkpoint)
+    # 3. Run tester only for tester-enabled providers
+    current_items: list[dict] = []
+    if tester_providers:
+        current_items = run_tester(worker, tester_providers, run_id, config_fingerprint, checkpoint)
 
-    # 4. Run benchmark
-    providers_by_id = {p["api_base"]: p for p in providers}
-    benchmark = run_benchmark(providers_by_id, items)
+    # 4. For benchmark-only providers, load historical scorecard from current fingerprint
+    historical_items_for_benchmark: list[dict] = []
+    if benchmark_only_keys:
+        try:
+            historical = worker.get_results(config_fingerprint)
+        except Exception as exc:
+            print(f"[error] benchmark-only requires historical scorecard, but GET /api/results failed: {exc}")
+            return 1
 
-    # 5. Build and upload results
-    payload = build_results(run_id, started_at, items, benchmark)
-    print(f"\nUploading results: scorecard={len(items)} items, benchmark={len(benchmark)} items")
+        historical_items = (historical.get("scorecard") or {}).get("items") or []
+        if not historical_items:
+            print("[error] benchmark-only requested but no historical scorecard exists for current fingerprint")
+            return 1
+
+        historical_items_for_benchmark = [
+            it for it in historical_items
+            if f"{it.get('provider_type','')}::{it.get('mode','')}::{it.get('api_base','')}" in benchmark_only_keys
+        ]
+        if not historical_items_for_benchmark and not current_items:
+            print("[error] benchmark-only requested, but no matching historical scorecard items found")
+            return 1
+        if historical_items_for_benchmark:
+            print(
+                f"[info] loaded {len(historical_items_for_benchmark)} historical scorecard items "
+                "for benchmark-only providers"
+            )
+
+    merged_items_for_upload = current_items + historical_items_for_benchmark
+
+    # 5. Run benchmark only for benchmark-enabled providers using merged scorecard source
+    benchmark: list[dict] = []
+    if benchmark_enabled_providers:
+        benchmark = run_benchmark(providers_by_key, merged_items_for_upload)
+    else:
+        print("[info] benchmark skipped for all providers (benchmark_enabled=false)")
+
+    # 6. Build and upload results
+    payload = build_results(run_id, started_at, config_fingerprint, merged_items_for_upload, benchmark)
+    print(f"\nUploading results: scorecard={len(merged_items_for_upload)} items, benchmark={len(benchmark)} items")
     try:
         worker.post_results(payload)
     except Exception as exc:
         print(f"[error] POST /api/results failed: {exc}")
         return 1
 
-    # 6. Clear checkpoint
-    try:
-        worker.delete_checkpoint()
-    except Exception as exc:
-        print(f"[warn] DELETE /api/checkpoint failed: {exc}")
+    # 7. Clear checkpoint only when tester actually ran
+    if tester_providers:
+        try:
+            worker.delete_checkpoint()
+        except Exception as exc:
+            print(f"[warn] DELETE /api/checkpoint failed: {exc}")
 
     sc = payload["scorecard"]["summary"]
     print(f"\nDone. total={sc['total']} success={sc['success']} failed={sc['failed']}")

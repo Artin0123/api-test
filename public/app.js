@@ -2,6 +2,7 @@
 
 const API_BASE = ''; // same origin
 let token = '';
+const TOKEN_STORAGE_KEY = 'api_test_admin_token';
 
 /* ── Auth ── */
 const authOverlay = document.getElementById('auth-overlay');
@@ -16,17 +17,20 @@ authBtn.addEventListener('click', async () => {
   authError.textContent = '';
   const ok = await checkAuth();
   if (ok) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
     authOverlay.classList.remove('active');
     authTokenInput.value = '';
     initApp();
   } else {
     authError.textContent = '驗證失敗，請確認 MASTER_API_TOKEN 是否正確';
     token = '';
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
   }
 });
 
 logoutBtn.addEventListener('click', () => {
   token = '';
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
   authOverlay.classList.add('active');
   authTokenInput.value = '';
 });
@@ -45,6 +49,7 @@ function authHeaders() {
 /* ── Init ── */
 function initApp() {
   loadConfig();
+  loadCheckpointStatus();
   loadResults();
 }
 
@@ -66,6 +71,9 @@ const providersTableWrap = document.getElementById('providers-table-wrap');
 const providersTbody = document.getElementById('providers-tbody');
 const addProviderBtn = document.getElementById('add-provider-btn');
 const revealKeysBtn = document.getElementById('reveal-keys-btn');
+const checkpointStatusText = document.getElementById('checkpoint-status-text');
+const refreshCheckpointBtn = document.getElementById('refresh-checkpoint-btn');
+const clearCheckpointBtn = document.getElementById('clear-checkpoint-btn');
 const providerFormCard = document.getElementById('provider-form-card');
 const providerForm = document.getElementById('provider-form');
 const cancelFormBtn = document.getElementById('cancel-form-btn');
@@ -111,6 +119,27 @@ cancelFormBtn.addEventListener('click', () => {
   providerFormCard.classList.add('hidden');
 });
 
+refreshCheckpointBtn.addEventListener('click', loadCheckpointStatus);
+
+clearCheckpointBtn.addEventListener('click', async () => {
+  if (!confirm('確定清除目前 Checkpoint？這只會刪除中斷續跑進度，不會刪除結果或供應商設定。')) return;
+  clearCheckpointBtn.disabled = true;
+  checkpointStatusText.textContent = '清除中…';
+  try {
+    const res = await fetch('/api/checkpoint', {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    checkpointStatusText.textContent = '目前無 Checkpoint（已清除）';
+  } catch (err) {
+    checkpointStatusText.textContent = `清除失敗: ${err.message}`;
+  } finally {
+    clearCheckpointBtn.disabled = false;
+    await loadCheckpointStatus();
+  }
+});
+
 providerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   formError.textContent = '';
@@ -128,6 +157,7 @@ providerForm.addEventListener('submit', async (e) => {
     endpoint_path: endpointPathInput || getDefaultEndpointPath(providerType),
     models_endpoint: modelsEndpointInput || getDefaultModelsEndpoint(providerType),
     api_key: apiKeyInput || existing?.api_key || '',
+    tester_enabled: document.getElementById('p-tester-enabled').checked,
     benchmark_enabled: document.getElementById('p-benchmark-enabled').checked,
   };
 
@@ -185,15 +215,45 @@ async function loadConfig(full = false) {
   }
 }
 
+async function loadCheckpointStatus() {
+  checkpointStatusText.textContent = '讀取中…';
+  refreshCheckpointBtn.disabled = true;
+  clearCheckpointBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/checkpoint', { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.exists === false || !data.run_id) {
+      checkpointStatusText.textContent = '目前無 Checkpoint';
+      return;
+    }
+
+    const completedCount = Array.isArray(data.completed) ? data.completed.length : 0;
+    const updatedAt = data.updated_at || '-';
+    const fp = typeof data.config_fingerprint === 'string' && data.config_fingerprint
+      ? data.config_fingerprint.slice(0, 12)
+      : null;
+    const fpText = fp ? `，fingerprint=${fp}...` : '';
+    checkpointStatusText.textContent = `run_id=${data.run_id}${fpText}，已完成 ${completedCount} 項，更新時間 ${updatedAt}`;
+  } catch (err) {
+    checkpointStatusText.textContent = `讀取失敗: ${err.message}`;
+  } finally {
+    refreshCheckpointBtn.disabled = false;
+    clearCheckpointBtn.disabled = false;
+  }
+}
+
 function renderProviders() {
   providersTbody.innerHTML = '';
   if (currentProviders.length === 0) {
-    providersTbody.innerHTML = '<tr><td colspan="8" class="cell-empty">尚無供應商</td></tr>';
+    providersTbody.innerHTML = '<tr><td colspan="9" class="cell-empty">尚無供應商</td></tr>';
     return;
   }
   currentProviders.forEach((p, i) => {
     const endpointPath = p.endpoint_path || getDefaultEndpointPath(p.provider_type);
     const modelsEndpoint = p.models_endpoint || getDefaultModelsEndpoint(p.provider_type);
+    const testerEnabled = p.tester_enabled !== false;
     const benchmarkEnabled = !!p.benchmark_enabled;
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -202,6 +262,7 @@ function renderProviders() {
       <td><code>${esc(p.api_base)}</code></td>
       <td><code>${esc(endpointPath)}</code></td>
       <td><code>${esc(modelsEndpoint)}</code></td>
+      <td>${testerEnabled ? '<span class="status-ok">執行</span>' : '<span class="status-fail">略過</span>'}</td>
       <td>${benchmarkEnabled ? '<span class="status-ok">執行</span>' : '<span class="status-fail">略過</span>'}</td>
       <td>${esc(p.api_key)}</td>
       <td class="cell-actions">
@@ -230,6 +291,7 @@ function editProvider(idx) {
   document.getElementById('p-endpoint_path').value = p.endpoint_path || '';
   document.getElementById('p-models_endpoint').value = p.models_endpoint || '';
   document.getElementById('p-api_key').value = '';
+  document.getElementById('p-tester-enabled').checked = p.tester_enabled !== false;
   document.getElementById('p-benchmark-enabled').checked = !!p.benchmark_enabled;
   providerFormCard.classList.remove('hidden');
   providerFormCard.scrollIntoView({ behavior: 'smooth' });
@@ -247,6 +309,7 @@ function resetForm() {
   formIndex.value = -1;
   formTitle.textContent = '新增供應商';
   providerForm.reset();
+  document.getElementById('p-tester-enabled').checked = true;
   document.getElementById('p-benchmark-enabled').checked = true;
   formError.textContent = '';
 }
@@ -401,9 +464,18 @@ function fmtNum(n) {
     }
   } catch { }
 
+  token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+
   if (token) {
     const ok = await checkAuth();
-    if (ok) { authOverlay.classList.remove('active'); initApp(); }
-    else { token = ''; authOverlay.classList.add('active'); }
+    if (ok) { 
+      authOverlay.classList.remove('active'); 
+      initApp(); 
+    }
+    else {
+      token = '';
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      authOverlay.classList.add('active');
+    }
   }
 })();

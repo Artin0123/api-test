@@ -48,6 +48,19 @@
           </div>
         </div>
 
+        <div class="card">
+          <h3>Checkpoint 狀態</h3>
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <p id="checkpoint-status-text">讀取中…</p>
+            </div>
+            <div class="header-actions">
+              <button id="refresh-checkpoint-btn" class="btn btn-ghost">刷新 Checkpoint</button>
+              <button id="clear-checkpoint-btn" class="btn btn-danger">清除 Checkpoint</button>
+            </div>
+          </div>
+        </div>
+
         <div id="config-loading" class="loading">載入中…</div>
         <div id="config-error" class="alert alert-error hidden"></div>
 
@@ -60,6 +73,7 @@
                 <th>api_base</th>
                 <th>endpoint</th>
                 <th>models_endpoint</th>
+                <th>Tester</th>
                 <th>Benchmark</th>
                 <th>api_key</th>
                 <th></th>
@@ -105,6 +119,12 @@
               <div class="field">
                 <label for="p-api_key">api_key（新增必填；編輯可留空不變更）</label>
                 <input type="password" id="p-api_key" placeholder="新增請填寫；編輯留空則沿用原 key">
+              </div>
+              <div class="field field-inline">
+                <label>
+                  <input type="checkbox" id="p-tester-enabled" checked>
+                  啟用 Tester 測試 (tester_enabled)
+                </label>
               </div>
               <div class="field field-inline">
                 <label>

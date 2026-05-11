@@ -19,6 +19,9 @@ Namespace: `KV_STORE`（單一）
 - `latest_scorecard`
 - `latest_benchmark`
 - `latest_run_meta`
+- `latest_scorecard:{config_fingerprint}`
+- `latest_benchmark:{config_fingerprint}`
+- `latest_run_meta:{config_fingerprint}`
 
 ## 2. providers_config 格式（固定）
 
@@ -27,6 +30,7 @@ Namespace: `KV_STORE`（單一）
   "providers": [
     {
       "provider_type": "openai",
+      "tester_enabled": true,
       "benchmark_enabled": true,
       "api_base": "https://integrate.api.nvidia.com",
       "endpoint_path": "/v1/chat/completions",
@@ -91,13 +95,13 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - 清除 checkpoint
 
 6. `POST /api/results`
-- 寫入 `latest_scorecard`、`latest_benchmark`、`latest_run_meta`
-- 必帶欄位：`run_id`, `started_at`, `finished_at`
-- 只接受「較新 run」：若 `finished_at` 比目前 `latest_run_meta.finished_at` 舊，回 `409`
+- 必帶欄位：`run_id`, `started_at`, `finished_at`, `config_fingerprint`
+- 以 `config_fingerprint` 為範圍寫入最新結果（每個 fingerprint 各自只保留最新一筆）
+- 只接受「較新 run」：若 `finished_at` 比目前 `latest_run_meta:{config_fingerprint}.finished_at` 舊，回 `409`
 - Anti-IDOR：若 `items[*]` 無法對應到 `providers_config` 內既有 provider（以 `provider_type + mode + api_base` 辨識），回 `400`
 
 8. `GET /api/results`
-- 前端讀最新結果（可公開或加簡單保護）
+- 前端讀「目前 providers_config 對應 fingerprint」的最新結果（可公開或加簡單保護）
 
 ## 4. run_id 與 checkpoint 格式（固定）
 
@@ -107,15 +111,24 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 範例：`2026-05-11T10-30-00Z_a3f9c2`
 
 - 每次 GHA run 開始時生成一次，整個 run 全程使用同一個 `run_id`
-- GHA 讀取 checkpoint 時，若 checkpoint 的 `run_id` 不同，則從頭開始新 run（不使用舊 checkpoint）
+- `run_id` 主要用於日誌與結果追蹤，不作為 checkpoint 續跑判斷條件
+
+### 4.2 config_fingerprint 續跑規則
+
+- runner 會依 `providers_config` 計算 `config_fingerprint`（SHA-256）
+- 計算內容使用「有效設定值」：`provider_type`、`mode`、`api_base`、`endpoint_path`、`models_endpoint`、`tester_enabled`、`benchmark_enabled`
+- 若 `endpoint_path` 或 `models_endpoint` 留空，會先套用對應 `provider_type` 預設值再計算
+- `providers` 會先排序後計算，避免因順序不同導致無意義 mismatch
+- 讀取 checkpoint 時：
+  - 指紋相同 → 續跑
+  - 指紋不同 → 視為不同測試配置，從頭開始
 
 ### 4.2 checkpoint 格式
 
 ```json
 {
   "run_id": "2026-05-11T10-30-00Z_a3f9c2",
-  "provider_cursor": 3,
-  "model_cursor": 27,
+  "config_fingerprint": "f0d7b85d8f9d1f8e8e0f0e5ec847b6e6d9f5f5d49b0b2f1cd7db0d57f473a917",
   "completed": [
     "nvidia:gpt-4o",
     "nvidia:gpt-4.1"
@@ -150,6 +163,7 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - `RETRY_SLEEP_SECONDS = 1.0`（每次重試前固定等待 1 秒）
 - `BENCHMARK_RUNS_PER_MODEL = 3`
 - `CHECKPOINT_EVERY_N = 3`
+- `BENCHMARK_ERROR_PENALTY_MS = 30000`
 
 **Prompt（全部寫死）：**
 
@@ -310,13 +324,16 @@ TTFT 規則：
 1. 生成 `run_id`（`{UTC_datetime}_{random_6chars}`）
 2. `GET /api/config`（取得 providers + api_key 完整值）
 3. `GET /api/checkpoint`
-   - 若 checkpoint 存在且 `run_id` 相符 → 從 checkpoint 位置續跑
+   - 若 checkpoint 存在且 `config_fingerprint` 相符 → 從 checkpoint 位置續跑
    - 否則 → 從頭開始新 run
 4. 對每個 provider，自動 GET `models_endpoint` 取得最新模型列表（失敗或空列表則跳過該 provider）
-5. 執行 tester（含重試、thinking 偵測、計時，每 N 個模型 `POST /api/checkpoint`）
-6. 執行 benchmark（success models，固定 3 次）
-7. `POST /api/results`（scorecard + benchmark + run_meta）
-8. `DELETE /api/checkpoint`（僅在上傳成功後）
+5. 依 provider 的 `tester_enabled` 決定是否執行 tester（含重試、thinking 偵測、計時，每 N 個模型 `POST /api/checkpoint`）
+6. 若某 provider 為 `tester_enabled=false` 且 `benchmark_enabled=true`，則從目前 `config_fingerprint` 最新 scorecard 取模型作 benchmark
+7. 執行 benchmark（success models，固定 3 次，仍受每個 provider 的 `benchmark_enabled` 控制）
+8. `POST /api/results`（scorecard + benchmark + run_meta）
+9. `DELETE /api/checkpoint`（僅在本次有跑 tester 且上傳成功後）
+
+備註：benchmark 的 `avg_total_time_ms` 會把失敗/timeout run 以 `30000ms` 懲罰值納入平均，避免「2 次快 + 1 次 timeout」被排得過前。
 
 ## 12. 手動與排程觸發方式
 
@@ -327,7 +344,7 @@ TTFT 規則：
 ## 13. 最小驗收標準
 
 1. 同一份 `providers_config` 可跑完 100+ 模型不丟進度
-2. 中途中斷後可從 checkpoint 續跑（同一 run_id）
+2. 中途中斷後可從 checkpoint 續跑（同一份 providers 配置）
 3. 結果頁可依 `total_time_ms` 穩定排序
 4. `has_thinking` 與 `error_type` 有固定欄位且可顯示
 5. 不在 log 出現完整 API key
