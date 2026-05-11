@@ -114,7 +114,6 @@ providerForm.addEventListener('submit', async (e) => {
   if (idx >= 0) {
     currentProviders[idx] = p;
   } else {
-    // Check duplicate provider_id
     if (currentProviders.some((x, i) => i !== idx && x.provider_id === p.provider_id)) {
       formError.textContent = 'provider_id 已存在';
       return;
@@ -249,7 +248,7 @@ async function loadResults() {
   resultsContent.classList.add('hidden');
 
   try {
-    const res = await fetch('/api/results'); // public endpoint
+    const res = await fetch('/api/results');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (!data.exists && !data.meta) {
@@ -283,9 +282,8 @@ function renderResults(data) {
     <div class="summary-card"><div class="value" style="color:#dc2626">${summary.failed}</div><div class="label">Failed</div></div>
   `;
 
-  // Scorecard sorted: success desc, total_time_ms asc, provider+model asc
   const items = (sc.items || []).slice().sort((a, b) => {
-    if (a.success !== b.success) return b.success ? 1 : -1; // success first
+    if (a.success !== b.success) return b.success ? 1 : -1;
     const ta = a.total_time_ms ?? Infinity;
     const tb = b.total_time_ms ?? Infinity;
     if (ta !== tb) return ta - tb;
@@ -314,7 +312,6 @@ function renderResults(data) {
     });
   }
 
-  // Benchmark sorted by avg_total_time_ms asc
   const bItems = (data.benchmark?.items || []).slice().sort((a, b) => {
     return (a.avg_total_time_ms ?? Infinity) - (b.avg_total_time_ms ?? Infinity);
   });
@@ -344,19 +341,6 @@ function runCell(run) {
   return `<code>${fmtNum(run.total_time_ms)}</code> <span style="color:#6b7280;font-size:0.75rem">ttft:${fmtNum(run.ttft_ms)} chars:${run.output_chars ?? '-'}</span>`;
 }
 
-/* ── Run Now ── */
-async function loadRunNowUrl() {
-  try {
-    // We can get the URL from the worker via a special endpoint, or just hardcode it if needed.
-    // Since GITHUB_ACTIONS_URL is a worker env var, let's fetch a lightweight endpoint.
-    // But there's no such endpoint defined. We can just leave the href as '#' and let
-    // the worker inject it when serving the HTML, OR we can add a small endpoint.
-    // For now, the worker will replace {{GITHUB_ACTIONS_URL}} in the HTML if needed,
-    // or we can serve it from a /api/env endpoint.
-    // Simplest: the worker serves the HTML and replaces a placeholder.
-  } catch { }
-}
-
 /* ── Helpers ── */
 function esc(s) {
   if (s == null) return '';
@@ -371,8 +355,18 @@ function fmtNum(n) {
 }
 
 /* ── Boot ── */
-// If token is already set (page reload), check and init
 (async () => {
+  // Load env vars
+  try {
+    const envRes = await fetch('/api/env');
+    if (envRes.ok) {
+      const envData = await envRes.json();
+      if (envData.github_actions_url) {
+        document.getElementById('run-now-btn').href = envData.github_actions_url;
+      }
+    }
+  } catch { }
+
   if (token) {
     const ok = await checkAuth();
     if (ok) { authOverlay.classList.remove('active'); initApp(); }

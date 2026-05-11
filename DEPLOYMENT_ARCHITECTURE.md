@@ -3,8 +3,9 @@
 ## 1. 架構流程（文字圖）
 
 ```text
-[Cloudflare Worker]
-  GET /               → Admin UI (HTML, inline in Worker)
+[Cloudflare Worker + Assets]
+  GET /, /style.css, /app.js  → Static files (Assets binding)
+  GET /api/env                → GITHUB_ACTIONS_URL (for frontend)
   GET /api/config     ←──────────────────── [Cloudflare KV]
   POST /api/config     ──────────────────── KV_STORE
   GET /api/checkpoint ←────────────────────   providers_config
@@ -34,14 +35,14 @@
 
 | 元件 | 職責 |
 | :-- | :-- |
-| Cloudflare Worker (JS) | API 閘道 + Admin UI 前端（同一個 Worker）、Auth、KV 讀寫、Anti-IDOR |
+| Cloudflare Worker (JS) | API 閘道、Auth、KV 讀寫、Anti-IDOR、/api/env 回傳環境變數 |
+| Cloudflare Assets | Admin UI 靜態檔案（public/ 目錄：index.html、style.css、app.js） |
 | Cloudflare KV | providers_config、run_checkpoint、最新測試結果儲存 |
 | GitHub Actions | 執行 runner.py（Python）：抓模型、測試、benchmark、上傳結果 |
 
 ## 3. 端點對照表
 
-| Endpoint | 方向 | 用途 |
-| :-- | :-- | :-- |
+| `GET /api/env` | 前端 -> Worker | 回傳環境變數（github_actions_url） |
 | `GET /api/config` | GHA / 前端 -> Worker | 讀取 provider 設定（api_key 以 masked 版本回傳給前端；GHA 需完整值，Worker 視呼叫者決定） |
 | `POST /api/config` | 前端 -> Worker | 更新 provider 設定 |
 | `GET /api/checkpoint` | GHA -> Worker | 讀取續跑進度 |
@@ -87,8 +88,12 @@ KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 api-test/
 ├── runner.py              # 唯一 Python 執行腳本
 ├── worker/
-│   └── index.js           # Cloudflare Worker（API + 前端 HTML）
-├── wrangler.toml          # Worker 部署設定
+│   └── index.js           # Cloudflare Worker（API endpoints）
+├── public/                # Admin UI 靜態檔案（Assets binding）
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+├── wrangler.toml          # Worker 部署設定（含 assets binding）
 ├── .github/
 │   └── workflows/
 │       └── run.yml        # GitHub Actions workflow
@@ -112,12 +117,14 @@ api-test/
 3. 新增 `.github/workflows/run.yml`（含 `workflow_dispatch` + `schedule` + `concurrency`）
 4. 手動觸發 workflow，做一次完整端到端驗證
 
-**Batch 3 — 前端 Admin UI（內嵌在 Worker）**
-1. 在 `worker/index.js` 新增 `GET /` 路由，回傳 Admin UI HTML
-2. 實作 config 管理頁（CRUD providers）
-3. 實作結果查看頁（scorecard + benchmark 排序展示）
-4. Run Now 按鈕連結到 `GITHUB_ACTIONS_URL`
-5. 重新 `npx wrangler deploy`
+**Batch 3 — 前端 Admin UI（Assets 模式）**
+1. 建立 `public/` 目錄，放入 `index.html`、`style.css`、`app.js`
+2. 在 `wrangler.toml` 配置 `[assets]` binding 指向 `./public`
+3. 實作 config 管理頁（CRUD providers）
+4. 實作結果查看頁（scorecard + benchmark 排序展示）
+5. Worker 新增 `GET /api/env` 回傳 `GITHUB_ACTIONS_URL`
+6. 前端 JS boot 時 fetch `/api/env` 設置 Run Now 按鈕
+7. 執行 `npx wrangler deploy`
 
 ## 7. 並行保護
 

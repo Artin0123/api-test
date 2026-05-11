@@ -2,7 +2,7 @@
 
 ## 0. 架構與原則
 
-- 架構：Cloudflare Pages + Cloudflare Worker + KV + GitHub Actions (Python)
+- 架構：Cloudflare Worker + Assets（靜態檔案） + KV + GitHub Actions (Python)
 - 安全最小必做：
   1. 所有管理/寫入 API 必須驗證 `MASTER_API_TOKEN`
   2. 後端 anti-IDOR（驗身份 + 驗資源範圍）
@@ -70,7 +70,10 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 
 管理 API 一律驗證：`Authorization: Bearer <MASTER_API_TOKEN>`
 
-1. `GET /api/config`
+1. `GET /api/env`
+- 回傳環境變數 `{ github_actions_url: string | null }`（供前端動態設置 Run Now 按鈕）
+
+2. `GET /api/config`
 - 回傳 `providers_config`（`api_key` 欄位以 masked 版本回傳，例如 `nvap***co`，不暴露完整值）
 
 2. `POST /api/config`
@@ -91,7 +94,7 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - 只接受「較新 run」：若 `finished_at` 比目前 `latest_run_meta.finished_at` 舊，回 `409`
 - Anti-IDOR：若 `items[*].provider_id` 不在 `providers_config` 內，回 `400`
 
-7. `GET /api/results`
+8. `GET /api/results`
 - 前端讀最新結果（可公開或加簡單保護）
 
 ## 4. run_id 與 checkpoint 格式（固定）
@@ -329,6 +332,6 @@ TTFT 規則：
 
 ## 14. 實作批次順序
 
-**Batch 1**：Cloudflare Worker API（7 endpoints + KV binding）→ 語言：JavaScript
+**Batch 1**：Cloudflare Worker API（8 endpoints + KV binding）→ 語言：JavaScript
 **Batch 2**：`runner.py` + GHA workflow YAML
-**Batch 3**：Admin UI（內嵌在 Worker，`GET /` 回傳 HTML），不需要 Cloudflare Pages
+**Batch 3**：Admin UI（Assets 模式，`public/` 目錄靜態檔案 + `GET /api/env`）
