@@ -24,6 +24,18 @@ const ROUTES = {
 const VALID_TYPES = new Set(["openai", "ollama", "gemini"]);
 const VALID_MODES = new Set(["thinking", "vision"]);
 
+const DEFAULT_ENDPOINT_PATH = {
+  openai: "/v1/chat/completions",
+  ollama: "/api/chat",
+  gemini: "/v1beta/models/{model}:streamGenerateContent?alt=sse",
+};
+
+const DEFAULT_MODELS_ENDPOINT = {
+  openai: "/v1/models",
+  ollama: "/api/tags",
+  gemini: "/v1beta/models",
+};
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export default {
@@ -63,6 +75,25 @@ function text(msg, status = 200) {
 function maskKey(key) {
   if (!key || key.length <= 6) return "***";
   return key.slice(0, 4) + "***" + key.slice(-2);
+}
+
+function asNonEmptyString(value, fallback = "") {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim();
+  return normalized || fallback;
+}
+
+function normalizeProvider(p) {
+  const providerType = p.provider_type;
+  return {
+    ...p,
+    endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
+    models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
+    benchmark_enabled:
+      typeof p.benchmark_enabled === "boolean"
+        ? p.benchmark_enabled
+        : (typeof p.enabled === "boolean" ? p.enabled : true),
+  };
 }
 
 // ── GET /api/env ──────────────────────────────────────────────────────────────
@@ -113,9 +144,9 @@ async function handlePostConfig(request, env) {
       return json({ error: `Invalid provider_type: ${p.provider_type}` }, 400);
     if (!VALID_MODES.has(p.mode))
       return json({ error: `Invalid mode: ${p.mode}` }, 400);
-    if (typeof p.models_endpoint !== "string" || !p.models_endpoint.trim())
-      return json({ error: `models_endpoint required for provider: ${p.provider_id}` }, 400);
   }
+
+  body.providers = body.providers.map(normalizeProvider);
 
   body.updated_at = new Date().toISOString();
   await env.KV_STORE.put("providers_config", JSON.stringify(body));

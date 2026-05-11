@@ -19,7 +19,7 @@
   1) 生成 run_id（{UTC_datetime}_{random_6chars}）
   2) GET /api/config
   3) GET /api/checkpoint（run_id 不符則重頭，符合則續跑）
-  4) 自動 GET models_endpoint 取模型列表（失敗或空列表則跳過該 provider）
+  4) 自動 GET models_endpoint 取模型列表（若留空則依 provider_type 套預設；失敗或空列表則跳過該 provider）
   5) 執行 tester（timeout/retry/thinking detect/計時 total_time_ms）
      └─ 每 CHECKPOINT_EVERY_N 個模型 POST /api/checkpoint
   6) 執行 benchmark（success models，3 runs）
@@ -39,6 +39,8 @@
 | Cloudflare Assets | Admin UI 靜態檔案（public/ 目錄：index.html、style.css、app.js） |
 | Cloudflare KV | providers_config、run_checkpoint、最新測試結果儲存 |
 | GitHub Actions | 執行 runner.py（Python）：抓模型、測試、benchmark、上傳結果 |
+
+補充：`providers_config.benchmark_enabled` 只控制 benchmark 階段是否執行，不影響 tester 主流程。
 
 ## 3. 端點對照表
 

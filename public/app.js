@@ -74,6 +74,32 @@ const formError = document.getElementById('form-error');
 
 let currentProviders = [];
 
+const DEFAULT_ENDPOINT_PATH = {
+  openai: '/v1/chat/completions',
+  ollama: '/api/chat',
+  gemini: '/v1beta/models/{model}:streamGenerateContent?alt=sse',
+};
+
+const DEFAULT_MODELS_ENDPOINT = {
+  openai: '/v1/models',
+  ollama: '/api/tags',
+  gemini: '/v1beta/models',
+};
+
+function getDefaultEndpointPath(providerType) {
+  return DEFAULT_ENDPOINT_PATH[providerType] || '';
+}
+
+function getDefaultModelsEndpoint(providerType) {
+  return DEFAULT_MODELS_ENDPOINT[providerType] || '';
+}
+
+function isBenchmarkEnabled(provider) {
+  if (typeof provider?.benchmark_enabled === 'boolean') return provider.benchmark_enabled;
+  if (typeof provider?.enabled === 'boolean') return provider.enabled;
+  return true;
+}
+
 addProviderBtn.addEventListener('click', () => {
   resetForm();
   providerFormCard.classList.remove('hidden');
@@ -89,24 +115,22 @@ providerForm.addEventListener('submit', async (e) => {
   formError.textContent = '';
 
   const idx = parseInt(formIndex.value, 10);
+  const providerType = document.getElementById('p-provider_type').value;
+  const endpointPathInput = document.getElementById('p-endpoint_path').value.trim();
+  const modelsEndpointInput = document.getElementById('p-models_endpoint').value.trim();
   const p = {
     provider_id: document.getElementById('p-provider_id').value.trim(),
-    provider_type: document.getElementById('p-provider_type').value,
+    provider_type: providerType,
     mode: document.getElementById('p-mode').value,
     api_base: document.getElementById('p-api_base').value.trim(),
-    endpoint_path: document.getElementById('p-endpoint_path').value.trim(),
-    models_endpoint: document.getElementById('p-models_endpoint').value.trim() || undefined,
+    endpoint_path: endpointPathInput || getDefaultEndpointPath(providerType),
+    models_endpoint: modelsEndpointInput || getDefaultModelsEndpoint(providerType),
     api_key: document.getElementById('p-api_key').value.trim(),
-    enabled: document.getElementById('p-enabled').checked,
+    benchmark_enabled: document.getElementById('p-benchmark-enabled').checked,
   };
 
-  if (!p.provider_id || !p.provider_type || !p.mode || !p.api_base || !p.endpoint_path || !p.api_key) {
+  if (!p.provider_id || !p.provider_type || !p.mode || !p.api_base || !p.api_key) {
     formError.textContent = '請填寫所有必填欄位';
-    return;
-  }
-
-  if (!p.models_endpoint) {
-    formError.textContent = '請填寫 models_endpoint';
     return;
   }
 
@@ -152,19 +176,22 @@ async function loadConfig() {
 function renderProviders() {
   providersTbody.innerHTML = '';
   if (currentProviders.length === 0) {
-    providersTbody.innerHTML = '<tr><td colspan="9" class="cell-empty">尚無 Provider</td></tr>';
+    providersTbody.innerHTML = '<tr><td colspan="9" class="cell-empty">尚無供應商</td></tr>';
     return;
   }
   currentProviders.forEach((p, i) => {
+    const endpointPath = p.endpoint_path || getDefaultEndpointPath(p.provider_type);
+    const modelsEndpoint = p.models_endpoint || getDefaultModelsEndpoint(p.provider_type);
+    const benchmarkEnabled = isBenchmarkEnabled(p);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><code>${esc(p.provider_id)}</code></td>
       <td>${esc(p.provider_type)}</td>
       <td>${esc(p.mode)}</td>
       <td><code>${esc(p.api_base)}</code></td>
-      <td><code>${esc(p.endpoint_path)}</code></td>
-      <td><code>${esc(p.models_endpoint || '-')}</code></td>
-      <td>${p.enabled ? '<span class="status-ok">啟用</span>' : '<span class="status-fail">停用</span>'}</td>
+      <td><code>${esc(endpointPath)}</code></td>
+      <td><code>${esc(modelsEndpoint)}</code></td>
+      <td>${benchmarkEnabled ? '<span class="status-ok">執行</span>' : '<span class="status-fail">略過</span>'}</td>
       <td>${esc(p.api_key)}</td>
       <td class="cell-actions">
         <button class="btn btn-sm btn-ghost" data-idx="${i}" data-action="edit">編輯</button>
@@ -190,10 +217,10 @@ function editProvider(idx) {
   document.getElementById('p-provider_type').value = p.provider_type;
   document.getElementById('p-mode').value = p.mode;
   document.getElementById('p-api_base').value = p.api_base;
-  document.getElementById('p-endpoint_path').value = p.endpoint_path;
+  document.getElementById('p-endpoint_path').value = p.endpoint_path || '';
   document.getElementById('p-models_endpoint').value = p.models_endpoint || '';
   document.getElementById('p-api_key').value = p.api_key;
-  document.getElementById('p-enabled').checked = p.enabled;
+  document.getElementById('p-benchmark-enabled').checked = isBenchmarkEnabled(p);
   providerFormCard.classList.remove('hidden');
   providerFormCard.scrollIntoView({ behavior: 'smooth' });
 }
@@ -210,7 +237,7 @@ function resetForm() {
   formIndex.value = -1;
   formTitle.textContent = '新增供應商';
   providerForm.reset();
-  document.getElementById('p-enabled').checked = true;
+  document.getElementById('p-benchmark-enabled').checked = true;
   formError.textContent = '';
 }
 

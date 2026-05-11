@@ -45,6 +45,18 @@ VISION_IMAGE_B64  = (
     "YW50LWJhc2VsaW5lPSJtaWRkbGUiPk1FT1c8L3RleHQ+PC9zdmc+"
 )
 
+DEFAULT_ENDPOINT_PATHS = {
+    "openai": "/v1/chat/completions",
+    "ollama": "/api/chat",
+    "gemini": "/v1beta/models/{model}:streamGenerateContent?alt=sse",
+}
+
+DEFAULT_MODELS_ENDPOINTS = {
+    "openai": "/v1/models",
+    "ollama": "/api/tags",
+    "gemini": "/v1beta/models",
+}
+
 
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
@@ -66,6 +78,18 @@ def normalize_url(base: str, path: str) -> str:
     if path.startswith("http://") or path.startswith("https://"):
         return path
     return f"{base.rstrip('/')}/{path.lstrip('/')}"
+
+def pick_endpoint(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return fallback
+
+def is_benchmark_enabled(provider: dict) -> bool:
+    if isinstance(provider.get("benchmark_enabled"), bool):
+        return provider["benchmark_enabled"]
+    if isinstance(provider.get("enabled"), bool):
+        return provider["enabled"]
+    return True
 
 # ── Worker client ──────────────────────────────────────────────────────────────
 
@@ -296,11 +320,7 @@ def build_request(provider: dict, model: str, prompt: str) -> tuple[str, dict, d
     api_base = provider["api_base"]
     api_key  = provider["api_key"]
     mode     = provider["mode"]
-    endpoint = provider.get("endpoint_path", {
-        "openai": "/v1/chat/completions",
-        "ollama": "/api/chat",
-        "gemini": f"/v1beta/models/{{model}}:streamGenerateContent?alt=sse",
-    }[ptype])
+    endpoint = pick_endpoint(provider.get("endpoint_path"), DEFAULT_ENDPOINT_PATHS[ptype])
 
     ua = "api-tester/2.0 runner"
 
@@ -358,10 +378,7 @@ def fetch_models(provider: dict) -> list[str]:
     ptype    = provider["provider_type"]
     api_base = provider["api_base"]
     api_key  = provider.get("api_key", "")
-    endpoint = provider.get("models_endpoint")
-    if not isinstance(endpoint, str) or not endpoint.strip():
-        print("  [models endpoint missing] → skip provider (models_endpoint is required)")
-        return []
+    endpoint = pick_endpoint(provider.get("models_endpoint"), DEFAULT_MODELS_ENDPOINTS[ptype])
     url      = normalize_url(api_base, endpoint)
 
     headers: dict = {"User-Agent": "api-tester/2.0 runner"}
@@ -375,7 +392,7 @@ def fetch_models(provider: dict) -> list[str]:
         with urllib_request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode())
     except Exception as exc:
-        print(f"  [models fetch failed: {exc}] → skip provider (models_endpoint only)")
+        print(f"  [models fetch failed: {exc}] → skip provider")
         return []
 
     models: list[str] = []
@@ -482,9 +499,6 @@ def run_tester(
     since_last_ck = 0
 
     for p_idx, provider in enumerate(providers):
-        if not provider.get("enabled", True):
-            continue
-
         pid    = provider["provider_id"]
         models = fetch_models(provider)
         total  = len(models)
@@ -535,6 +549,8 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
         model  = sc["model"]
         provider = providers_by_id.get(pid)
         if not provider:
+            continue
+        if not is_benchmark_enabled(provider):
             continue
 
         mode   = provider["mode"]
@@ -630,9 +646,9 @@ def main() -> int:
         print(f"[error] GET /api/config failed: {exc}")
         return 1
 
-    providers: list[dict] = [p for p in config.get("providers") or [] if p.get("enabled", True)]
+    providers: list[dict] = config.get("providers") or []
     if not providers:
-        print("[error] No enabled providers in config")
+        print("[error] No providers in config")
         return 1
 
     print(f"Providers: {[p['provider_id'] for p in providers]}")

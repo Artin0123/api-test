@@ -28,7 +28,7 @@ Namespace: `KV_STORE`（單一）
     {
       "provider_id": "nvidia",
       "provider_type": "openai",
-      "enabled": true,
+      "benchmark_enabled": true,
       "api_base": "https://integrate.api.nvidia.com",
       "endpoint_path": "/v1/chat/completions",
       "api_key": "nvapi-xxx",
@@ -51,7 +51,11 @@ Namespace: `KV_STORE`（單一）
 | `ollama` | `/api/tags` |
 | `gemini` | `/v1beta/models` |
 
-**邏輯**：`models_endpoint` 為必填。runner 執行時一律 GET `models_endpoint` 抓取最新模型列表；若抓取失敗或回傳空列表，該 provider 會被跳過。
+**邏輯**：`models_endpoint` 可留空，留空時依 `provider_type` 套預設值。runner 執行時一律 GET `models_endpoint` 抓取最新模型列表；若抓取失敗或回傳空列表，該 provider 會被跳過。
+
+`endpoint_path` 同樣可留空，留空時依 `provider_type` 套預設值。
+
+`benchmark_enabled` 只控制是否執行 benchmark，不影響 tester 主流程。
 
 只有跑完後的 JSON 結果（scorecard / benchmark）才需要保存至 KV，模型列表本身不做持久化。
 
