@@ -79,8 +79,8 @@ KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 | 參數 | 值 |
 | :-- | :-- |
 | `TIMEOUT_SECONDS` | `30` |
-| `MAX_RETRIES` | `2`（總嘗試 3 次） |
-| `RETRY_BACKOFF_SECONDS` | `[0.8, 1.6]` |
+| `MAX_RETRIES` | `1`（總嘗試 2 次） |
+| `RETRY_SLEEP_SECONDS` | `1.0`（每次重試前固定等待 1 秒） |
 | `BENCHMARK_RUNS_PER_MODEL` | `3` |
 | `CHECKPOINT_EVERY_N` | `3` |
 

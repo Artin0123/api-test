@@ -26,8 +26,8 @@ from urllib import error, request as urllib_request
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 TIMEOUT_SECONDS          = 30
-MAX_RETRIES              = 2
-RETRY_BACKOFF_SECONDS    = [0.8, 1.6]
+MAX_RETRIES              = 1
+RETRY_SLEEP_SECONDS      = 1.0
 BENCHMARK_RUNS_PER_MODEL = 3
 CHECKPOINT_EVERY_N       = 3
 
@@ -435,8 +435,7 @@ def test_model(provider: dict, model: str) -> dict:
 
     for attempt in range(MAX_RETRIES + 1):
         if attempt > 0:
-            backoff = RETRY_BACKOFF_SECONDS[min(attempt - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
-            time.sleep(backoff)
+            time.sleep(RETRY_SLEEP_SECONDS)
             retry_count += 1
 
         try:
@@ -517,8 +516,8 @@ def run_tester(
             items.append(item)
             completed_set.add(key)
 
-            status = "ok" if item["success"] else f"fail({item['error_type'] or 'no_answer'})"
-            think  = " +think" if item["has_thinking"] else ""
+            status = "ok" if item["success"] else f"fail ({item['error_type'] or 'no_answer'})"
+            think  = " (think)" if item["has_thinking"] else ""
             print(f" → {status}{think}  {item['total_time_ms']}ms  retry={item['retry_count']}")
 
             since_last_ck += 1
@@ -576,7 +575,7 @@ def run_benchmark(providers_by_id: dict[str, dict], scorecard_items: list[dict])
                 total_ms = round((time.perf_counter() - t0) * 1000, 2)
                 runs.append({"run_index": ri, "total_time_ms": total_ms, "ttft_ms": None, "output_chars": 0,
                               "error": classify_error(exc)})
-                print(f" err({classify_error(exc)})", end="", flush=True)
+                print(f" err ({classify_error(exc)})", end="", flush=True)
 
         valid_times = [r["total_time_ms"] for r in runs if "error" not in r]
         avg = round(sum(valid_times) / len(valid_times), 2) if valid_times else None
