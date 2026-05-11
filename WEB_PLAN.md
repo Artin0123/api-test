@@ -13,11 +13,9 @@
 
 ## 1. KV 設計
 
-Namespace 1: `API_KEYS_VAULT`
+Namespace: `KV_STORE`（單一）
 - `providers_config`
 - `run_checkpoint`
-
-Namespace 2: `TEST_RESULTS`
 - `latest_scorecard`
 - `latest_benchmark`
 - `latest_run_meta`

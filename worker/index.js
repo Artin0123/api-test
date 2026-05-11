@@ -1,9 +1,9 @@
 /**
- * Cloudflare Worker — API Gateway
+ * Cloudflare Worker API Gateway
  *
  * KV bindings required:
- *   API_KEYS_VAULT  → providers_config, run_checkpoint
- *   TEST_RESULTS    → latest_scorecard, latest_benchmark, latest_run_meta
+ *   KV_STORE  providers_config, run_checkpoint,
+ *             latest_scorecard, latest_benchmark, latest_run_meta
  *
  * Secrets required:
  *   MASTER_API_TOKEN
@@ -11,13 +11,13 @@
  */
 
 const ROUTES = {
-  "GET /api/config":        handleGetConfig,
-  "POST /api/config":       handlePostConfig,
-  "GET /api/checkpoint":    handleGetCheckpoint,
-  "POST /api/checkpoint":   handlePostCheckpoint,
+  "GET /api/config": handleGetConfig,
+  "POST /api/config": handlePostConfig,
+  "GET /api/checkpoint": handleGetCheckpoint,
+  "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
-  "POST /api/results":      handlePostResults,
-  "GET /api/results":       handleGetResults,
+  "POST /api/results": handlePostResults,
+  "GET /api/results": handleGetResults,
 };
 
 const VALID_TYPES = new Set(["openai", "ollama", "gemini"]);
@@ -65,13 +65,13 @@ function maskKey(key) {
 }
 
 // ── GET /api/config ───────────────────────────────────────────────────────────
-// ?full=1 + auth → returns complete api_key (for GHA)
-// default + auth → returns masked api_key (for frontend)
+// ?full=1 + auth �?returns complete api_key (for GHA)
+// default + auth �?returns masked api_key (for frontend)
 
 async function handleGetConfig(request, env, url) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
 
-  const raw = await env.API_KEYS_VAULT.get("providers_config");
+  const raw = await env.KV_STORE.get("providers_config");
   if (!raw) return json({ providers: [], updated_at: null });
 
   const config = JSON.parse(raw);
@@ -109,7 +109,7 @@ async function handlePostConfig(request, env) {
   }
 
   body.updated_at = new Date().toISOString();
-  await env.API_KEYS_VAULT.put("providers_config", JSON.stringify(body));
+  await env.KV_STORE.put("providers_config", JSON.stringify(body));
   return json({ ok: true });
 }
 
@@ -118,7 +118,7 @@ async function handlePostConfig(request, env) {
 async function handleGetCheckpoint(request, env) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
 
-  const raw = await env.API_KEYS_VAULT.get("run_checkpoint");
+  const raw = await env.KV_STORE.get("run_checkpoint");
   if (!raw) return json({ exists: false });
   return json(JSON.parse(raw));
 }
@@ -135,7 +135,7 @@ async function handlePostCheckpoint(request, env) {
   if (!body.run_id) return json({ error: "run_id required" }, 400);
 
   body.updated_at = new Date().toISOString();
-  await env.API_KEYS_VAULT.put("run_checkpoint", JSON.stringify(body));
+  await env.KV_STORE.put("run_checkpoint", JSON.stringify(body));
   return json({ ok: true });
 }
 
@@ -144,7 +144,7 @@ async function handlePostCheckpoint(request, env) {
 async function handleDeleteCheckpoint(request, env) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
 
-  await env.API_KEYS_VAULT.delete("run_checkpoint");
+  await env.KV_STORE.delete("run_checkpoint");
   return json({ ok: true });
 }
 
@@ -163,7 +163,7 @@ async function handlePostResults(request, env) {
   }
 
   // Anti-IDOR: all provider_ids must be registered in config
-  const configRaw = await env.API_KEYS_VAULT.get("providers_config");
+  const configRaw = await env.KV_STORE.get("providers_config");
   if (configRaw) {
     const config = JSON.parse(configRaw);
     const validIds = new Set((config.providers || []).map((p) => p.provider_id));
@@ -175,7 +175,7 @@ async function handlePostResults(request, env) {
   }
 
   // 409 if result is not newer
-  const existingMetaRaw = await env.TEST_RESULTS.get("latest_run_meta");
+  const existingMetaRaw = await env.KV_STORE.get("latest_run_meta");
   if (existingMetaRaw) {
     const existing = JSON.parse(existingMetaRaw);
     if (body.finished_at <= existing.finished_at) {
@@ -184,34 +184,34 @@ async function handlePostResults(request, env) {
   }
 
   const run_meta = {
-    run_id:      body.run_id,
-    started_at:  body.started_at,
+    run_id: body.run_id,
+    started_at: body.started_at,
     finished_at: body.finished_at,
   };
 
   await Promise.all([
-    env.TEST_RESULTS.put("latest_scorecard", JSON.stringify(body.scorecard)),
-    env.TEST_RESULTS.put("latest_benchmark", JSON.stringify(body.benchmark)),
-    env.TEST_RESULTS.put("latest_run_meta",  JSON.stringify(run_meta)),
+    env.KV_STORE.put("latest_scorecard", JSON.stringify(body.scorecard)),
+    env.KV_STORE.put("latest_benchmark", JSON.stringify(body.benchmark)),
+    env.KV_STORE.put("latest_run_meta", JSON.stringify(run_meta)),
   ]);
 
   return json({ ok: true });
 }
 
 // ── GET /api/results ──────────────────────────────────────────────────────────
-// Public endpoint — no auth required
+// Public endpoint �?no auth required
 
 async function handleGetResults(request, env) {
   const [scorecardRaw, benchmarkRaw, metaRaw] = await Promise.all([
-    env.TEST_RESULTS.get("latest_scorecard"),
-    env.TEST_RESULTS.get("latest_benchmark"),
-    env.TEST_RESULTS.get("latest_run_meta"),
+    env.KV_STORE.get("latest_scorecard"),
+    env.KV_STORE.get("latest_benchmark"),
+    env.KV_STORE.get("latest_run_meta"),
   ]);
 
   if (!metaRaw) return json({ exists: false });
 
   return json({
-    meta:      JSON.parse(metaRaw),
+    meta: JSON.parse(metaRaw),
     scorecard: scorecardRaw ? JSON.parse(scorecardRaw) : null,
     benchmark: benchmarkRaw ? JSON.parse(benchmarkRaw) : null,
   });

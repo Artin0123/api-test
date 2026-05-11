@@ -6,14 +6,12 @@
 [Cloudflare Worker]
   GET /               → Admin UI (HTML, inline in Worker)
   GET /api/config     ←──────────────────── [Cloudflare KV]
-  POST /api/config     ──────────────────── API_KEYS_VAULT
+  POST /api/config     ──────────────────── KV_STORE
   GET /api/checkpoint ←────────────────────   providers_config
   POST /api/checkpoint ────────────────────   run_checkpoint
-  DELETE /api/checkpoint ──────────────────
-  POST /api/results    ────────────────────  TEST_RESULTS
-  GET /api/results    ←────────────────────   latest_scorecard
-                                              latest_benchmark
-                                              latest_run_meta
+  DELETE /api/checkpoint ──────────────────   latest_scorecard
+  POST /api/results    ────────────────────   latest_benchmark
+  GET /api/results    ←────────────────────   latest_run_meta
         ^
         |
 [GitHub Actions Runner (runner.py, cron or manual)]
@@ -62,8 +60,9 @@
 | `GITHUB_ACTIONS_URL` | 前端「立即執行」按鈕跳轉網址（GitHub workflow 頁面） |
 
 KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
-- `API_KEYS_VAULT`
-- `TEST_RESULTS`
+- `KV_STORE`（單一 namespace，儲存全部 key）
+
+所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard`、`latest_benchmark`、`latest_run_meta`
 
 ### 4.2 GitHub Actions Secrets / Variables
 
@@ -102,7 +101,7 @@ api-test/
 ## 6. 部署順序（最短路徑）
 
 **Batch 1 — Worker API**
-1. 建立 Cloudflare KV（`API_KEYS_VAULT`、`TEST_RESULTS`），取得 KV ID 填入 `wrangler.toml`
+1. 建立 Cloudflare KV namespace（`KV_STORE`），取得 KV ID 填入 `wrangler.toml`
 2. 在 Worker 設定第 4.1 節變數（`MASTER_API_TOKEN`、`GITHUB_ACTIONS_URL`）
 3. 執行 `npx wrangler deploy` 部署 `worker/index.js`
 4. 用 curl 手動測試 7 個 endpoint（驗證 auth、KV 讀寫、409 邏輯）
