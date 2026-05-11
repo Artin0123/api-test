@@ -103,6 +103,9 @@ class WorkerClient:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "api-tester/2.0 runner",
+            "Cache-Control": "no-cache",
         }
         req = urllib_request.Request(url, data=data, headers=headers, method=method)
         try:
