@@ -381,3 +381,139 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
     padding: 0.58rem 0.75rem;
   }
 }
+
+@media (max-width: 640px) {
+  body {
+    background: linear-gradient(180deg, var(--bg-start), var(--bg-end));
+  }
+
+  .app-header {
+    position: static;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+  }
+
+  .app-header h1 {
+    font-size: 1.05rem;
+  }
+
+  .tab-nav {
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+
+  main {
+    padding: 0.75rem;
+  }
+
+  .section-surface {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .card,
+  .meta-card {
+    padding: 0.85rem;
+    border-radius: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .panel-header {
+    margin-bottom: 0.7rem;
+  }
+
+  .panel-title-group p {
+    font-size: 0.8rem;
+  }
+
+  .panel-header .header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .panel-header .header-actions .btn {
+    width: 100%;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+  }
+
+  .field input,
+  .field select {
+    min-height: 2.5rem;
+    font-size: 0.95rem;
+  }
+
+  .field-inline {
+    align-items: flex-start;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  .summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-card {
+    padding: 0.75rem;
+  }
+
+  .kv-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kv-grid .kv-item {
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .kv-grid .kv-key {
+    min-width: 0;
+  }
+
+  .table-wrap {
+    margin: 0 -0.1rem;
+    padding-bottom: 0.35rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    min-width: 700px;
+    font-size: 0.78rem;
+  }
+
+  .data-table th {
+    position: static;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.45rem 0.55rem;
+  }
+
+  .data-table .cell-actions {
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 4.3rem;
+  }
+
+  .data-table .cell-actions .btn {
+    width: 100%;
+  }
+}

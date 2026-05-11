@@ -65,6 +65,7 @@ const configError = document.getElementById('config-error');
 const providersTableWrap = document.getElementById('providers-table-wrap');
 const providersTbody = document.getElementById('providers-tbody');
 const addProviderBtn = document.getElementById('add-provider-btn');
+const revealKeysBtn = document.getElementById('reveal-keys-btn');
 const providerFormCard = document.getElementById('provider-form-card');
 const providerForm = document.getElementById('provider-form');
 const cancelFormBtn = document.getElementById('cancel-form-btn');
@@ -73,6 +74,7 @@ const formIndex = document.getElementById('form-index');
 const formError = document.getElementById('form-error');
 
 let currentProviders = [];
+let keysRevealed = false;
 
 const DEFAULT_ENDPOINT_PATH = {
   openai: '/v1/chat/completions',
@@ -100,6 +102,11 @@ addProviderBtn.addEventListener('click', () => {
   providerFormCard.scrollIntoView({ behavior: 'smooth' });
 });
 
+revealKeysBtn.addEventListener('click', async () => {
+  if (keysRevealed) return;
+  await loadConfig(true);
+});
+
 cancelFormBtn.addEventListener('click', () => {
   providerFormCard.classList.add('hidden');
 });
@@ -109,21 +116,28 @@ providerForm.addEventListener('submit', async (e) => {
   formError.textContent = '';
 
   const idx = parseInt(formIndex.value, 10);
+  const existing = idx >= 0 ? currentProviders[idx] : null;
   const providerType = document.getElementById('p-provider_type').value;
   const endpointPathInput = document.getElementById('p-endpoint_path').value.trim();
   const modelsEndpointInput = document.getElementById('p-models_endpoint').value.trim();
+  const apiKeyInput = document.getElementById('p-api_key').value.trim();
   const p = {
     provider_type: providerType,
     mode: document.getElementById('p-mode').value,
     api_base: document.getElementById('p-api_base').value.trim(),
     endpoint_path: endpointPathInput || getDefaultEndpointPath(providerType),
     models_endpoint: modelsEndpointInput || getDefaultModelsEndpoint(providerType),
-    api_key: document.getElementById('p-api_key').value.trim(),
+    api_key: apiKeyInput || existing?.api_key || '',
     benchmark_enabled: document.getElementById('p-benchmark-enabled').checked,
   };
 
   if (!p.provider_type || !p.mode || !p.api_base || !p.api_key) {
     formError.textContent = '請填寫所有必填欄位';
+    return;
+  }
+
+  if (idx < 0 && !apiKeyInput) {
+    formError.textContent = '新增供應商時必須填寫 api_key';
     return;
   }
 
@@ -147,16 +161,20 @@ providerForm.addEventListener('submit', async (e) => {
   }
 });
 
-async function loadConfig() {
+async function loadConfig(full = false) {
   configLoading.classList.remove('hidden');
   configError.classList.add('hidden');
   providersTableWrap.classList.add('hidden');
 
   try {
-    const res = await fetch('/api/config', { headers: authHeaders() });
+    const url = full ? '/api/config?full=1' : '/api/config';
+    const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     currentProviders = data.providers || [];
+    keysRevealed = full;
+    revealKeysBtn.textContent = full ? '已顯示完整 key' : '顯示完整 key';
+    revealKeysBtn.disabled = full;
     renderProviders();
     configLoading.classList.add('hidden');
     providersTableWrap.classList.remove('hidden');
@@ -211,7 +229,7 @@ function editProvider(idx) {
   document.getElementById('p-api_base').value = p.api_base;
   document.getElementById('p-endpoint_path').value = p.endpoint_path || '';
   document.getElementById('p-models_endpoint').value = p.models_endpoint || '';
-  document.getElementById('p-api_key').value = p.api_key;
+  document.getElementById('p-api_key').value = '';
   document.getElementById('p-benchmark-enabled').checked = !!p.benchmark_enabled;
   providerFormCard.classList.remove('hidden');
   providerFormCard.scrollIntoView({ behavior: 'smooth' });

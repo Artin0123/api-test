@@ -97,6 +97,10 @@ function providerKey(p) {
   return `${p.provider_type}::${p.mode}::${p.api_base}`;
 }
 
+function looksMaskedKey(value) {
+  return typeof value === "string" && value.includes("***");
+}
+
 // ── GET /api/env ──────────────────────────────────────────────────────────────
 
 async function handleGetEnv(request, env) {
@@ -146,11 +150,38 @@ async function handlePostConfig(request, env) {
       return json({ error: `Invalid mode: ${p.mode}` }, 400);
     if (typeof p.api_base !== "string" || !p.api_base.trim())
       return json({ error: "api_base required" }, 400);
-    if (typeof p.api_key !== "string" || !p.api_key.trim())
-      return json({ error: "api_key required" }, 400);
   }
 
-  body.providers = body.providers.map(normalizeProvider);
+  let existingConfig = { providers: [] };
+  const existingRaw = await env.KV_STORE.get("providers_config");
+  if (existingRaw) {
+    try {
+      existingConfig = JSON.parse(existingRaw);
+    } catch {
+      existingConfig = { providers: [] };
+    }
+  }
+
+  const existingByKey = new Map((existingConfig.providers || []).map((p) => [providerKey(p), p]));
+
+  body.providers = body.providers.map((incoming) => {
+    const normalized = normalizeProvider(incoming);
+    const k = providerKey(normalized);
+    const prev = existingByKey.get(k);
+
+    if (!normalized.api_key || looksMaskedKey(normalized.api_key)) {
+      if (prev && typeof prev.api_key === "string" && prev.api_key.trim()) {
+        normalized.api_key = prev.api_key;
+      }
+    }
+
+    return normalized;
+  });
+
+  for (const p of body.providers) {
+    if (typeof p.api_key !== "string" || !p.api_key.trim())
+      return json({ error: `api_key required for provider: ${providerKey(p)}` }, 400);
+  }
 
   const keys = new Set();
   for (const p of body.providers) {
