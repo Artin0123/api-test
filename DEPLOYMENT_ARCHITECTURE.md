@@ -12,6 +12,8 @@
   POST /api/checkpoint ────────────────────   run_checkpoint
   POST /api/results    ────────────────────   latest_scorecard:{config_fingerprint}
                                              latest_benchmark:{config_fingerprint}
+                                             results_catalog
+  GET /api/results/catalog ←─────────────────   results_catalog
   GET /api/results    ←────────────────────   (same fingerprint keys)
   DELETE /api/checkpoint ──────────────────
         ^
@@ -54,6 +56,7 @@
 | `POST /api/checkpoint` | GHA -> Worker | 更新續跑進度 |
 | `DELETE /api/checkpoint` | GHA -> Worker | 完成後清除進度 |
 | `POST /api/results` | GHA -> Worker | 上傳 scorecard / benchmark |
+| `GET /api/results/catalog` | 前端 -> Worker | 讀取 fingerprint 分組清單（供展開檢視；必要時會從 `latest_scorecard:*` 自動重建目錄） |
 | `GET /api/results` | 前端 -> Worker | 讀取目前 providers_config 對應 fingerprint 的結果 |
 
 ## 4. 部署變數清單（只列要手動填的）
@@ -68,7 +71,7 @@
 KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 - `KV_STORE`（單一 namespace，儲存全部 key）
 
-所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`
+所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`、`results_catalog`
 
 ### 4.2 GitHub Actions Secrets / Variables
 
@@ -127,7 +130,7 @@ api-test/
 1. 建立 `public/` 目錄，放入 `index.html`、`style.css`、`app.js`
 2. 在 `wrangler.toml` 配置 `[assets]` binding 指向 `./public`
 3. 實作 config 管理頁（CRUD providers）
-4. 實作結果查看頁（scorecard + benchmark 排序展示）
+4. 實作結果查看頁（fingerprint 分組展開 → provider → model 細節）
 5. Worker 新增 `GET /api/env` 回傳 `GITHUB_ACTIONS_URL`
 6. 前端 JS boot 時 fetch `/api/env` 設置 Run Now 按鈕
 7. 執行 `npx wrangler deploy`

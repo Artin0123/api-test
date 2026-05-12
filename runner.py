@@ -128,8 +128,6 @@ def build_config_fingerprint(providers: list[dict]) -> str:
                 "models_endpoint": pick_endpoint(
                     p.get("models_endpoint"), DEFAULT_MODELS_ENDPOINTS.get(ptype, "")
                 ),
-                "tester_enabled": bool(p.get("tester_enabled", True)),
-                "benchmark_enabled": bool(p.get("benchmark_enabled", True)),
             }
         )
     normalized.sort(key=lambda p: f"{p['provider_type']}::{p['mode']}::{p['api_base']}")

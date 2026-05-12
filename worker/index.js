@@ -19,6 +19,7 @@ const ROUTES = {
   "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
   "POST /api/results": handlePostResults,
+  "GET /api/results/catalog": handleGetResultsCatalog,
   "GET /api/results": handleGetResults,
 };
 
@@ -36,6 +37,9 @@ const DEFAULT_MODELS_ENDPOINT = {
   ollama: "/api/tags",
   gemini: "/v1beta/models",
 };
+
+const RESULTS_CATALOG_KEY = "results_catalog";
+const RESULTS_CATALOG_LIMIT = 100;
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -112,8 +116,6 @@ function normalizeForFingerprint(providers) {
       api_base: p.api_base || "",
       endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
       models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
-      tester_enabled: typeof p.tester_enabled === "boolean" ? p.tester_enabled : true,
-      benchmark_enabled: typeof p.benchmark_enabled === "boolean" ? p.benchmark_enabled : true,
     };
   });
 
@@ -184,6 +186,103 @@ function parseJsonOrNull(raw) {
   } catch {
     return null;
   }
+}
+
+function asFiniteNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function buildProviderCatalogSummary(scorecardItems) {
+  const grouped = new Map();
+  for (const item of scorecardItems || []) {
+    const providerType = asNonEmptyString(item?.provider_type);
+    const mode = asNonEmptyString(item?.mode);
+    const apiBase = asNonEmptyString(item?.api_base);
+    const key = `${providerType}::${mode}::${apiBase}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        provider_type: providerType,
+        mode,
+        api_base: apiBase,
+        total: 0,
+        success: 0,
+        failed: 0,
+      });
+    }
+    const row = grouped.get(key);
+    row.total += 1;
+    if (item?.success) row.success += 1;
+    else row.failed += 1;
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    const ak = `${a.api_base}::${a.provider_type}::${a.mode}`;
+    const bk = `${b.api_base}::${b.provider_type}::${b.mode}`;
+    return ak.localeCompare(bk);
+  });
+}
+
+function buildResultsCatalogEntry(configFingerprint, scorecard) {
+  const items = Array.isArray(scorecard?.items) ? scorecard.items : [];
+  const derivedSuccess = items.filter((item) => !!item?.success).length;
+  const total = asFiniteNumber(scorecard?.summary?.total, items.length);
+  const success = asFiniteNumber(scorecard?.summary?.success, derivedSuccess);
+  const failed = asFiniteNumber(scorecard?.summary?.failed, Math.max(total - success, 0));
+
+  return {
+    config_fingerprint: configFingerprint,
+    run_id: asNonEmptyString(scorecard?.run_id, null),
+    started_at: asNonEmptyString(scorecard?.started_at, null),
+    finished_at: asNonEmptyString(scorecard?.finished_at, null),
+    summary: { total, success, failed },
+    providers: buildProviderCatalogSummary(items),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function normalizeCatalogItems(items) {
+  const list = Array.isArray(items) ? items : [];
+  return list
+    .filter((item) => asFingerprint(item?.config_fingerprint))
+    .sort((a, b) => asNonEmptyString(b?.finished_at).localeCompare(asNonEmptyString(a?.finished_at)));
+}
+
+async function upsertResultsCatalog(env, configFingerprint, scorecard) {
+  const raw = await env.KV_STORE.get(RESULTS_CATALOG_KEY);
+  const existing = normalizeCatalogItems(parseJsonOrNull(raw));
+  const nextEntry = buildResultsCatalogEntry(configFingerprint, scorecard);
+  const filtered = existing.filter((item) => item.config_fingerprint !== configFingerprint);
+  const merged = [nextEntry, ...filtered]
+    .sort((a, b) => asNonEmptyString(b?.finished_at).localeCompare(asNonEmptyString(a?.finished_at)))
+    .slice(0, RESULTS_CATALOG_LIMIT);
+  await env.KV_STORE.put(RESULTS_CATALOG_KEY, JSON.stringify(merged));
+}
+
+async function rebuildResultsCatalogFromKV(env) {
+  const prefix = "latest_scorecard:";
+  let cursor = undefined;
+  const entries = [];
+
+  do {
+    const page = await env.KV_STORE.list({ prefix, cursor, limit: 1000 });
+    const names = (page.keys || []).map((k) => k.name).filter((name) => name.startsWith(prefix));
+    const rawValues = await Promise.all(names.map((name) => env.KV_STORE.get(name)));
+    for (let i = 0; i < names.length; i += 1) {
+      const fingerprint = names[i].slice(prefix.length);
+      const scorecard = parseJsonOrNull(rawValues[i]);
+      if (!scorecard) continue;
+      entries.push(buildResultsCatalogEntry(fingerprint, scorecard));
+    }
+
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+
+  const normalized = normalizeCatalogItems(entries).slice(0, RESULTS_CATALOG_LIMIT);
+  if (normalized.length) {
+    await env.KV_STORE.put(RESULTS_CATALOG_KEY, JSON.stringify(normalized));
+  }
+  return normalized;
 }
 
 async function readResultBundle(env, configFingerprint) {
@@ -387,12 +486,25 @@ async function handlePostResults(request, env) {
     env.KV_STORE.put(scorecardKey(configFingerprint), JSON.stringify(body.scorecard)),
     env.KV_STORE.put(benchmarkKey(configFingerprint), JSON.stringify(body.benchmark)),
   ]);
+  await upsertResultsCatalog(env, configFingerprint, body.scorecard);
 
   return json({ ok: true });
 }
 
+// ── GET /api/results/catalog ──────────────────────────────────────────────────
+// Public endpoint — no auth required
+
+async function handleGetResultsCatalog(request, env) {
+  const raw = await env.KV_STORE.get(RESULTS_CATALOG_KEY);
+  let items = normalizeCatalogItems(parseJsonOrNull(raw));
+  if (!items.length) {
+    items = await rebuildResultsCatalogFromKV(env);
+  }
+  return json({ items });
+}
+
 // ── GET /api/results ──────────────────────────────────────────────────────────
-// Public endpoint �?no auth required
+// Public endpoint — no auth required
 
 async function handleGetResults(request, env, url) {
   const requestedFingerprint = asFingerprint(url.searchParams.get("fingerprint"));

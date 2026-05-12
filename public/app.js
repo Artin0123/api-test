@@ -335,10 +335,7 @@ const resultsLoading = document.getElementById('results-loading');
 const resultsError = document.getElementById('results-error');
 const noResults = document.getElementById('no-results');
 const resultsContent = document.getElementById('results-content');
-const runMetaGrid = document.getElementById('run-meta-grid');
-const summaryCards = document.getElementById('summary-cards');
-const scorecardTbody = document.getElementById('scorecard-tbody');
-const benchmarkTbody = document.getElementById('benchmark-tbody');
+const resultsGroups = document.getElementById('results-groups');
 
 refreshResultsBtn.addEventListener('click', loadResults);
 
@@ -349,15 +346,16 @@ async function loadResults() {
   resultsContent.classList.add('hidden');
 
   try {
-    const res = await fetch('/api/results');
+    const res = await fetch('/api/results/catalog');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.exists) {
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
       resultsLoading.classList.add('hidden');
       noResults.classList.remove('hidden');
       return;
     }
-    renderResults(data);
+    renderResultsCatalog(items);
     resultsLoading.classList.add('hidden');
     resultsContent.classList.remove('hidden');
   } catch (err) {
@@ -367,88 +365,146 @@ async function loadResults() {
   }
 }
 
-function renderResults(data) {
-  const sc = data.scorecard || {};
-  const sourceLabel = renderResultSource(data.source);
-  runMetaGrid.innerHTML = `
-    <div class="kv-item"><span class="kv-key">執行 ID</span><span class="kv-val">${esc(sc.run_id || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">開始時間</span><span class="kv-val">${esc(sc.started_at || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">結束時間</span><span class="kv-val">${esc(sc.finished_at || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">結果指紋</span><span class="kv-val">${esc(sc.config_fingerprint || data.config_fingerprint || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">資料來源</span><span class="kv-val">${sourceLabel}</span></div>
-  `;
-  const summary = sc.summary || { total: 0, success: 0, failed: 0 };
-  summaryCards.innerHTML = `
-    <div class="summary-card"><div class="value">${summary.total}</div><div class="label">總數</div></div>
-    <div class="summary-card"><div class="value value-success">${summary.success}</div><div class="label">成功</div></div>
-    <div class="summary-card"><div class="value value-failed">${summary.failed}</div><div class="label">失敗</div></div>
-  `;
+function renderResultsCatalog(items) {
+  resultsGroups.innerHTML = items.map((item, idx) => {
+    const summary = item?.summary || {};
+    const providers = Array.isArray(item?.providers) ? item.providers.length : 0;
+    return `
+      <details class="result-group" data-fingerprint="${esc(item?.config_fingerprint || '')}" ${idx === 0 ? 'open' : ''}>
+        <summary>
+          <span class="group-title">fingerprint ${esc(shortFingerprint(item?.config_fingerprint))}</span>
+          <span class="muted-inline">run:${esc(item?.run_id || '-')} · providers:${providers} · total:${summary.total ?? 0} · success:${summary.success ?? 0}</span>
+        </summary>
+        <div class="result-group-body">
+          <div class="muted-inline">started:${esc(item?.started_at || '-')} · finished:${esc(item?.finished_at || '-')}</div>
+          <div class="result-group-detail"></div>
+        </div>
+      </details>
+    `;
+  }).join('');
 
-  const items = (sc.items || []).slice().sort((a, b) => {
+  const groups = resultsGroups.querySelectorAll('.result-group');
+  groups.forEach((group) => {
+    group.addEventListener('toggle', () => {
+      if (group.open && group.dataset.loaded !== '1') {
+        loadResultGroupDetail(group);
+      }
+    });
+  });
+  const firstOpen = Array.from(groups).find((g) => g.open);
+  if (firstOpen && firstOpen.dataset.loaded !== '1') {
+    loadResultGroupDetail(firstOpen);
+  }
+}
+
+async function loadResultGroupDetail(groupEl) {
+  const fingerprint = groupEl.dataset.fingerprint || '';
+  const detailEl = groupEl.querySelector('.result-group-detail');
+  if (!detailEl || !fingerprint) return;
+  detailEl.innerHTML = '<div class="muted-inline">載入中…</div>';
+  try {
+    const res = await fetch(`/api/results?fingerprint=${encodeURIComponent(fingerprint)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.exists) {
+      detailEl.innerHTML = '<div class="alert alert-info">此 fingerprint 無資料</div>';
+      groupEl.dataset.loaded = '1';
+      return;
+    }
+    detailEl.innerHTML = renderFingerprintDetail(data.scorecard, data.benchmark);
+    groupEl.dataset.loaded = '1';
+  } catch (err) {
+    detailEl.innerHTML = `<div class="alert alert-error">載入失敗: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderFingerprintDetail(scorecard, benchmark) {
+  const scoreItems = Array.isArray(scorecard?.items) ? scorecard.items : [];
+  const benchmarkItems = Array.isArray(benchmark?.items) ? benchmark.items : [];
+  if (!scoreItems.length) return '<div class="alert alert-info">無 scorecard 資料</div>';
+
+  const benchmarkByModel = new Map();
+  benchmarkItems.forEach((item) => {
+    const key = `${item?.provider_type || ''}::${item?.mode || ''}::${item?.api_base || ''}::${item?.model || ''}`;
+    benchmarkByModel.set(key, item);
+  });
+
+  const providerGroups = new Map();
+  scoreItems.forEach((item) => {
+    const pkey = `${item?.provider_type || ''}::${item?.mode || ''}::${item?.api_base || ''}`;
+    if (!providerGroups.has(pkey)) {
+      providerGroups.set(pkey, {
+        provider_type: item?.provider_type || '',
+        mode: item?.mode || '',
+        api_base: item?.api_base || '',
+        items: [],
+      });
+    }
+    const mkey = `${item?.provider_type || ''}::${item?.mode || ''}::${item?.api_base || ''}::${item?.model || ''}`;
+    providerGroups.get(pkey).items.push({
+      ...item,
+      benchmark: benchmarkByModel.get(mkey) || null,
+    });
+  });
+
+  const providers = Array.from(providerGroups.values()).sort((a, b) => {
+    const ak = `${a.api_base}::${a.provider_type}::${a.mode}`;
+    const bk = `${b.api_base}::${b.provider_type}::${b.mode}`;
+    return ak.localeCompare(bk);
+  });
+
+  return providers.map((provider) => renderProviderGroup(provider)).join('');
+}
+
+function renderProviderGroup(provider) {
+  const sortedItems = (provider.items || []).slice().sort((a, b) => {
     if (a.success !== b.success) return b.success ? 1 : -1;
-    const ta = a.total_time_ms ?? Infinity;
-    const tb = b.total_time_ms ?? Infinity;
-    if (ta !== tb) return ta - tb;
-    return `${a.api_base}:${a.model}`.localeCompare(`${b.api_base}:${b.model}`);
+    return (a.total_time_ms ?? Infinity) - (b.total_time_ms ?? Infinity);
   });
+  const success = sortedItems.filter((item) => item.success).length;
+  const total = sortedItems.length;
 
-  scorecardTbody.innerHTML = '';
-  if (items.length === 0) {
-    scorecardTbody.innerHTML = '<tr><td colspan="11" class="cell-empty">無資料</td></tr>';
-  } else {
-    items.forEach(it => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><code>${esc(it.api_base)}</code></td>
-        <td><code>${esc(it.model)}</code></td>
-        <td>${esc(it.provider_type)}</td>
-        <td>${esc(it.mode)}</td>
-        <td>${it.success ? '<span class="status-ok">成功</span>' : '<span class="status-fail">失敗</span>'}</td>
-        <td>${it.has_answer ? '<span class="status-ok">有</span>' : '<span class="status-fail">無</span>'}</td>
-        <td>${it.has_thinking ? '<span class="status-ok">有</span>' : '<span class="status-warn">無</span>'}</td>
-        <td>${fmtNum(it.total_time_ms)}</td>
-        <td>${esc(it.error_type || '-')}</td>
-        <td>${it.retry_count ?? 0}</td>
-        <td class="result-preview-cell">${renderResultPreview(it)}</td>
-      `;
-      scorecardTbody.appendChild(tr);
-    });
-  }
-
-  const bItems = (data.benchmark?.items || []).slice().sort((a, b) => {
-    return (a.avg_total_time_ms ?? Infinity) - (b.avg_total_time_ms ?? Infinity);
-  });
-
-  benchmarkTbody.innerHTML = '';
-  if (bItems.length === 0) {
-    benchmarkTbody.innerHTML = '<tr><td colspan="6" class="cell-empty">無資料</td></tr>';
-  } else {
-    bItems.forEach(it => {
-      const runs = it.runs || [];
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><code>${esc(it.api_base)}</code></td>
-        <td><code>${esc(it.model)}</code></td>
-        <td><strong>${fmtNum(it.avg_total_time_ms)}</strong></td>
-        <td>${runCell(runs[0])}</td>
-        <td>${runCell(runs[1])}</td>
-        <td>${runCell(runs[2])}</td>
-      `;
-      benchmarkTbody.appendChild(tr);
-    });
-  }
+  return `
+    <details class="provider-group">
+      <summary>
+        <code class="truncate-code" title="${esc(provider.api_base)}">${esc(provider.api_base)}</code>
+        <span class="muted-inline">type:${esc(provider.provider_type)} · mode:${esc(provider.mode)} · ${success}/${total}</span>
+      </summary>
+      <div class="model-list">
+        ${sortedItems.map((item) => renderModelCard(item)).join('')}
+      </div>
+    </details>
+  `;
 }
 
-function runCell(run) {
-  if (!run) return '<span class="muted-inline">-</span>';
-  return `<code>${fmtNum(run.total_time_ms)}</code> <span class="muted-inline">首字延遲:${fmtNum(run.ttft_ms)} 字元:${run.output_chars ?? '-'}</span>`;
+function renderModelCard(item) {
+  const benchmark = item?.benchmark;
+  const benchmarkAvg = benchmark ? fmtNum(benchmark.avg_total_time_ms) : '-';
+  const benchmarkText = benchmarkAvg === '-' ? '-' : `${benchmarkAvg}ms`;
+  const totalMs = fmtNum(item?.total_time_ms);
+  const totalText = totalMs === '-' ? '-' : `${totalMs}ms`;
+  const status = item?.success
+    ? '<span class="status-ok">success</span>'
+    : '<span class="status-fail">failed</span>';
+  return `
+    <div class="model-item">
+      <div class="model-head">
+        <code class="truncate-code" title="${esc(item?.model || '')}">${esc(item?.model || '-')}</code>
+        ${status}
+        <span class="muted-inline">${totalText}</span>
+      </div>
+      <div class="model-meta">${renderStatusSummary(item)}</div>
+      <div class="model-meta"><span class="preview-label">benchmark avg:</span> ${benchmarkText}</div>
+      <div class="model-preview">${renderResultPreview(item)}</div>
+    </div>
+  `;
 }
 
-function renderResultSource(source) {
-  if (source === 'requested_fingerprint') {
-    return '<span class="status-ok">指定指紋</span>';
-  }
-  return '<span class="status-ok">目前設定指紋</span>';
+function shortFingerprint(value) {
+  const s = typeof value === 'string' ? value : '';
+  if (!s) return '-';
+  if (s.length <= 16) return s;
+  return `${s.slice(0, 12)}...${s.slice(-6)}`;
 }
 
 function renderResultPreview(item) {
@@ -463,6 +519,25 @@ function renderResultPreview(item) {
 
   if (!lines.length) return '<span class="muted-inline">-</span>';
   return `<details class="preview-details"><summary>查看</summary>${lines.join('')}</details>`;
+}
+
+function renderStatusSummary(item) {
+  const lines = [];
+  lines.push(
+    item?.success
+      ? '<span class="status-ok">success</span>'
+      : '<span class="status-fail">failed</span>',
+  );
+  lines.push(
+    `answer:${item?.has_answer ? '<span class="status-ok">yes</span>' : '<span class="status-fail">no</span>'}`,
+  );
+  lines.push(
+    `thinking:${item?.has_thinking ? '<span class="status-ok">yes</span>' : '<span class="status-warn">no</span>'}`,
+  );
+  const err = item?.error_type ? esc(item.error_type) : '-';
+  const retry = item?.retry_count ?? 0;
+  lines.push(`<span class="muted-inline">error:${err} retry:${retry}</span>`);
+  return `<div class="status-summary">${lines.join(' · ')}</div>`;
 }
 
 /* ── Helpers ── */

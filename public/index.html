@@ -158,7 +158,7 @@
           <div class="panel-header">
             <div class="panel-title-group">
               <h2>最新測試結果</h2>
-              <p>檢視最近一次跑分與效能基準表現（若目前設定無資料，會顯示最新可用結果）</p>
+              <p>依 fingerprint 分組檢視各配置與供應商模型結果</p>
             </div>
             <button id="refresh-results-btn" class="btn btn-ghost">重新整理</button>
           </div>
@@ -168,54 +168,9 @@
         <div id="no-results" class="alert alert-info hidden">尚無測試結果</div>
 
         <div id="results-content" class="hidden">
-          <div class="meta-card card">
-            <h3>執行資訊</h3>
-            <div class="kv-grid" id="run-meta-grid"></div>
-          </div>
-
-          <div class="summary-cards" id="summary-cards"></div>
-
           <div class="card">
-            <h3>評分總覽 <small>(依成功狀態與總耗時排序)</small></h3>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>api_base</th>
-                    <th>模型</th>
-                    <th>類型</th>
-                    <th>模式</th>
-                    <th>成功 (success)</th>
-                    <th>有回答 (has_answer)</th>
-                    <th>有思考 (has_thinking)</th>
-                    <th>總耗時 ms</th>
-                    <th>錯誤類型 (error_type)</th>
-                    <th>重試次數</th>
-                    <th>輸出 / 錯誤預覽</th>
-                  </tr>
-                </thead>
-                <tbody id="scorecard-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <h3>效能基準 <small>(依平均總耗時排序)</small></h3>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>api_base</th>
-                    <th>模型</th>
-                    <th>平均總耗時 ms</th>
-                    <th>第 1 次</th>
-                    <th>第 2 次</th>
-                    <th>第 3 次</th>
-                  </tr>
-                </thead>
-                <tbody id="benchmark-tbody"></tbody>
-              </table>
-            </div>
+            <h3>結果分組 <small>(展開 fingerprint → provider → model)</small></h3>
+            <div id="results-groups" class="results-groups"></div>
           </div>
         </div>
       </section>

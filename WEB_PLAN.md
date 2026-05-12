@@ -18,6 +18,7 @@ Namespace: `KV_STORE`（單一）
 - `run_checkpoint`
 - `latest_scorecard:{config_fingerprint}`
 - `latest_benchmark:{config_fingerprint}`
+- `results_catalog`
 
 ## 2. providers_config 格式（固定）
 
@@ -94,10 +95,16 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - 必帶欄位：`scorecard`, `benchmark`, `config_fingerprint`
 - `scorecard` 內必帶：`run_id`, `started_at`, `finished_at`
 - 以 `config_fingerprint` 為範圍寫入最新結果（每個 fingerprint 各自只保留最新一筆）
+- 同步更新 `results_catalog`（每個 fingerprint 一筆摘要，用於前端分組列表）
 - Anti-IDOR：若 `items[*]` 無法對應到 `providers_config` 內既有 provider（以 `provider_type + mode + api_base` 辨識），回 `400`
 
 8. `GET /api/results`
 - 前端讀「目前 providers_config 對應 fingerprint」的最新結果（不做全域 latest fallback）
+
+9. `GET /api/results/catalog`
+- 回傳前端分組清單（按 `finished_at` 由新到舊）
+- 每筆至少包含：`config_fingerprint`, `run_id`, `started_at`, `finished_at`, `summary`, `providers`
+- 若 `results_catalog` 暫時為空，Worker 會從既有 `latest_scorecard:{fingerprint}` 自動重建一次目錄
 
 ## 4. run_id 與 checkpoint 格式（固定）
 
@@ -112,7 +119,8 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 ### 4.2 config_fingerprint 續跑規則
 
 - runner 會依 `providers_config` 計算 `config_fingerprint`（SHA-256）
-- 計算內容使用「有效設定值」：`provider_type`、`mode`、`api_base`、`endpoint_path`、`models_endpoint`、`tester_enabled`、`benchmark_enabled`
+- 計算內容使用「有效設定值」：`provider_type`、`mode`、`api_base`、`endpoint_path`、`models_endpoint`
+- 不包含 `tester_enabled`、`benchmark_enabled`（切換執行開關不應改變配置識別）
 - 若 `endpoint_path` 或 `models_endpoint` 留空，會先套用對應 `provider_type` 預設值再計算
 - `providers` 會先排序後計算，避免因順序不同導致無意義 mismatch
 - 讀取 checkpoint 時：
@@ -343,6 +351,6 @@ TTFT 規則：
 
 ## 14. 實作批次順序
 
-**Batch 1**：Cloudflare Worker API（8 endpoints + KV binding）→ 語言：JavaScript
+**Batch 1**：Cloudflare Worker API（9 endpoints + KV binding）→ 語言：JavaScript
 **Batch 2**：`runner.py` + GHA workflow YAML
-**Batch 3**：Admin UI（Assets 模式，`public/` 目錄靜態檔案 + `GET /api/env`）
+**Batch 3**：Admin UI（Assets 模式，`public/` 目錄靜態檔案 + `GET /api/env` + `GET /api/results/catalog`）
