@@ -3,7 +3,8 @@
  *
  * KV bindings required:
  *   KV_STORE  providers_config, run_checkpoint,
- *             latest_scorecard, latest_benchmark, latest_run_meta
+ *             latest_scorecard:{config_fingerprint},
+ *             latest_benchmark:{config_fingerprint}
  *
  * Secrets required:
  *   MASTER_API_TOKEN
@@ -148,15 +149,11 @@ async function getCurrentConfigFingerprint(env) {
 }
 
 function scorecardKey(configFingerprint) {
-  return configFingerprint ? `latest_scorecard:${configFingerprint}` : "latest_scorecard";
+  return configFingerprint ? `latest_scorecard:${configFingerprint}` : null;
 }
 
 function benchmarkKey(configFingerprint) {
-  return configFingerprint ? `latest_benchmark:${configFingerprint}` : "latest_benchmark";
-}
-
-function runMetaKey(configFingerprint) {
-  return configFingerprint ? `latest_run_meta:${configFingerprint}` : "latest_run_meta";
+  return configFingerprint ? `latest_benchmark:${configFingerprint}` : null;
 }
 
 function asFingerprint(value) {
@@ -175,17 +172,22 @@ function parseJsonOrNull(raw) {
 }
 
 async function readResultBundle(env, configFingerprint) {
-  const [scorecardRaw, benchmarkRaw, metaRaw] = await Promise.all([
-    env.KV_STORE.get(scorecardKey(configFingerprint)),
-    env.KV_STORE.get(benchmarkKey(configFingerprint)),
-    env.KV_STORE.get(runMetaKey(configFingerprint)),
+  const scKey = scorecardKey(configFingerprint);
+  const bmKey = benchmarkKey(configFingerprint);
+
+  if (!scKey || !bmKey) {
+    return { scorecard: null, benchmark: null };
+  }
+
+  const [scorecardRaw, benchmarkRaw] = await Promise.all([
+    env.KV_STORE.get(scKey),
+    env.KV_STORE.get(bmKey),
   ]);
 
   const scorecard = parseJsonOrNull(scorecardRaw);
   const benchmark = parseJsonOrNull(benchmarkRaw);
-  const meta = parseJsonOrNull(metaRaw);
 
-  return { scorecard, benchmark, meta };
+  return { scorecard, benchmark };
 }
 
 // ── GET /api/env ──────────────────────────────────────────────────────────────
@@ -327,7 +329,7 @@ async function handlePostResults(request, env) {
   catch { return json({ error: "Invalid JSON" }, 400); }
 
   // Required fields
-  for (const field of ["run_id", "started_at", "finished_at", "scorecard", "benchmark"]) {
+  for (const field of ["scorecard", "benchmark"]) {
     if (body[field] == null) return json({ error: `Missing field: ${field}` }, 400);
   }
 
@@ -342,6 +344,13 @@ async function handlePostResults(request, env) {
 
   if (!configFingerprint) {
     return json({ error: "Missing field: config_fingerprint" }, 400);
+  }
+
+  const scorecardRunId = asNonEmptyString(body.scorecard?.run_id);
+  const scorecardStartedAt = asNonEmptyString(body.scorecard?.started_at);
+  const scorecardFinishedAt = asNonEmptyString(body.scorecard?.finished_at);
+  if (!scorecardRunId || !scorecardStartedAt || !scorecardFinishedAt) {
+    return json({ error: "scorecard.run_id, scorecard.started_at, scorecard.finished_at are required" }, 400);
   }
 
   // Anti-IDOR: all items must refer to a registered provider
@@ -359,30 +368,9 @@ async function handlePostResults(request, env) {
     }
   }
 
-  // 409 if result is not newer
-  const scopedMetaKey = runMetaKey(configFingerprint);
-  const existingMetaRaw = await env.KV_STORE.get(scopedMetaKey);
-  if (existingMetaRaw) {
-    const existing = JSON.parse(existingMetaRaw);
-    if (body.finished_at <= existing.finished_at) {
-      return json({ error: "Stale result: finished_at is not newer than existing" }, 409);
-    }
-  }
-
-  const run_meta = {
-    run_id: body.run_id,
-    config_fingerprint: configFingerprint,
-    started_at: body.started_at,
-    finished_at: body.finished_at,
-  };
-
   await Promise.all([
     env.KV_STORE.put(scorecardKey(configFingerprint), JSON.stringify(body.scorecard)),
     env.KV_STORE.put(benchmarkKey(configFingerprint), JSON.stringify(body.benchmark)),
-    env.KV_STORE.put(runMetaKey(configFingerprint), JSON.stringify(run_meta)),
-    env.KV_STORE.put("latest_scorecard", JSON.stringify(body.scorecard)),
-    env.KV_STORE.put("latest_benchmark", JSON.stringify(body.benchmark)),
-    env.KV_STORE.put("latest_run_meta", JSON.stringify(run_meta)),
   ]);
 
   return json({ ok: true });
@@ -393,23 +381,11 @@ async function handlePostResults(request, env) {
 
 async function handleGetResults(request, env, url) {
   const requestedFingerprint = asFingerprint(url.searchParams.get("fingerprint"));
-  const currentFingerprint = requestedFingerprint || (await getCurrentConfigFingerprint(env));
+  const resolvedFingerprint = requestedFingerprint || (await getCurrentConfigFingerprint(env));
+  const source = requestedFingerprint ? "requested_fingerprint" : "current_fingerprint";
+  const bundle = await readResultBundle(env, resolvedFingerprint);
 
-  let source = requestedFingerprint ? "requested_fingerprint" : "current_fingerprint";
-  let resolvedFingerprint = currentFingerprint;
-  let bundle = await readResultBundle(env, resolvedFingerprint);
-
-  // If current fingerprint has no data, fallback to latest global so UI still shows last run.
-  if (!bundle.meta && !requestedFingerprint) {
-    const fallbackBundle = await readResultBundle(env, null);
-    if (fallbackBundle.meta) {
-      bundle = fallbackBundle;
-      source = "latest_global";
-      resolvedFingerprint = asFingerprint(fallbackBundle.meta.config_fingerprint);
-    }
-  }
-
-  if (!bundle.meta) {
+  if (!bundle.scorecard && !bundle.benchmark) {
     return json({
       exists: false,
       source,
@@ -422,11 +398,10 @@ async function handleGetResults(request, env, url) {
     exists: true,
     source,
     requested_config_fingerprint: requestedFingerprint,
-    config_fingerprint: resolvedFingerprint || asFingerprint(bundle.meta.config_fingerprint),
-    meta: {
-      ...bundle.meta,
-      config_fingerprint: resolvedFingerprint || asFingerprint(bundle.meta.config_fingerprint),
-    },
+    config_fingerprint:
+      resolvedFingerprint ||
+      asFingerprint(bundle.scorecard?.config_fingerprint) ||
+      asFingerprint(bundle.benchmark?.config_fingerprint),
     scorecard: bundle.scorecard,
     benchmark: bundle.benchmark,
   });

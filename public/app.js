@@ -348,7 +348,7 @@ async function loadResults() {
     const res = await fetch('/api/results');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.exists && !data.meta) {
+    if (!data.exists) {
       resultsLoading.classList.add('hidden');
       noResults.classList.remove('hidden');
       return;
@@ -364,17 +364,15 @@ async function loadResults() {
 }
 
 function renderResults(data) {
-  const meta = data.meta || {};
+  const sc = data.scorecard || {};
   const sourceLabel = renderResultSource(data.source);
   runMetaGrid.innerHTML = `
-    <div class="kv-item"><span class="kv-key">執行 ID</span><span class="kv-val">${esc(meta.run_id || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">開始時間</span><span class="kv-val">${esc(meta.started_at || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">結束時間</span><span class="kv-val">${esc(meta.finished_at || '-')}</span></div>
-    <div class="kv-item"><span class="kv-key">結果指紋</span><span class="kv-val">${esc(meta.config_fingerprint || data.config_fingerprint || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">執行 ID</span><span class="kv-val">${esc(sc.run_id || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">開始時間</span><span class="kv-val">${esc(sc.started_at || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">結束時間</span><span class="kv-val">${esc(sc.finished_at || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">結果指紋</span><span class="kv-val">${esc(sc.config_fingerprint || data.config_fingerprint || '-')}</span></div>
     <div class="kv-item"><span class="kv-key">資料來源</span><span class="kv-val">${sourceLabel}</span></div>
   `;
-
-  const sc = data.scorecard || {};
   const summary = sc.summary || { total: 0, success: 0, failed: 0 };
   summaryCards.innerHTML = `
     <div class="summary-card"><div class="value">${summary.total}</div><div class="label">總數</div></div>
@@ -392,7 +390,7 @@ function renderResults(data) {
 
   scorecardTbody.innerHTML = '';
   if (items.length === 0) {
-    scorecardTbody.innerHTML = '<tr><td colspan="10" class="cell-empty">無資料</td></tr>';
+    scorecardTbody.innerHTML = '<tr><td colspan="11" class="cell-empty">無資料</td></tr>';
   } else {
     items.forEach(it => {
       const tr = document.createElement('tr');
@@ -407,6 +405,7 @@ function renderResults(data) {
         <td>${fmtNum(it.total_time_ms)}</td>
         <td>${esc(it.error_type || '-')}</td>
         <td>${it.retry_count ?? 0}</td>
+        <td class="result-preview-cell">${renderResultPreview(it)}</td>
       `;
       scorecardTbody.appendChild(tr);
     });
@@ -442,13 +441,24 @@ function runCell(run) {
 }
 
 function renderResultSource(source) {
-  if (source === 'latest_global') {
-    return '<span class="status-warn">最新可用結果（目前設定指紋尚無資料）</span>';
-  }
   if (source === 'requested_fingerprint') {
     return '<span class="status-ok">指定指紋</span>';
   }
   return '<span class="status-ok">目前設定指紋</span>';
+}
+
+function renderResultPreview(item) {
+  const answer = item?.answer_preview || '';
+  const thinking = item?.thinking_preview || '';
+  const errMsg = item?.error_message_preview || '';
+
+  const lines = [];
+  if (errMsg) lines.push(`<div><span class="preview-label">error:</span> ${esc(errMsg)}</div>`);
+  if (answer) lines.push(`<div><span class="preview-label">answer:</span> ${esc(answer)}</div>`);
+  if (thinking) lines.push(`<div><span class="preview-label">thinking:</span> ${esc(thinking)}</div>`);
+
+  if (!lines.length) return '<span class="muted-inline">-</span>';
+  return `<details class="preview-details"><summary>查看</summary>${lines.join('')}</details>`;
 }
 
 /* ── Helpers ── */

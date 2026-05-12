@@ -10,9 +10,10 @@
   POST /api/config     ──────────────────── KV_STORE
   GET /api/checkpoint ←────────────────────   providers_config
   POST /api/checkpoint ────────────────────   run_checkpoint
-  DELETE /api/checkpoint ──────────────────   latest_scorecard
-  POST /api/results    ────────────────────   latest_benchmark
-  GET /api/results    ←────────────────────   latest_run_meta
+  POST /api/results    ────────────────────   latest_scorecard:{config_fingerprint}
+                                             latest_benchmark:{config_fingerprint}
+  GET /api/results    ←────────────────────   (same fingerprint keys)
+  DELETE /api/checkpoint ──────────────────
         ^
         |
 [GitHub Actions Runner (runner.py, cron or manual)]
@@ -25,7 +26,7 @@
      └─ 有跑 tester 時，每 CHECKPOINT_EVERY_N 個模型 POST /api/checkpoint（含 config_fingerprint）
   7) 對 tester_enabled=false 且 benchmark_enabled=true 的 provider，從當前 fingerprint 歷史 scorecard 取模型
   8) 執行 benchmark（success models，3 runs；仍受 provider.benchmark_enabled 控制）
-  9) POST /api/results（scorecard + benchmark + run_meta）
+  9) POST /api/results（scorecard + benchmark）
  10) DELETE /api/checkpoint（僅本次有跑 tester 且上傳成功後）
 
   觸發方式：
@@ -52,8 +53,8 @@
 | `GET /api/checkpoint` | GHA -> Worker | 讀取續跑進度 |
 | `POST /api/checkpoint` | GHA -> Worker | 更新續跑進度 |
 | `DELETE /api/checkpoint` | GHA -> Worker | 完成後清除進度 |
-| `POST /api/results` | GHA -> Worker | 上傳 scorecard / benchmark / run_meta |
-| `GET /api/results` | 前端 -> Worker | 讀取目前 fingerprint 結果；若無資料則回退到全域最新結果 |
+| `POST /api/results` | GHA -> Worker | 上傳 scorecard / benchmark |
+| `GET /api/results` | 前端 -> Worker | 讀取目前 providers_config 對應 fingerprint 的結果 |
 
 ## 4. 部署變數清單（只列要手動填的）
 
@@ -67,7 +68,7 @@
 KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 - `KV_STORE`（單一 namespace，儲存全部 key）
 
-所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`、`latest_run_meta:{config_fingerprint}`、`latest_scorecard`、`latest_benchmark`、`latest_run_meta`
+所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`
 
 ### 4.2 GitHub Actions Secrets / Variables
 
@@ -114,7 +115,7 @@ api-test/
 1. 建立 Cloudflare KV namespace（`KV_STORE`），取得 KV ID 填入 `wrangler.toml`
 2. 在 Worker 設定第 4.1 節變數（`MASTER_API_TOKEN`、`GITHUB_ACTIONS_URL`）
 3. 執行 `npx wrangler deploy` 部署 `worker/index.js`
-4. 用 curl 手動測試 7 個 endpoint（驗證 auth、KV 讀寫、409 邏輯）
+4. 用 curl 手動測試 7 個 endpoint（驗證 auth、KV 讀寫）
 
 **Batch 2 — runner.py + GHA**
 1. 在 GitHub repo 設定第 4.2 節 secrets

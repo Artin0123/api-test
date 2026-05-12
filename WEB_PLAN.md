@@ -16,12 +16,8 @@
 Namespace: `KV_STORE`（單一）
 - `providers_config`
 - `run_checkpoint`
-- `latest_scorecard`
-- `latest_benchmark`
-- `latest_run_meta`
 - `latest_scorecard:{config_fingerprint}`
 - `latest_benchmark:{config_fingerprint}`
-- `latest_run_meta:{config_fingerprint}`
 
 ## 2. providers_config 格式（固定）
 
@@ -95,13 +91,13 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - 清除 checkpoint
 
 6. `POST /api/results`
-- 必帶欄位：`run_id`, `started_at`, `finished_at`, `config_fingerprint`
+- 必帶欄位：`scorecard`, `benchmark`, `config_fingerprint`
+- `scorecard` 內必帶：`run_id`, `started_at`, `finished_at`
 - 以 `config_fingerprint` 為範圍寫入最新結果（每個 fingerprint 各自只保留最新一筆）
-- 只接受「較新 run」：若 `finished_at` 比目前 `latest_run_meta:{config_fingerprint}.finished_at` 舊，回 `409`
 - Anti-IDOR：若 `items[*]` 無法對應到 `providers_config` 內既有 provider（以 `provider_type + mode + api_base` 辨識），回 `400`
 
 8. `GET /api/results`
-- 前端優先讀「目前 providers_config 對應 fingerprint」的最新結果；若該 fingerprint 無資料，回退到全域 latest 結果
+- 前端讀「目前 providers_config 對應 fingerprint」的最新結果（不做全域 latest fallback）
 
 ## 4. run_id 與 checkpoint 格式（固定）
 
@@ -266,7 +262,10 @@ TTFT 規則：
       "has_thinking": true,
       "total_time_ms": 812.4,
       "error_type": "",
-      "retry_count": 1
+      "retry_count": 1,
+      "answer_preview": "323",
+      "thinking_preview": "I need to compute 17 multiplied by 19...",
+      "error_message_preview": ""
     }
   ],
   "summary": {
@@ -276,6 +275,8 @@ TTFT 規則：
   }
 }
 ```
+
+`answer_preview`、`thinking_preview`、`error_message_preview` 為前端顯示用摘要欄位，最大長度 `100` chars。
 
 ### 9.2 benchmark
 ```json
@@ -295,16 +296,6 @@ TTFT 規則：
       "avg_total_time_ms": 876.87
     }
   ]
-}
-```
-
-### 9.3 run_meta（`POST /api/results` 必帶，Worker 用來比較版本新舊）
-
-```json
-{
-  "run_id": "2026-05-11T10-30-00Z_a3f9c2",
-  "started_at": "2026-05-11T10:30:00Z",
-  "finished_at": "2026-05-11T11:08:00Z"
 }
 ```
 
@@ -330,7 +321,7 @@ TTFT 規則：
 5. 依 provider 的 `tester_enabled` 決定是否執行 tester（含重試、thinking 偵測、計時，每 N 個模型 `POST /api/checkpoint`）
 6. 若某 provider 為 `tester_enabled=false` 且 `benchmark_enabled=true`，則從目前 `config_fingerprint` 最新 scorecard 取模型作 benchmark
 7. 執行 benchmark（success models，固定 3 次，仍受每個 provider 的 `benchmark_enabled` 控制）
-8. `POST /api/results`（scorecard + benchmark + run_meta）
+8. `POST /api/results`（scorecard + benchmark）
 9. `DELETE /api/checkpoint`（僅在本次有跑 tester 且上傳成功後）
 
 備註：benchmark 的 `avg_total_time_ms` 會把失敗/timeout run 以 `30000ms` 懲罰值納入平均，避免「2 次快 + 1 次 timeout」被排得過前。

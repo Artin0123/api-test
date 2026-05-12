@@ -262,6 +262,22 @@ main { padding: 1.5rem; max-width: 1240px; margin: 0 auto; }
   font-size: 0.75rem;
 }
 .data-table .cell-actions { display: flex; gap: 0.25rem; }
+.result-preview-cell {
+  min-width: 18rem;
+  white-space: normal;
+}
+.preview-details summary {
+  cursor: pointer;
+  color: #0f766e;
+  font-weight: 600;
+}
+.preview-details > div {
+  margin-top: 0.3rem;
+}
+.preview-label {
+  color: #475569;
+  font-weight: 600;
+}
 
 /* ── Forms ── */
 .form-grid {
