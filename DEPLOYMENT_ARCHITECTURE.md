@@ -53,7 +53,7 @@
 | `POST /api/checkpoint` | GHA -> Worker | 更新續跑進度 |
 | `DELETE /api/checkpoint` | GHA -> Worker | 完成後清除進度 |
 | `POST /api/results` | GHA -> Worker | 上傳 scorecard / benchmark / run_meta |
-| `GET /api/results` | 前端 -> Worker | 讀取最新結果 |
+| `GET /api/results` | 前端 -> Worker | 讀取目前 fingerprint 結果；若無資料則回退到全域最新結果 |
 
 ## 4. 部署變數清單（只列要手動填的）
 
@@ -67,7 +67,7 @@
 KV Namespace 綁定（在 Worker 設定中綁定，不用手動填值）：
 - `KV_STORE`（單一 namespace，儲存全部 key）
 
-所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`、`latest_run_meta:{config_fingerprint}`
+所有 KV key：`providers_config`、`run_checkpoint`、`latest_scorecard:{config_fingerprint}`、`latest_benchmark:{config_fingerprint}`、`latest_run_meta:{config_fingerprint}`、`latest_scorecard`、`latest_benchmark`、`latest_run_meta`
 
 ### 4.2 GitHub Actions Secrets / Variables
 

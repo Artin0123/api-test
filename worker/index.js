@@ -159,6 +159,35 @@ function runMetaKey(configFingerprint) {
   return configFingerprint ? `latest_run_meta:${configFingerprint}` : "latest_run_meta";
 }
 
+function asFingerprint(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function parseJsonOrNull(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function readResultBundle(env, configFingerprint) {
+  const [scorecardRaw, benchmarkRaw, metaRaw] = await Promise.all([
+    env.KV_STORE.get(scorecardKey(configFingerprint)),
+    env.KV_STORE.get(benchmarkKey(configFingerprint)),
+    env.KV_STORE.get(runMetaKey(configFingerprint)),
+  ]);
+
+  const scorecard = parseJsonOrNull(scorecardRaw);
+  const benchmark = parseJsonOrNull(benchmarkRaw);
+  const meta = parseJsonOrNull(metaRaw);
+
+  return { scorecard, benchmark, meta };
+}
+
 // ── GET /api/env ──────────────────────────────────────────────────────────────
 
 async function handleGetEnv(request, env) {
@@ -363,23 +392,42 @@ async function handlePostResults(request, env) {
 // Public endpoint �?no auth required
 
 async function handleGetResults(request, env, url) {
-  const requested = (url.searchParams.get("fingerprint") || "").trim();
-  const targetFingerprint = requested || (await getCurrentConfigFingerprint(env));
+  const requestedFingerprint = asFingerprint(url.searchParams.get("fingerprint"));
+  const currentFingerprint = requestedFingerprint || (await getCurrentConfigFingerprint(env));
 
-  const [scorecardRaw, benchmarkRaw, metaRaw] = await Promise.all([
-    env.KV_STORE.get(scorecardKey(targetFingerprint)),
-    env.KV_STORE.get(benchmarkKey(targetFingerprint)),
-    env.KV_STORE.get(runMetaKey(targetFingerprint)),
-  ]);
+  let source = requestedFingerprint ? "requested_fingerprint" : "current_fingerprint";
+  let resolvedFingerprint = currentFingerprint;
+  let bundle = await readResultBundle(env, resolvedFingerprint);
 
-  if (!metaRaw) {
-    return json({ exists: false, config_fingerprint: targetFingerprint || null });
+  // If current fingerprint has no data, fallback to latest global so UI still shows last run.
+  if (!bundle.meta && !requestedFingerprint) {
+    const fallbackBundle = await readResultBundle(env, null);
+    if (fallbackBundle.meta) {
+      bundle = fallbackBundle;
+      source = "latest_global";
+      resolvedFingerprint = asFingerprint(fallbackBundle.meta.config_fingerprint);
+    }
+  }
+
+  if (!bundle.meta) {
+    return json({
+      exists: false,
+      source,
+      requested_config_fingerprint: requestedFingerprint,
+      config_fingerprint: resolvedFingerprint,
+    });
   }
 
   return json({
-    config_fingerprint: targetFingerprint,
-    meta: JSON.parse(metaRaw),
-    scorecard: scorecardRaw ? JSON.parse(scorecardRaw) : null,
-    benchmark: benchmarkRaw ? JSON.parse(benchmarkRaw) : null,
+    exists: true,
+    source,
+    requested_config_fingerprint: requestedFingerprint,
+    config_fingerprint: resolvedFingerprint || asFingerprint(bundle.meta.config_fingerprint),
+    meta: {
+      ...bundle.meta,
+      config_fingerprint: resolvedFingerprint || asFingerprint(bundle.meta.config_fingerprint),
+    },
+    scorecard: bundle.scorecard,
+    benchmark: bundle.benchmark,
   });
 }

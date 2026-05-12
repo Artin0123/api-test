@@ -49,10 +49,10 @@ Namespace: `KV_STORE`（單一）
 ### 2.1 models_endpoint 預設值（可覆蓋）
 
 | provider_type | 預設 models_endpoint |
-| :-- | :-- |
-| `openai` | `/v1/models` |
-| `ollama` | `/api/tags` |
-| `gemini` | `/v1beta/models` |
+| :------------ | :------------------- |
+| `openai`      | `/v1/models`         |
+| `ollama`      | `/api/tags`          |
+| `gemini`      | `/v1beta/models`     |
 
 **邏輯**：`models_endpoint` 可留空，留空時依 `provider_type` 套預設值。runner 執行時一律 GET `models_endpoint` 抓取最新模型列表；若抓取失敗或回傳空列表，該 provider 會被跳過。
 
@@ -101,7 +101,7 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 - Anti-IDOR：若 `items[*]` 無法對應到 `providers_config` 內既有 provider（以 `provider_type + mode + api_base` 辨識），回 `400`
 
 8. `GET /api/results`
-- 前端讀「目前 providers_config 對應 fingerprint」的最新結果（可公開或加簡單保護）
+- 前端優先讀「目前 providers_config 對應 fingerprint」的最新結果；若該 fingerprint 無資料，回退到全域 latest 結果
 
 ## 4. run_id 與 checkpoint 格式（固定）
 
@@ -167,12 +167,12 @@ data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIH
 
 **Prompt（全部寫死）：**
 
-| 用途 | Prompt |
-| :-- | :-- |
-| Tester — thinking mode | `"What is 17 multiplied by 19? Think step by step."` |
-| Tester — vision mode | `"Describe this image in one word."` |
+| 用途                      | Prompt                                                       |
+| :------------------------ | :----------------------------------------------------------- |
+| Tester — thinking mode    | `"What is 17 multiplied by 19? Think step by step."`         |
+| Tester — vision mode      | `"Describe this image in one word."`                         |
 | Benchmark — thinking mode | `"What is 17 multiplied by 19? Reply with the number only."` |
-| Benchmark — vision mode | `"Describe this image in one word."` |
+| Benchmark — vision mode   | `"Describe this image in one word."`                         |
 
 **Vision 圖片**：vision mode 的 base64 image data 同樣寫死在代碼中（SVG "MEOW" 圖片，詳見 §2.2）。success 判定：模型輸出包含 `meow`（case-insensitive）即視為 `has_answer = true`。
 

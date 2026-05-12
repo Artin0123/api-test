@@ -365,10 +365,13 @@ async function loadResults() {
 
 function renderResults(data) {
   const meta = data.meta || {};
+  const sourceLabel = renderResultSource(data.source);
   runMetaGrid.innerHTML = `
     <div class="kv-item"><span class="kv-key">執行 ID</span><span class="kv-val">${esc(meta.run_id || '-')}</span></div>
     <div class="kv-item"><span class="kv-key">開始時間</span><span class="kv-val">${esc(meta.started_at || '-')}</span></div>
     <div class="kv-item"><span class="kv-key">結束時間</span><span class="kv-val">${esc(meta.finished_at || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">結果指紋</span><span class="kv-val">${esc(meta.config_fingerprint || data.config_fingerprint || '-')}</span></div>
+    <div class="kv-item"><span class="kv-key">資料來源</span><span class="kv-val">${sourceLabel}</span></div>
   `;
 
   const sc = data.scorecard || {};
@@ -438,6 +441,16 @@ function runCell(run) {
   return `<code>${fmtNum(run.total_time_ms)}</code> <span class="muted-inline">首字延遲:${fmtNum(run.ttft_ms)} 字元:${run.output_chars ?? '-'}</span>`;
 }
 
+function renderResultSource(source) {
+  if (source === 'latest_global') {
+    return '<span class="status-warn">最新可用結果（目前設定指紋尚無資料）</span>';
+  }
+  if (source === 'requested_fingerprint') {
+    return '<span class="status-ok">指定指紋</span>';
+  }
+  return '<span class="status-ok">目前設定指紋</span>';
+}
+
 /* ── Helpers ── */
 function esc(s) {
   if (s == null) return '';
@@ -468,9 +481,9 @@ function fmtNum(n) {
 
   if (token) {
     const ok = await checkAuth();
-    if (ok) { 
-      authOverlay.classList.remove('active'); 
-      initApp(); 
+    if (ok) {
+      authOverlay.classList.remove('active');
+      initApp();
     }
     else {
       token = '';
