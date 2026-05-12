@@ -132,9 +132,24 @@ async function sha256Hex(input) {
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function sortKeysDeep(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortKeysDeep);
+  }
+  if (value && typeof value === "object") {
+    const sorted = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = sortKeysDeep(value[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
 async function buildConfigFingerprint(providers) {
   const normalized = normalizeForFingerprint(providers);
-  return sha256Hex(JSON.stringify(normalized));
+  const payload = JSON.stringify(sortKeysDeep(normalized));
+  return sha256Hex(payload);
 }
 
 async function getCurrentConfigFingerprint(env) {

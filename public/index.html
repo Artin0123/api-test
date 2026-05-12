@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>API Test Admin</title>
+  <script>
+    (() => {
+      try {
+        if (localStorage.getItem('api_test_admin_token')) {
+          document.documentElement.classList.add('auth-checking');
+        }
+      } catch { }
+    })();
+  </script>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>

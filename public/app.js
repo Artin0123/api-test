@@ -18,6 +18,7 @@ authBtn.addEventListener('click', async () => {
   const ok = await checkAuth();
   if (ok) {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    document.documentElement.classList.remove('auth-checking');
     authOverlay.classList.remove('active');
     authTokenInput.value = '';
     initApp();
@@ -25,12 +26,15 @@ authBtn.addEventListener('click', async () => {
     authError.textContent = '驗證失敗，請確認 MASTER_API_TOKEN 是否正確';
     token = '';
     localStorage.removeItem(TOKEN_STORAGE_KEY);
+    document.documentElement.classList.remove('auth-checking');
+    authOverlay.classList.add('active');
   }
 });
 
 logoutBtn.addEventListener('click', () => {
   token = '';
   localStorage.removeItem(TOKEN_STORAGE_KEY);
+  document.documentElement.classList.remove('auth-checking');
   authOverlay.classList.add('active');
   authTokenInput.value = '';
 });
@@ -476,6 +480,8 @@ function fmtNum(n) {
 
 /* ── Boot ── */
 (async () => {
+  const root = document.documentElement;
+
   // Load env vars
   try {
     const envRes = await fetch('/api/env');
@@ -501,4 +507,6 @@ function fmtNum(n) {
       authOverlay.classList.add('active');
     }
   }
+
+  root.classList.remove('auth-checking');
 })();

@@ -56,6 +56,10 @@ body {
   transition: opacity 0.2s;
 }
 .overlay.active { opacity: 1; pointer-events: auto; }
+.auth-checking #auth-overlay {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 .overlay-card {
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(247, 252, 255, 0.98));
   padding: 1.7rem;
