@@ -1,112 +1,166 @@
-/* ── API Test Admin Frontend ── */
-
-const API_BASE = ''; // same origin
-let token = '';
+const API_BASE = '';
 const TOKEN_STORAGE_KEY = 'api_test_admin_token';
 
-/* ── Auth ── */
+let token = '';
+let currentProviders = [];
+let keysRevealed = false;
+
 const authOverlay = document.getElementById('auth-overlay');
 const authTokenInput = document.getElementById('auth-token');
 const authBtn = document.getElementById('auth-btn');
 const authError = document.getElementById('auth-error');
 const logoutBtn = document.getElementById('logout-btn');
 
-authBtn.addEventListener('click', async () => {
-  token = authTokenInput.value.trim();
-  if (!token) { authError.textContent = '請輸入 token'; return; }
-  authError.textContent = '';
-  const ok = await checkAuth();
-  if (ok) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    document.documentElement.classList.remove('auth-checking');
-    authOverlay.classList.remove('active');
-    authTokenInput.value = '';
-    initApp();
-  } else {
-    authError.textContent = '驗證失敗，請確認 MASTER_API_TOKEN 是否正確';
-    token = '';
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    document.documentElement.classList.remove('auth-checking');
-    authOverlay.classList.add('active');
-  }
-});
-
-logoutBtn.addEventListener('click', () => {
-  token = '';
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-  document.documentElement.classList.remove('auth-checking');
-  authOverlay.classList.add('active');
-  authTokenInput.value = '';
-});
-
-async function checkAuth() {
-  try {
-    const res = await fetch('/api/config', { headers: authHeaders() });
-    return res.ok;
-  } catch { return false; }
-}
-
-function authHeaders() {
-  return { 'Authorization': `Bearer ${token}` };
-}
-
-/* ── Init ── */
-function initApp() {
-  loadConfig();
-  loadCheckpointStatus();
-  loadResults();
-}
-
-/* ── Tabs ── */
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
-    if (btn.dataset.tab === 'results') loadResults();
-  });
-});
-
-/* ── Config ── */
 const configLoading = document.getElementById('config-loading');
 const configError = document.getElementById('config-error');
 const providersTableWrap = document.getElementById('providers-table-wrap');
 const providersTbody = document.getElementById('providers-tbody');
 const addProviderBtn = document.getElementById('add-provider-btn');
 const revealKeysBtn = document.getElementById('reveal-keys-btn');
-const checkpointStatusText = document.getElementById('checkpoint-status-text');
-const refreshCheckpointBtn = document.getElementById('refresh-checkpoint-btn');
-const clearCheckpointBtn = document.getElementById('clear-checkpoint-btn');
 const providerFormCard = document.getElementById('provider-form-card');
 const providerForm = document.getElementById('provider-form');
 const cancelFormBtn = document.getElementById('cancel-form-btn');
 const formTitle = document.getElementById('form-title');
 const formIndex = document.getElementById('form-index');
 const formError = document.getElementById('form-error');
+const providerTypeHelpBtn = document.getElementById('provider-type-help-btn');
+const providerTypeHelp = document.getElementById('provider-type-help');
+const providerTypeSelect = document.getElementById('p-provider_type');
+const modelsListInput = document.getElementById('p-models_list');
 
-let currentProviders = [];
-let keysRevealed = false;
+const refreshResultsBtn = document.getElementById('refresh-results-btn');
+const resultsLoading = document.getElementById('results-loading');
+const resultsError = document.getElementById('results-error');
+const noResults = document.getElementById('no-results');
+const resultsContent = document.getElementById('results-content');
+const resultsGroups = document.getElementById('results-groups');
 
-const DEFAULT_ENDPOINT_PATH = {
-  openai: '/v1/chat/completions',
+const detailOverlay = document.getElementById('detail-overlay');
+const detailCloseBtn = document.getElementById('detail-close-btn');
+const detailTitle = document.getElementById('detail-title');
+const detailSubtitle = document.getElementById('detail-subtitle');
+const detailContent = document.getElementById('detail-content');
+
+const DEFAULT_ENDPOINT_HINT = {
+  openai: '/chat/completions',
   ollama: '/api/chat',
-  gemini: '/v1beta/models/{model}:streamGenerateContent?alt=sse',
+  gemini: '/models/{model}:streamGenerateContent?alt=sse',
 };
 
-const DEFAULT_MODELS_ENDPOINT = {
-  openai: '/v1/models',
-  ollama: '/api/tags',
-  gemini: '/v1beta/models',
-};
+authBtn.addEventListener('click', async () => {
+  token = authTokenInput.value.trim();
+  if (!token) {
+    authError.textContent = '请输入 token';
+    return;
+  }
+  authError.textContent = '';
+  const ok = await checkAuth();
+  if (!ok) {
+    authError.textContent = '认证失败，请确认 MASTER_API_TOKEN 是否正确';
+    token = '';
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    authOverlay.classList.add('active');
+    document.documentElement.classList.remove('auth-checking');
+    return;
+  }
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  authOverlay.classList.remove('active');
+  authTokenInput.value = '';
+  document.documentElement.classList.remove('auth-checking');
+  initApp();
+});
 
-function getDefaultEndpointPath(providerType) {
-  return DEFAULT_ENDPOINT_PATH[providerType] || '';
+logoutBtn.addEventListener('click', () => {
+  token = '';
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  authOverlay.classList.add('active');
+  authTokenInput.value = '';
+});
+
+function authHeaders() {
+  return { Authorization: `Bearer ${token}` };
 }
 
-function getDefaultModelsEndpoint(providerType) {
-  return DEFAULT_MODELS_ENDPOINT[providerType] || '';
+async function checkAuth() {
+  try {
+    const response = await fetch('/api/config', { headers: authHeaders() });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
+
+function initApp() {
+  loadConfig();
+  loadResults();
+}
+
+document.querySelectorAll('.tab-btn').forEach((button) => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
+    button.classList.add('active');
+    document.getElementById(`tab-${button.dataset.tab}`).classList.add('active');
+    if (button.dataset.tab === 'results') {
+      loadResults();
+    }
+  });
+});
+
+function normalizeModelsText(raw) {
+  const pieces = String(raw || '')
+    .split(/[\n,]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return pieces.join(', ');
+}
+
+function parseModelsList(raw) {
+  const normalizedText = normalizeModelsText(raw);
+  if (!normalizedText) {
+    return [];
+  }
+  return normalizedText.split(', ').filter(Boolean);
+}
+
+function formatModelsList(modelsList) {
+  return (Array.isArray(modelsList) ? modelsList : []).join(', ');
+}
+
+function providerFingerprint(provider) {
+  // 前端只用同一套输入字段算展示用 fingerprint，真正存储仍以后端为准。
+  const payload = JSON.stringify({
+    api_base: String(provider.api_base || '').trim().replace(/\/+$/, ''),
+    mode: provider.mode,
+    provider_type: provider.provider_type,
+  });
+  return sha256Hex(payload);
+}
+
+async function sha256Hex(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function endpointHintText(providerType) {
+  return `此类型会自动使用固定 endpoint: ${DEFAULT_ENDPOINT_HINT[providerType] || '-'}`;
+}
+
+function updateProviderTypeHint() {
+  providerTypeHelp.textContent = endpointHintText(providerTypeSelect.value);
+}
+
+providerTypeHelpBtn.addEventListener('click', () => {
+  updateProviderTypeHint();
+  providerTypeHelp.classList.toggle('hidden');
+});
+
+providerTypeSelect.addEventListener('change', updateProviderTypeHint);
+
+modelsListInput.addEventListener('blur', () => {
+  modelsListInput.value = normalizeModelsText(modelsListInput.value);
+});
 
 addProviderBtn.addEventListener('click', () => {
   resetForm();
@@ -123,76 +177,62 @@ cancelFormBtn.addEventListener('click', () => {
   providerFormCard.classList.add('hidden');
 });
 
-refreshCheckpointBtn.addEventListener('click', loadCheckpointStatus);
-
-clearCheckpointBtn.addEventListener('click', async () => {
-  if (!confirm('確定清除目前 Checkpoint？這只會刪除中斷續跑進度，不會刪除結果或供應商設定。')) return;
-  clearCheckpointBtn.disabled = true;
-  checkpointStatusText.textContent = '清除中…';
-  try {
-    const res = await fetch('/api/checkpoint', {
-      method: 'DELETE',
-      headers: authHeaders(),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    checkpointStatusText.textContent = '目前無 Checkpoint（已清除）';
-  } catch (err) {
-    checkpointStatusText.textContent = `清除失敗: ${err.message}`;
-  } finally {
-    clearCheckpointBtn.disabled = false;
-    await loadCheckpointStatus();
-  }
-});
-
-providerForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+providerForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
   formError.textContent = '';
 
-  const idx = parseInt(formIndex.value, 10);
-  const existing = idx >= 0 ? currentProviders[idx] : null;
-  const providerType = document.getElementById('p-provider_type').value;
-  const endpointPathInput = document.getElementById('p-endpoint_path').value.trim();
-  const modelsEndpointInput = document.getElementById('p-models_endpoint').value.trim();
+  const index = Number(formIndex.value);
+  const existing = index >= 0 ? currentProviders[index] : null;
   const apiKeyInput = document.getElementById('p-api_key').value.trim();
-  const p = {
-    provider_type: providerType,
+  const modelsList = parseModelsList(modelsListInput.value);
+  const provider = {
+    provider_type: document.getElementById('p-provider_type').value,
     mode: document.getElementById('p-mode').value,
     api_base: document.getElementById('p-api_base').value.trim(),
-    endpoint_path: endpointPathInput || getDefaultEndpointPath(providerType),
-    models_endpoint: modelsEndpointInput || getDefaultModelsEndpoint(providerType),
     api_key: apiKeyInput || existing?.api_key || '',
     tester_enabled: document.getElementById('p-tester-enabled').checked,
     benchmark_enabled: document.getElementById('p-benchmark-enabled').checked,
+    models_list: modelsList,
   };
 
-  if (!p.provider_type || !p.mode || !p.api_base || !p.api_key) {
-    formError.textContent = '請填寫所有必填欄位';
+  if (!provider.provider_type || !provider.mode || !provider.api_base) {
+    formError.textContent = '请填写所有必填栏位';
+    return;
+  }
+  if (!provider.models_list.length) {
+    formError.textContent = 'models_list 不能为空';
+    return;
+  }
+  if (index < 0 && !apiKeyInput) {
+    formError.textContent = '新增 provider 时必须填写 api_key';
     return;
   }
 
-  if (idx < 0 && !apiKeyInput) {
-    formError.textContent = '新增供應商時必須填寫 api_key';
-    return;
-  }
-
-  if (idx >= 0) {
-    currentProviders[idx] = p;
+  const nextProviders = currentProviders.slice();
+  if (index >= 0) {
+    nextProviders[index] = provider;
   } else {
-    const key = `${p.provider_type}::${p.mode}::${p.api_base}`;
-    if (currentProviders.some((x, i) => i !== idx && `${x.provider_type}::${x.mode}::${x.api_base}` === key)) {
-      formError.textContent = '相同的 provider_type + mode + api_base 已存在';
+    nextProviders.push(provider);
+  }
+
+  const duplicateKeys = new Set();
+  for (const item of nextProviders) {
+    const key = `${item.provider_type}::${item.mode}::${String(item.api_base || '').trim().replace(/\/+$/, '')}`;
+    if (duplicateKeys.has(key)) {
+      formError.textContent = 'provider_type + mode + api_base 不可重复';
       return;
     }
-    currentProviders.push(p);
+    duplicateKeys.add(key);
   }
 
-  const ok = await saveConfig(currentProviders);
-  if (ok) {
-    providerFormCard.classList.add('hidden');
-    renderProviders();
-  } else {
-    formError.textContent = '儲存失敗，請檢查 API 連線';
+  const result = await saveConfig(nextProviders);
+  if (!result.ok) {
+    formError.textContent = result.error || '储存失败';
+    return;
   }
+
+  providerFormCard.classList.add('hidden');
+  await loadConfig(keysRevealed);
 });
 
 async function loadConfig(full = false) {
@@ -202,140 +242,118 @@ async function loadConfig(full = false) {
 
   try {
     const url = full ? '/api/config?full=1' : '/api/config';
-    const res = await fetch(url, { headers: authHeaders() });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    currentProviders = data.providers || [];
+    const response = await fetch(url, { headers: authHeaders() });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    currentProviders = Array.isArray(data.providers) ? data.providers : [];
     keysRevealed = full;
-    revealKeysBtn.textContent = full ? '已顯示完整 key' : '顯示完整 key';
+    revealKeysBtn.textContent = full ? '已显示完整 key' : '显示完整 key';
     revealKeysBtn.disabled = full;
     renderProviders();
     configLoading.classList.add('hidden');
     providersTableWrap.classList.remove('hidden');
   } catch (err) {
     configLoading.classList.add('hidden');
-    configError.textContent = `載入失敗: ${err.message}`;
+    configError.textContent = `读取失败: ${err.message}`;
     configError.classList.remove('hidden');
-  }
-}
-
-async function loadCheckpointStatus() {
-  checkpointStatusText.textContent = '讀取中…';
-  refreshCheckpointBtn.disabled = true;
-  clearCheckpointBtn.disabled = true;
-
-  try {
-    const res = await fetch('/api/checkpoint', { headers: authHeaders() });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.exists === false || !data.run_id) {
-      checkpointStatusText.textContent = '目前無 Checkpoint';
-      return;
-    }
-
-    const completedCount = Array.isArray(data.completed) ? data.completed.length : 0;
-    const updatedAt = data.updated_at || '-';
-    const fp = typeof data.config_fingerprint === 'string' && data.config_fingerprint
-      ? data.config_fingerprint.slice(0, 12)
-      : null;
-    const fpText = fp ? `，fingerprint=${fp}...` : '';
-    checkpointStatusText.textContent = `run_id=${data.run_id}${fpText}，已完成 ${completedCount} 項，更新時間 ${updatedAt}`;
-  } catch (err) {
-    checkpointStatusText.textContent = `讀取失敗: ${err.message}`;
-  } finally {
-    refreshCheckpointBtn.disabled = false;
-    clearCheckpointBtn.disabled = false;
   }
 }
 
 function renderProviders() {
   providersTbody.innerHTML = '';
-  if (currentProviders.length === 0) {
-    providersTbody.innerHTML = '<tr><td colspan="9" class="cell-empty">尚無供應商</td></tr>';
+  if (!currentProviders.length) {
+    providersTbody.innerHTML = '<tr><td colspan="8" class="cell-empty">尚未新增 provider</td></tr>';
     return;
   }
-  currentProviders.forEach((p, i) => {
-    const endpointPath = p.endpoint_path || getDefaultEndpointPath(p.provider_type);
-    const modelsEndpoint = p.models_endpoint || getDefaultModelsEndpoint(p.provider_type);
-    const testerEnabled = p.tester_enabled !== false;
-    const benchmarkEnabled = !!p.benchmark_enabled;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${esc(p.provider_type)}</td>
-      <td>${esc(p.mode)}</td>
-      <td><code>${esc(p.api_base)}</code></td>
-      <td><code>${esc(endpointPath)}</code></td>
-      <td><code>${esc(modelsEndpoint)}</code></td>
-      <td>${testerEnabled ? '<span class="status-ok">執行</span>' : '<span class="status-fail">略過</span>'}</td>
-      <td>${benchmarkEnabled ? '<span class="status-ok">執行</span>' : '<span class="status-fail">略過</span>'}</td>
-      <td>${esc(p.api_key)}</td>
+
+  currentProviders.forEach((provider, index) => {
+    const testerEnabled = provider.tester_enabled !== false;
+    const benchmarkEnabled = provider.benchmark_enabled !== false;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${esc(provider.provider_type)}</td>
+      <td>${esc(provider.mode)}</td>
+      <td><code>${esc(provider.api_base)}</code></td>
+      <td>${esc(formatModelsList(provider.models_list))}</td>
+      <td>${testerEnabled ? '<span class="status-ok">on</span>' : '<span class="status-fail">off</span>'}</td>
+      <td>${benchmarkEnabled ? '<span class="status-ok">on</span>' : '<span class="status-fail">off</span>'}</td>
+      <td>${esc(provider.api_key)}</td>
       <td class="cell-actions">
-        <button class="btn btn-sm btn-ghost" data-idx="${i}" data-action="edit">編輯</button>
-        <button class="btn btn-sm btn-danger" data-idx="${i}" data-action="delete">刪除</button>
+        <button class="btn btn-sm btn-ghost" data-action="edit" data-idx="${index}">编辑</button>
+        <button class="btn btn-sm btn-danger" data-action="delete" data-idx="${index}">删除</button>
       </td>
     `;
-    providersTbody.appendChild(tr);
+    providersTbody.appendChild(row);
   });
 
-  providersTbody.querySelectorAll('button[data-action="edit"]').forEach(btn => {
-    btn.addEventListener('click', () => editProvider(parseInt(btn.dataset.idx, 10)));
+  providersTbody.querySelectorAll('[data-action="edit"]').forEach((button) => {
+    button.addEventListener('click', () => editProvider(Number(button.dataset.idx)));
   });
-  providersTbody.querySelectorAll('button[data-action="delete"]').forEach(btn => {
-    btn.addEventListener('click', () => deleteProvider(parseInt(btn.dataset.idx, 10)));
+  providersTbody.querySelectorAll('[data-action="delete"]').forEach((button) => {
+    button.addEventListener('click', () => deleteProvider(Number(button.dataset.idx)));
   });
 }
 
-function editProvider(idx) {
-  const p = currentProviders[idx];
-  formIndex.value = idx;
-  formTitle.textContent = '編輯供應商';
-  document.getElementById('p-provider_type').value = p.provider_type;
-  document.getElementById('p-mode').value = p.mode;
-  document.getElementById('p-api_base').value = p.api_base;
-  document.getElementById('p-endpoint_path').value = p.endpoint_path || '';
-  document.getElementById('p-models_endpoint').value = p.models_endpoint || '';
+function editProvider(index) {
+  const provider = currentProviders[index];
+  formIndex.value = String(index);
+  formTitle.textContent = '编辑 Provider';
+  document.getElementById('p-provider_type').value = provider.provider_type;
+  document.getElementById('p-mode').value = provider.mode;
+  document.getElementById('p-api_base').value = provider.api_base;
   document.getElementById('p-api_key').value = '';
-  document.getElementById('p-tester-enabled').checked = p.tester_enabled !== false;
-  document.getElementById('p-benchmark-enabled').checked = !!p.benchmark_enabled;
+  document.getElementById('p-tester-enabled').checked = provider.tester_enabled !== false;
+  document.getElementById('p-benchmark-enabled').checked = provider.benchmark_enabled !== false;
+  modelsListInput.value = formatModelsList(provider.models_list);
+  updateProviderTypeHint();
   providerFormCard.classList.remove('hidden');
   providerFormCard.scrollIntoView({ behavior: 'smooth' });
 }
 
-async function deleteProvider(idx) {
-  if (!confirm(`確定刪除供應商 "${currentProviders[idx].api_base}"？`)) return;
-  currentProviders.splice(idx, 1);
-  const ok = await saveConfig(currentProviders);
-  if (ok) renderProviders();
-  else alert('刪除失敗');
+async function deleteProvider(index) {
+  const provider = currentProviders[index];
+  if (!confirm(`确定删除 ${provider.api_base} ?`)) {
+    return;
+  }
+  const nextProviders = currentProviders.filter((_, idx) => idx !== index);
+  const result = await saveConfig(nextProviders);
+  if (!result.ok) {
+    alert(result.error || '删除失败');
+    return;
+  }
+  await loadConfig(keysRevealed);
 }
 
 function resetForm() {
-  formIndex.value = -1;
-  formTitle.textContent = '新增供應商';
+  formIndex.value = '-1';
+  formTitle.textContent = '新增 Provider';
   providerForm.reset();
   document.getElementById('p-tester-enabled').checked = true;
   document.getElementById('p-benchmark-enabled').checked = true;
+  modelsListInput.value = '';
+  providerTypeHelp.classList.add('hidden');
+  updateProviderTypeHint();
   formError.textContent = '';
 }
 
 async function saveConfig(providers) {
   try {
-    const res = await fetch('/api/config', {
+    const response = await fetch('/api/config', {
       method: 'POST',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ providers }),
     });
-    return res.ok;
-  } catch { return false; }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, error: data.error || `HTTP ${response.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
-
-/* ── Results ── */
-const refreshResultsBtn = document.getElementById('refresh-results-btn');
-const resultsLoading = document.getElementById('results-loading');
-const resultsError = document.getElementById('results-error');
-const noResults = document.getElementById('no-results');
-const resultsContent = document.getElementById('results-content');
-const resultsGroups = document.getElementById('results-groups');
 
 refreshResultsBtn.addEventListener('click', loadResults);
 
@@ -346,242 +364,268 @@ async function loadResults() {
   resultsContent.classList.add('hidden');
 
   try {
-    const res = await fetch('/api/results/catalog');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const items = Array.isArray(data.items) ? data.items : [];
-    if (!items.length) {
+    const configResponse = await fetch('/api/config', { headers: authHeaders() });
+    const configData = await configResponse.json();
+    if (!configResponse.ok) {
+      throw new Error(configData.error || `HTTP ${configResponse.status}`);
+    }
+
+    const providers = Array.isArray(configData.providers) ? configData.providers : [];
+    if (!providers.length) {
       resultsLoading.classList.add('hidden');
       noResults.classList.remove('hidden');
       return;
     }
-    renderResultsCatalog(items);
+
+    const providersWithFingerprint = await Promise.all(
+      providers.map(async (provider) => ({
+        provider,
+        fingerprint: await providerFingerprint(provider),
+      })),
+    );
+
+    const resultBundles = await Promise.all(
+      providersWithFingerprint.map(async ({ provider, fingerprint }) => {
+        const response = await fetch(`/api/results?fingerprint=${encodeURIComponent(fingerprint)}`);
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        return { provider, fingerprint, data };
+      }),
+    );
+
+    const existingResults = resultBundles.filter((item) => item.data.exists);
+    if (!existingResults.length) {
+      resultsLoading.classList.add('hidden');
+      noResults.classList.remove('hidden');
+      return;
+    }
+
+    renderResults(existingResults);
     resultsLoading.classList.add('hidden');
     resultsContent.classList.remove('hidden');
   } catch (err) {
     resultsLoading.classList.add('hidden');
-    resultsError.textContent = `載入失敗: ${err.message}`;
+    resultsError.textContent = `读取失败: ${err.message}`;
     resultsError.classList.remove('hidden');
   }
 }
 
-function renderResultsCatalog(items) {
-  resultsGroups.innerHTML = items.map((item, idx) => {
-    const summary = item?.summary || {};
-    const providers = Array.isArray(item?.providers) ? item.providers.length : 0;
-    return `
-      <details class="result-group" data-fingerprint="${esc(item?.config_fingerprint || '')}" ${idx === 0 ? 'open' : ''}>
-        <summary>
-          <span class="group-title">fingerprint ${esc(shortFingerprint(item?.config_fingerprint))}</span>
-          <span class="muted-inline">run:${esc(item?.run_id || '-')} · providers:${providers} · total:${summary.total ?? 0} · success:${summary.success ?? 0}</span>
-        </summary>
-        <div class="result-group-body">
-          <div class="muted-inline">started:${esc(item?.started_at || '-')} · finished:${esc(item?.finished_at || '-')}</div>
-          <div class="result-group-detail"></div>
-        </div>
-      </details>
-    `;
-  }).join('');
+function renderResults(items) {
+  resultsGroups.innerHTML = items
+    .map(({ provider, fingerprint, data }) => renderProviderResults(provider, fingerprint, data))
+    .join('');
 
-  const groups = resultsGroups.querySelectorAll('.result-group');
-  groups.forEach((group) => {
-    group.addEventListener('toggle', () => {
-      if (group.open && group.dataset.loaded !== '1') {
-        loadResultGroupDetail(group);
+  resultsGroups.querySelectorAll('.results-provider').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      const chevron = details.querySelector('.chevron');
+      if (chevron) {
+        chevron.textContent = details.open ? '▾' : '▸';
       }
     });
   });
-  const firstOpen = Array.from(groups).find((g) => g.open);
-  if (firstOpen && firstOpen.dataset.loaded !== '1') {
-    loadResultGroupDetail(firstOpen);
-  }
-}
 
-async function loadResultGroupDetail(groupEl) {
-  const fingerprint = groupEl.dataset.fingerprint || '';
-  const detailEl = groupEl.querySelector('.result-group-detail');
-  if (!detailEl || !fingerprint) return;
-  detailEl.innerHTML = '<div class="muted-inline">載入中…</div>';
-  try {
-    const res = await fetch(`/api/results?fingerprint=${encodeURIComponent(fingerprint)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data.exists) {
-      detailEl.innerHTML = '<div class="alert alert-info">此 fingerprint 無資料</div>';
-      groupEl.dataset.loaded = '1';
-      return;
-    }
-    detailEl.innerHTML = renderFingerprintDetail(data.scorecard, data.benchmark);
-    groupEl.dataset.loaded = '1';
-  } catch (err) {
-    detailEl.innerHTML = `<div class="alert alert-error">載入失敗: ${esc(err.message)}</div>`;
-  }
-}
-
-function renderFingerprintDetail(scorecard, benchmark) {
-  const scoreItems = Array.isArray(scorecard?.items) ? scorecard.items : [];
-  const benchmarkItems = Array.isArray(benchmark?.items) ? benchmark.items : [];
-  if (!scoreItems.length) return '<div class="alert alert-info">無 scorecard 資料</div>';
-
-  const benchmarkByModel = new Map();
-  benchmarkItems.forEach((item) => {
-    const key = `${item?.provider_type || ''}::${item?.mode || ''}::${item?.api_base || ''}::${item?.model || ''}`;
-    benchmarkByModel.set(key, item);
-  });
-
-  const providerGroups = new Map();
-  scoreItems.forEach((item) => {
-    const pkey = `${item?.provider_type || ''}::${item?.mode || ''}::${item?.api_base || ''}`;
-    if (!providerGroups.has(pkey)) {
-      providerGroups.set(pkey, {
-        provider_type: item?.provider_type || '',
-        mode: item?.mode || '',
-        api_base: item?.api_base || '',
-        items: [],
-      });
-    }
-    const mkey = `${item?.provider_type || ''}::${item?.mode || ''}::${item?.api_base || ''}::${item?.model || ''}`;
-    providerGroups.get(pkey).items.push({
-      ...item,
-      benchmark: benchmarkByModel.get(mkey) || null,
+  resultsGroups.querySelectorAll('[data-detail-payload]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const payload = JSON.parse(button.dataset.detailPayload);
+      openDetail(payload);
     });
   });
-
-  const providers = Array.from(providerGroups.values()).sort((a, b) => {
-    const ak = `${a.api_base}::${a.provider_type}::${a.mode}`;
-    const bk = `${b.api_base}::${b.provider_type}::${b.mode}`;
-    return ak.localeCompare(bk);
-  });
-
-  return providers.map((provider) => renderProviderGroup(provider)).join('');
 }
 
-function renderProviderGroup(provider) {
-  const sortedItems = (provider.items || []).slice().sort((a, b) => {
-    if (a.success !== b.success) return b.success ? 1 : -1;
-    return (a.total_time_ms ?? Infinity) - (b.total_time_ms ?? Infinity);
-  });
-  const success = sortedItems.filter((item) => item.success).length;
-  const total = sortedItems.length;
+function renderProviderResults(provider, fingerprint, data) {
+  const tester = data.tester || null;
+  const benchmark = data.benchmark || null;
+  const testerItems = Array.isArray(tester?.items) ? tester.items : [];
+  const benchmarkItems = Array.isArray(benchmark?.items) ? benchmark.items : [];
+  const benchmarkByModel = new Map(
+    benchmarkItems.map((item) => [item.model, item]),
+  );
+
+  const rows = testerItems
+    .slice()
+    .sort((a, b) => {
+      if (a.success !== b.success) return a.success ? -1 : 1;
+      return (a.total_time_ms ?? Infinity) - (b.total_time_ms ?? Infinity);
+    })
+    .map((item) => renderResultRow(item, benchmarkByModel.get(item.model) || null))
+    .join('');
 
   return `
-    <details class="provider-group">
-      <summary>
-        <code class="truncate-code" title="${esc(provider.api_base)}">${esc(provider.api_base)}</code>
-        <span class="muted-inline">type:${esc(provider.provider_type)} · mode:${esc(provider.mode)} · ${success}/${total}</span>
+    <details class="results-provider" open>
+      <summary class="results-provider-summary">
+        <span class="chevron">▾</span>
+        <span class="group-title">${esc(provider.api_base)}</span>
+        <span class="muted-inline">type:${esc(provider.provider_type)} / mode:${esc(provider.mode)} / fp:${esc(shortFingerprint(fingerprint))}</span>
       </summary>
-      <div class="model-list">
-        ${sortedItems.map((item) => renderModelCard(item)).join('')}
+      <div class="provider-config-strip">
+        <span><strong>provider_type</strong>: ${esc(provider.provider_type)}</span>
+        <span><strong>mode</strong>: ${esc(provider.mode)}</span>
+        <span><strong>api_base</strong>: <code>${esc(provider.api_base)}</code></span>
+        <span><strong>models_list</strong>: ${esc(formatModelsList(provider.models_list))}</span>
+      </div>
+      <div class="results-table-wrap">
+        <table class="data-table results-table">
+          <thead>
+            <tr>
+              <th>model</th>
+              <th>status</th>
+              <th>tester total_time</th>
+              <th>benchmark avg</th>
+              <th>error_type</th>
+              <th>详情</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || '<tr><td colspan="6" class="cell-empty">没有 tester 结果</td></tr>'}
+          </tbody>
+        </table>
       </div>
     </details>
   `;
 }
 
-function renderModelCard(item) {
-  const benchmark = item?.benchmark;
-  const benchmarkAvg = benchmark ? fmtNum(benchmark.avg_total_time_ms) : '-';
-  const benchmarkText = benchmarkAvg === '-' ? '-' : `${benchmarkAvg}ms`;
-  const totalMs = fmtNum(item?.total_time_ms);
-  const totalText = totalMs === '-' ? '-' : `${totalMs}ms`;
-  const status = item?.success
-    ? '<span class="status-ok">success</span>'
-    : '<span class="status-fail">failed</span>';
+function renderResultRow(item, benchmark) {
+  const detailPayload = {
+    title: item.model || '-',
+    subtitle: `${item.provider_type} / ${item.mode} / ${item.api_base}`,
+    item,
+    benchmark,
+  };
   return `
-    <div class="model-item">
-      <div class="model-head">
-        <code class="truncate-code" title="${esc(item?.model || '')}">${esc(item?.model || '-')}</code>
-        ${status}
-        <span class="muted-inline">${totalText}</span>
-      </div>
-      <div class="model-meta">${renderStatusSummary(item)}</div>
-      <div class="model-meta"><span class="preview-label">benchmark avg:</span> ${benchmarkText}</div>
-      <div class="model-preview">${renderResultPreview(item)}</div>
-    </div>
+    <tr>
+      <td><code>${esc(item.model || '-')}</code></td>
+      <td>${item.success ? '<span class="status-ok">success</span>' : '<span class="status-fail">failed</span>'}</td>
+      <td>${fmtMs(item.total_time_ms)}</td>
+      <td>${benchmark ? fmtMs(benchmark.avg_total_time_ms) : '-'}</td>
+      <td>${esc(item.error_type || '-')}</td>
+      <td><button type="button" class="btn btn-sm btn-ghost" data-detail-payload="${escAttr(JSON.stringify(detailPayload))}">详情</button></td>
+    </tr>
   `;
 }
 
+function openDetail(payload) {
+  detailTitle.textContent = payload.title || '详情';
+  detailSubtitle.textContent = payload.subtitle || '';
+  detailContent.innerHTML = `
+    <div class="detail-section">
+      <h4>Tester</h4>
+      <div class="detail-grid">
+        <div><strong>success</strong>: ${payload.item?.success ? 'true' : 'false'}</div>
+        <div><strong>has_answer</strong>: ${payload.item?.has_answer ? 'true' : 'false'}</div>
+        <div><strong>has_thinking</strong>: ${payload.item?.has_thinking ? 'true' : 'false'}</div>
+        <div><strong>retry_count</strong>: ${payload.item?.retry_count ?? 0}</div>
+        <div><strong>total_time_ms</strong>: ${fmtMs(payload.item?.total_time_ms)}</div>
+        <div><strong>error_type</strong>: ${esc(payload.item?.error_type || '-')}</div>
+      </div>
+      <pre class="detail-pre"><strong>answer</strong>\n${esc(payload.item?.answer_preview || '')}</pre>
+      <pre class="detail-pre"><strong>thinking</strong>\n${esc(payload.item?.thinking_preview || '')}</pre>
+      <pre class="detail-pre"><strong>error</strong>\n${esc(payload.item?.error_message_preview || '')}</pre>
+    </div>
+    <div class="detail-section">
+      <h4>Benchmark</h4>
+      ${renderBenchmarkDetail(payload.benchmark)}
+    </div>
+  `;
+  detailOverlay.classList.remove('hidden');
+}
+
+function renderBenchmarkDetail(benchmark) {
+  if (!benchmark) {
+    return '<p class="form-note">没有 benchmark 结果。</p>';
+  }
+  const runs = Array.isArray(benchmark.runs) ? benchmark.runs : [];
+  return `
+    <div class="detail-grid">
+      <div><strong>avg_total_time_ms</strong>: ${fmtMs(benchmark.avg_total_time_ms)}</div>
+      <div><strong>runs</strong>: ${runs.length}</div>
+    </div>
+    <table class="data-table detail-runs-table">
+      <thead>
+        <tr>
+          <th>run_index</th>
+          <th>total_time_ms</th>
+          <th>ttft_ms</th>
+          <th>output_chars</th>
+          <th>error</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${runs.map((run) => `
+          <tr>
+            <td>${run.run_index}</td>
+            <td>${fmtMs(run.total_time_ms)}</td>
+            <td>${run.ttft_ms == null ? '-' : fmtMs(run.ttft_ms)}</td>
+            <td>${run.output_chars ?? 0}</td>
+            <td>${esc(run.error || '-')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+detailCloseBtn.addEventListener('click', closeDetail);
+detailOverlay.addEventListener('click', (event) => {
+  if (event.target.dataset.closeDetail === '1') {
+    closeDetail();
+  }
+});
+
+function closeDetail() {
+  detailOverlay.classList.add('hidden');
+}
+
 function shortFingerprint(value) {
-  const s = typeof value === 'string' ? value : '';
-  if (!s) return '-';
-  if (s.length <= 16) return s;
-  return `${s.slice(0, 12)}...${s.slice(-6)}`;
+  const text = String(value || '');
+  if (!text) return '-';
+  if (text.length <= 18) return text;
+  return `${text.slice(0, 12)}...${text.slice(-6)}`;
 }
 
-function renderResultPreview(item) {
-  const answer = item?.answer_preview || '';
-  const thinking = item?.thinking_preview || '';
-  const errMsg = item?.error_message_preview || '';
-
-  const lines = [];
-  if (errMsg) lines.push(`<div><span class="preview-label">error:</span> ${esc(errMsg)}</div>`);
-  if (answer) lines.push(`<div><span class="preview-label">answer:</span> ${esc(answer)}</div>`);
-  if (thinking) lines.push(`<div><span class="preview-label">thinking:</span> ${esc(thinking)}</div>`);
-
-  if (!lines.length) return '<span class="muted-inline">-</span>';
-  return `<details class="preview-details"><summary>查看</summary>${lines.join('')}</details>`;
+function fmtMs(value) {
+  if (value == null || Number.isNaN(Number(value))) {
+    return '-';
+  }
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}ms`;
 }
 
-function renderStatusSummary(item) {
-  const lines = [];
-  lines.push(
-    item?.success
-      ? '<span class="status-ok">success</span>'
-      : '<span class="status-fail">failed</span>',
-  );
-  lines.push(
-    `answer:${item?.has_answer ? '<span class="status-ok">yes</span>' : '<span class="status-fail">no</span>'}`,
-  );
-  lines.push(
-    `thinking:${item?.has_thinking ? '<span class="status-ok">yes</span>' : '<span class="status-warn">no</span>'}`,
-  );
-  const err = item?.error_type ? esc(item.error_type) : '-';
-  const retry = item?.retry_count ?? 0;
-  lines.push(`<span class="muted-inline">error:${err} retry:${retry}</span>`);
-  return `<div class="status-summary">${lines.join(' · ')}</div>`;
-}
-
-/* ── Helpers ── */
-function esc(s) {
-  if (s == null) return '';
+function esc(value) {
+  if (value == null) return '';
   const div = document.createElement('div');
-  div.textContent = String(s);
+  div.textContent = String(value);
   return div.innerHTML;
 }
 
-function fmtNum(n) {
-  if (n == null) return '-';
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+function escAttr(value) {
+  return esc(value).replace(/"/g, '&quot;');
 }
 
-/* ── Boot ── */
 (async () => {
-  const root = document.documentElement;
-
-  // Load env vars
   try {
-    const envRes = await fetch('/api/env');
-    if (envRes.ok) {
-      const envData = await envRes.json();
+    const envResponse = await fetch('/api/env');
+    if (envResponse.ok) {
+      const envData = await envResponse.json();
       if (envData.github_actions_url) {
         document.getElementById('run-now-btn').href = envData.github_actions_url;
       }
     }
-  } catch { }
+  } catch {}
 
   token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
-
   if (token) {
     const ok = await checkAuth();
     if (ok) {
       authOverlay.classList.remove('active');
       initApp();
-    }
-    else {
+    } else {
       token = '';
       localStorage.removeItem(TOKEN_STORAGE_KEY);
       authOverlay.classList.add('active');
     }
   }
 
-  root.classList.remove('auth-checking');
+  updateProviderTypeHint();
+  document.documentElement.classList.remove('auth-checking');
 })();

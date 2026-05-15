@@ -1,17 +1,15 @@
 """
-runner.py — Cloud-native API tester for GitHub Actions
-Replaces api_tester.py + consolidate_results.py
+runner.py
 
-Flow:
-  1. generate run_id
-  2. GET /api/config?full=1  (Worker)
-  3. GET /api/checkpoint
-  4. for each provider → fetch models → run tester
-  5. run benchmark (success models, 3 runs)
-  6. POST /api/results
-  7. DELETE /api/checkpoint
+新的执行语义：
+1. 从 Worker 读取 providers_config（只接受手动 models_list）
+2. 逐 provider 计算 provider_fingerprint
+3. tester / benchmark 分开处理，各自使用自己的 checkpoint
+4. checkpoint 不只记录进度，也记录已完成的部分结果，避免中断后只剩 completed 标记
+5. 每个 provider 单独上传结果到 Worker
 """
 
+import hashlib
 import json
 import os
 import random
@@ -19,13 +17,12 @@ import re
 import string
 import sys
 import time
-import hashlib
 from datetime import datetime, timezone
 from typing import Any
 from urllib import error, request as urllib_request
 
-# ── Constants ──────────────────────────────────────────────────────────────────
 
+# 固定执行参数。这里继续保留「每 3 个模型写一次 checkpoint」的节奏。
 TIMEOUT_SECONDS = 30
 MAX_RETRIES = 1
 RETRY_SLEEP_SECONDS = 1.0
@@ -42,26 +39,17 @@ BENCHMARK_PROMPT_VISION = "Describe this image in one word."
 VISION_IMAGE_MIME = "image/svg+xml"
 VISION_IMAGE_B64 = (
     "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iNjAi"
-    "IHZpZXdCb3g9IjAgMCAxNjAgNjAiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9India"
+    "IHZpZXdCb3g9IjAgMCAxNjAgNjAiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9Indo"
     "aXRlIi8+PHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9"
     "IjQwIiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iYmxhY2siIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWlu"
     "YW50LWJhc2VsaW5lPSJtaWRkbGUiPk1FT1c8L3RleHQ+PC9zdmc+"
 )
 
 DEFAULT_ENDPOINT_PATHS = {
-    "openai": "/v1/chat/completions",
+    "openai": "/chat/completions",
     "ollama": "/api/chat",
-    "gemini": "/v1beta/models/{model}:streamGenerateContent?alt=sse",
+    "gemini": "/models/{model}:streamGenerateContent?alt=sse",
 }
-
-DEFAULT_MODELS_ENDPOINTS = {
-    "openai": "/v1/models",
-    "ollama": "/api/tags",
-    "gemini": "/v1beta/models",
-}
-
-
-# ── Utilities ──────────────────────────────────────────────────────────────────
 
 
 def now_iso() -> str:
@@ -90,15 +78,30 @@ def generate_run_id() -> str:
 
 
 def normalize_url(base: str, path: str) -> str:
-    if path.startswith("http://") or path.startswith("https://"):
-        return path
     return f"{base.rstrip('/')}/{path.lstrip('/')}"
 
 
-def pick_endpoint(value: Any, fallback: str) -> str:
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return fallback
+def normalize_api_base(value: str) -> str:
+    return value.strip().rstrip("/")
+
+
+def provider_key(provider: dict) -> str:
+    return (
+        f"{provider['provider_type']}::"
+        f"{provider['mode']}::"
+        f"{normalize_api_base(provider['api_base'])}"
+    )
+
+
+def build_provider_fingerprint(provider: dict) -> str:
+    # fingerprint 只绑定 provider 身份，不绑定 api_key / models_list / 开关。
+    payload = {
+        "provider_type": provider["provider_type"],
+        "mode": provider["mode"],
+        "api_base": normalize_api_base(provider["api_base"]),
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def is_benchmark_enabled(provider: dict) -> bool:
@@ -109,38 +112,9 @@ def is_tester_enabled(provider: dict) -> bool:
     return bool(provider.get("tester_enabled", True))
 
 
-def provider_key(provider: dict) -> str:
-    return f"{provider['provider_type']}::{provider['mode']}::{provider['api_base']}"
-
-
-def build_config_fingerprint(providers: list[dict]) -> str:
-    normalized: list[dict] = []
-    for p in providers:
-        ptype = p.get("provider_type", "")
-        normalized.append(
-            {
-                "provider_type": ptype,
-                "mode": p.get("mode", ""),
-                "api_base": p.get("api_base", ""),
-                "endpoint_path": pick_endpoint(
-                    p.get("endpoint_path"), DEFAULT_ENDPOINT_PATHS.get(ptype, "")
-                ),
-                "models_endpoint": pick_endpoint(
-                    p.get("models_endpoint"), DEFAULT_MODELS_ENDPOINTS.get(ptype, "")
-                ),
-            }
-        )
-    normalized.sort(key=lambda p: f"{p['provider_type']}::{p['mode']}::{p['api_base']}")
-    payload = json.dumps(
-        normalized, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    )
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-# ── Worker client ──────────────────────────────────────────────────────────────
-
-
 class WorkerClient:
+    """和 Worker API 沟通的薄客户端。"""
+
     def __init__(self, base_url: str, token: str):
         self.base = base_url.rstrip("/")
         self.token = token
@@ -152,42 +126,47 @@ class WorkerClient:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "api-tester/2.0 runner",
+            "User-Agent": "api-tester/3.0 runner",
             "Cache-Control": "no-cache",
         }
         req = urllib_request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib_request.urlopen(req, timeout=15) as r:
-                return json.loads(r.read().decode())
+            with urllib_request.urlopen(req, timeout=15) as response:
+                return json.loads(response.read().decode())
         except error.HTTPError as exc:
             raise RuntimeError(
-                f"Worker {method} {path} → HTTP {exc.code}: {exc.read().decode()[:200]}"
-            )
+                f"Worker {method} {path} -> HTTP {exc.code}: {exc.read().decode()[:400]}"
+            ) from exc
 
     def get_config(self) -> dict:
         return self._req("GET", "/api/config?full=1")
 
-    def get_checkpoint(self) -> dict:
-        return self._req("GET", "/api/checkpoint")
+    def get_checkpoint(self, stage: str, fingerprint: str) -> dict:
+        return self._req(
+            "GET", f"/api/checkpoint?stage={stage}&fingerprint={fingerprint}"
+        )
 
-    def post_checkpoint(self, ck: dict) -> None:
-        self._req("POST", "/api/checkpoint", ck)
+    def post_checkpoint(self, stage: str, fingerprint: str, payload: dict) -> None:
+        self._req(
+            "POST",
+            f"/api/checkpoint?stage={stage}&fingerprint={fingerprint}",
+            payload,
+        )
 
-    def delete_checkpoint(self) -> None:
-        self._req("DELETE", "/api/checkpoint")
+    def delete_checkpoint(self, stage: str, fingerprint: str) -> None:
+        self._req(
+            "DELETE", f"/api/checkpoint?stage={stage}&fingerprint={fingerprint}"
+        )
 
-    def get_results(self, config_fingerprint: str) -> dict:
-        return self._req("GET", f"/api/results?fingerprint={config_fingerprint}")
+    def get_results(self, provider_fingerprint: str) -> dict:
+        return self._req("GET", f"/api/results?fingerprint={provider_fingerprint}")
 
     def post_results(self, payload: dict) -> None:
         self._req("POST", "/api/results", payload)
 
 
-# ── Thinking extraction ────────────────────────────────────────────────────────
-
-
 def extract_xml_think(content: str) -> tuple[str, str]:
-    """Returns (thinking, cleaned_content)."""
+    """支援某些模型把 reasoning 包在 <think>...</think> 里。"""
     thinks = re.findall(r"<think>(.*?)</think>", content, flags=re.DOTALL)
     thinking = "\n".join(t.strip() for t in thinks if t.strip())
     cleaned = re.sub(r"<think>.*?</think>\n?", "", content, flags=re.DOTALL).strip()
@@ -198,29 +177,29 @@ def extract_reasoning_details(details: Any) -> str:
     if not isinstance(details, list):
         return ""
     parts: list[str] = []
-    for d in details:
-        if not isinstance(d, dict):
+    for detail in details:
+        if not isinstance(detail, dict):
             continue
-        r = d.get("reasoning")
-        if isinstance(r, dict):
-            for k in ("summary", "text"):
-                v = r.get(k)
-                if isinstance(v, str) and v.strip():
-                    parts.append(v.strip())
-        for k in ("summary", "text", "content", "reasoning_content"):
-            v = d.get(k)
-            if isinstance(v, str) and v.strip():
-                parts.append(v.strip())
+        reasoning = detail.get("reasoning")
+        if isinstance(reasoning, dict):
+            for key in ("summary", "text"):
+                value = reasoning.get(key)
+                if isinstance(value, str) and value.strip():
+                    parts.append(value.strip())
+        for key in ("summary", "text", "content", "reasoning_content"):
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
     return "\n".join(parts).strip()
 
 
 def parse_sse(raw: str) -> list[dict]:
     events: list[dict] = []
     for line in raw.splitlines():
-        s = line.strip()
-        if not s.startswith("data:"):
+        stripped = line.strip()
+        if not stripped.startswith("data:"):
             continue
-        chunk = s[5:].strip()
+        chunk = stripped[5:].strip()
         if not chunk or chunk == "[DONE]":
             continue
         try:
@@ -228,78 +207,76 @@ def parse_sse(raw: str) -> list[dict]:
             if isinstance(obj, dict):
                 events.append(obj)
         except json.JSONDecodeError:
-            pass
+            continue
     return events
 
 
-# ── Parse helpers per provider ─────────────────────────────────────────────────
-
-
 def openai_parse(raw: str) -> tuple[str, str]:
-    answer = thinking = ""
+    answer = ""
+    thinking = ""
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
-            msg = ((data.get("choices") or [{}])[0]).get("message", {}) or {}
-            answer = msg.get("content", "") or ""
+            message = ((data.get("choices") or [{}])[0]).get("message", {}) or {}
+            answer = message.get("content", "") or ""
             thinking = (
-                msg.get("thinking")
-                or msg.get("reasoning_content")
-                or extract_reasoning_details(msg.get("reasoning_details"))
+                message.get("thinking")
+                or message.get("reasoning_content")
+                or extract_reasoning_details(message.get("reasoning_details"))
                 or ""
             )
-            # responses-style output[]
+
             if not answer and isinstance(data.get("output"), list):
-                texts, thinks = [], []
+                texts = []
+                thinks = []
                 for item in data["output"]:
                     if not isinstance(item, dict):
                         continue
-                    for k in ("reasoning", "thinking", "summary"):
-                        v = item.get(k)
-                        if isinstance(v, str) and v.strip():
-                            thinks.append(v.strip())
-                    for c in item.get("content") or []:
-                        if isinstance(c, dict):
-                            t = c.get("text")
-                            if isinstance(t, str) and t.strip():
-                                texts.append(t)
+                    for key in ("reasoning", "thinking", "summary"):
+                        value = item.get(key)
+                        if isinstance(value, str) and value.strip():
+                            thinks.append(value.strip())
+                    for content in item.get("content") or []:
+                        if isinstance(content, dict):
+                            text = content.get("text")
+                            if isinstance(text, str) and text.strip():
+                                texts.append(text)
                 answer = "".join(texts).strip()
                 thinking = thinking or "\n".join(thinks).strip()
     except json.JSONDecodeError:
         pass
 
-    # SSE fallback (responses API streaming)
     if not answer and not thinking:
-        text_chunks, think_chunks = [], []
-        for ev in parse_sse(raw):
-            et = str(ev.get("type", ""))
+        text_chunks = []
+        think_chunks = []
+        for event in parse_sse(raw):
+            event_type = str(event.get("type", ""))
             if any(
-                t in et
-                for t in (
+                token in event_type
+                for token in (
                     "response.reasoning.delta",
                     "response.thinking.delta",
                     "response.thought.delta",
                 )
             ):
-                for k in ("delta", "text", "reasoning", "summary", "content"):
-                    v = ev.get(k)
-                    if isinstance(v, str) and v.strip():
-                        think_chunks.append(v)
+                for key in ("delta", "text", "reasoning", "summary", "content"):
+                    value = event.get(key)
+                    if isinstance(value, str) and value.strip():
+                        think_chunks.append(value)
                         break
-                    if isinstance(v, dict):
-                        for sk in ("text", "summary", "content"):
-                            sv = v.get(sk)
-                            if isinstance(sv, str) and sv.strip():
-                                think_chunks.append(sv)
+                    if isinstance(value, dict):
+                        for subkey in ("text", "summary", "content"):
+                            subvalue = value.get(subkey)
+                            if isinstance(subvalue, str) and subvalue.strip():
+                                think_chunks.append(subvalue)
                                 break
-            if et in {"response.output_text.delta", "response.message.delta"}:
-                d = ev.get("delta")
-                if isinstance(d, str) and d:
-                    text_chunks.append(d)
+            if event_type in {"response.output_text.delta", "response.message.delta"}:
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    text_chunks.append(delta)
         answer = "".join(text_chunks).strip()
         thinking = "".join(think_chunks).strip()
 
-    # XML <think> fallback
     xml_thinking, cleaned = extract_xml_think(answer)
     if xml_thinking and not thinking:
         thinking = xml_thinking
@@ -310,9 +287,9 @@ def openai_parse(raw: str) -> tuple[str, str]:
 
 def ollama_parse(raw: str) -> tuple[str, str]:
     data = json.loads(raw)
-    msg = data.get("message", {}) or {}
-    answer = msg.get("content", "") or ""
-    thinking = msg.get("thinking", "") or ""
+    message = data.get("message", {}) or {}
+    answer = message.get("content", "") or ""
+    thinking = message.get("thinking", "") or ""
     if not thinking and answer:
         xml_thinking, cleaned = extract_xml_think(answer)
         if xml_thinking:
@@ -322,39 +299,37 @@ def ollama_parse(raw: str) -> tuple[str, str]:
 
 
 def gemini_parse(raw: str) -> tuple[str, str]:
-    text_parts, thinking_parts, sigs = [], [], []
-    for ev in parse_sse(raw):
-        for c in ev.get("candidates") or []:
-            content = c.get("content") or {}
-            for p in content.get("parts") or []:
-                if not isinstance(p, dict):
+    text_parts = []
+    thinking_parts = []
+    signatures = []
+    for event in parse_sse(raw):
+        for candidate in event.get("candidates") or []:
+            content = candidate.get("content") or {}
+            for part in content.get("parts") or []:
+                if not isinstance(part, dict):
                     continue
-                text = p.get("text")
+                text = part.get("text")
                 if isinstance(text, str):
-                    if p.get("thought"):
+                    if part.get("thought"):
                         thinking_parts.append(text)
                     else:
                         text_parts.append(text)
-                sig = p.get("thoughtSignature")
-                if isinstance(sig, str) and sig.strip():
-                    sigs.append(sig[:16])
+                signature = part.get("thoughtSignature")
+                if isinstance(signature, str) and signature.strip():
+                    signatures.append(signature[:16])
     answer = "".join(text_parts).strip()
-    thinking = "\n".join(t for t in thinking_parts if t.strip()).strip()
-    if sigs and not thinking:
-        thinking = f"[thoughtSignature:{sigs[0]}...]"
+    thinking = "\n".join(item for item in thinking_parts if item.strip()).strip()
+    if signatures and not thinking:
+        thinking = f"[thoughtSignature:{signatures[0]}...]"
     return answer, thinking
 
 
 def parse_response(provider_type: str, raw: str) -> tuple[str, str]:
-    """Dispatch to correct parser. Returns (answer, thinking)."""
     if provider_type == "openai":
         return openai_parse(raw)
     if provider_type == "ollama":
         return ollama_parse(raw)
     return gemini_parse(raw)
-
-
-# ── HTTP send ──────────────────────────────────────────────────────────────────
 
 
 class ApiError(Exception):
@@ -364,19 +339,19 @@ class ApiError(Exception):
 
 
 def classify_error(exc: Exception) -> str:
-    if isinstance(exc, (TimeoutError, TimeoutError)):
+    if isinstance(exc, TimeoutError):
         return "timeout"
     if isinstance(exc, ApiError):
-        s = exc.status
-        if s == 401:
+        status = exc.status
+        if status == 401:
             return "unauthorized"
-        if s == 403:
+        if status == 403:
             return "forbidden"
-        if s == 404:
+        if status == 404:
             return "not_found"
-        if s == 429:
+        if status == 429:
             return "rate_limited"
-        if s >= 500:
+        if status >= 500:
             return "server_error"
         return "request_error"
     return "unexpected_error"
@@ -394,28 +369,22 @@ def http_post(url: str, headers: dict, payload: dict, timeout: float) -> str:
     data = json.dumps(payload).encode()
     req = urllib_request.Request(url, data=data, headers=headers, method="POST")
     try:
-        with urllib_request.urlopen(req, timeout=timeout) as r:
-            return r.read().decode("utf-8", errors="replace")
+        with urllib_request.urlopen(req, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
     except error.HTTPError as exc:
-        raise ApiError(exc.code, exc.read().decode("utf-8", errors="replace"))
-
-
-# ── Build request per provider ─────────────────────────────────────────────────
+        raise ApiError(exc.code, exc.read().decode("utf-8", errors="replace")) from exc
 
 
 def build_request(provider: dict, model: str, prompt: str) -> tuple[str, dict, dict]:
-    """Returns (url, headers, payload)."""
-    ptype = provider["provider_type"]
-    api_base = provider["api_base"]
+    """依 provider_type 自动补固定 endpoint path。"""
+    provider_type = provider["provider_type"]
+    api_base = normalize_api_base(provider["api_base"])
     api_key = provider["api_key"]
     mode = provider["mode"]
-    endpoint = pick_endpoint(
-        provider.get("endpoint_path"), DEFAULT_ENDPOINT_PATHS[ptype]
-    )
+    endpoint = DEFAULT_ENDPOINT_PATHS[provider_type]
+    ua = "api-tester/3.0 runner"
 
-    ua = "api-tester/2.0 runner"
-
-    if ptype == "openai":
+    if provider_type == "openai":
         url = normalize_url(api_base, endpoint)
         headers = {
             "Content-Type": "application/json",
@@ -439,133 +408,78 @@ def build_request(provider: dict, model: str, prompt: str) -> tuple[str, dict, d
             "messages": [{"role": "user", "content": content}],
             "temperature": 0.2,
         }
+        return url, headers, payload
 
-    elif ptype == "ollama":
+    if provider_type == "ollama":
         url = normalize_url(api_base, endpoint)
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
             "User-Agent": ua,
         }
-        msg: dict = {"role": "user", "content": prompt}
+        message: dict[str, Any] = {"role": "user", "content": prompt}
         if mode == "vision":
-            msg["images"] = [VISION_IMAGE_B64]
-        payload = {"model": model, "messages": [msg], "stream": False}
+            message["images"] = [VISION_IMAGE_B64]
+        payload = {"model": model, "messages": [message], "stream": False}
+        return url, headers, payload
 
-    else:  # gemini
-        path = endpoint.replace("{model}", model)
-        url = normalize_url(api_base, path)
-        headers = {
-            "Content-Type": "application/json",
-            "x-goog-api-key": api_key,
-            "User-Agent": ua,
-            "Accept": "text/event-stream",
-        }
-        if mode == "vision":
-            parts = [
-                {"text": prompt},
-                {
-                    "inline_data": {
-                        "mime_type": VISION_IMAGE_MIME,
-                        "data": VISION_IMAGE_B64,
-                    }
-                },
-            ]
-        else:
-            parts = [{"text": prompt}]
-        payload = {"contents": [{"role": "user", "parts": parts}]}
-
+    path = endpoint.replace("{model}", model)
+    url = normalize_url(api_base, path)
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+        "User-Agent": ua,
+        "Accept": "text/event-stream",
+    }
+    if mode == "vision":
+        parts = [
+            {"text": prompt},
+            {
+                "inline_data": {
+                    "mime_type": VISION_IMAGE_MIME,
+                    "data": VISION_IMAGE_B64,
+                }
+            },
+        ]
+    else:
+        parts = [{"text": prompt}]
+    payload = {"contents": [{"role": "user", "parts": parts}]}
     return url, headers, payload
 
 
-# ── Model list fetching ────────────────────────────────────────────────────────
-
-
-def fetch_models(provider: dict) -> list[str]:
-    ptype = provider["provider_type"]
-    api_base = provider["api_base"]
-    api_key = provider.get("api_key", "")
-    endpoint = pick_endpoint(
-        provider.get("models_endpoint"), DEFAULT_MODELS_ENDPOINTS[ptype]
-    )
-    url = normalize_url(api_base, endpoint)
-
-    headers: dict = {"User-Agent": "api-tester/2.0 runner"}
-    if ptype == "gemini":
-        headers["x-goog-api-key"] = api_key
-    else:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    try:
-        req = urllib_request.Request(url, headers=headers, method="GET")
-        with urllib_request.urlopen(req, timeout=15) as r:
-            data = json.loads(r.read().decode())
-    except Exception as exc:
-        print(f"  [models fetch failed: {exc}] → skip provider")
-        return []
-
-    models: list[str] = []
-    if ptype == "openai":
-        for item in data.get("data") or []:
-            if isinstance(item.get("id"), str):
-                models.append(item["id"])
-    elif ptype == "ollama":
-        for item in data.get("models") or []:
-            name = item.get("model") or item.get("name")
-            if isinstance(name, str):
-                models.append(name)
-    elif ptype == "gemini":
-        for item in data.get("models") or []:
-            name = item.get("name", "")
-            if "/" in name:
-                models.append(name.split("/")[-1])
-
-    if not models:
-        print("  [models endpoint returned empty] → skip provider")
-        return []
-
-    return models
-
-
-# ── Test one model (with retry) ────────────────────────────────────────────────
-
-
 def test_model(provider: dict, model: str) -> dict:
-    """Run tester request with retry. Returns scorecard item dict."""
+    """执行 tester 单次模型测试，保留 preview 资料供前端显示。"""
     mode = provider["mode"]
     prompt = TESTER_PROMPT_THINKING if mode == "thinking" else TESTER_PROMPT_VISION
-    ptype = provider["provider_type"]
+    provider_type = provider["provider_type"]
     url, headers, payload = build_request(provider, model, prompt)
 
     last_exc: Exception | None = None
     retry_count = 0
-    t0 = time.perf_counter()
+    started = time.perf_counter()
 
     for attempt in range(MAX_RETRIES + 1):
         if attempt > 0:
             time.sleep(RETRY_SLEEP_SECONDS)
             retry_count += 1
-
         try:
             raw = http_post(url, headers, payload, TIMEOUT_SECONDS)
-            answer, thinking = parse_response(ptype, raw)
-            total_ms = round((time.perf_counter() - t0) * 1000, 2)
+            answer, thinking = parse_response(provider_type, raw)
+            total_ms = round((time.perf_counter() - started) * 1000, 2)
 
             if mode == "vision":
                 has_answer = "meow" in answer.lower()
             else:
                 has_answer = bool(answer.strip())
 
-            has_thinking = bool(thinking.strip())
-
             return {
-                "api_base": provider["api_base"],
-                "provider_type": ptype,
+                "api_base": normalize_api_base(provider["api_base"]),
+                "provider_type": provider_type,
                 "model": model,
                 "mode": mode,
                 "success": has_answer,
                 "has_answer": has_answer,
-                "has_thinking": has_thinking,
+                "has_thinking": bool(thinking.strip()),
                 "total_time_ms": total_ms,
                 "error_type": "",
                 "retry_count": retry_count,
@@ -578,18 +492,17 @@ def test_model(provider: dict, model: str) -> dict:
             if not should_retry(exc):
                 break
 
-    total_ms = round((time.perf_counter() - t0) * 1000, 2)
-    error_type = classify_error(last_exc) if last_exc else "unexpected_error"
+    total_ms = round((time.perf_counter() - started) * 1000, 2)
     return {
-        "api_base": provider["api_base"],
-        "provider_type": ptype,
+        "api_base": normalize_api_base(provider["api_base"]),
+        "provider_type": provider_type,
         "model": model,
-        "mode": provider["mode"],
+        "mode": mode,
         "success": False,
         "has_answer": False,
         "has_thinking": False,
         "total_time_ms": total_ms,
-        "error_type": error_type,
+        "error_type": classify_error(last_exc) if last_exc else "unexpected_error",
         "retry_count": retry_count,
         "answer_preview": "",
         "thinking_preview": "",
@@ -597,149 +510,273 @@ def test_model(provider: dict, model: str) -> dict:
     }
 
 
-# ── Tester loop ────────────────────────────────────────────────────────────────
-
-
-def run_tester(
-    worker: WorkerClient,
-    providers: list[dict],
-    run_id: str,
-    config_fingerprint: str,
-    checkpoint: dict,
-) -> list[dict]:
-    """
-    Iterate all providers × models, resume from checkpoint if matching config fingerprint.
-    Returns list of scorecard items.
-    """
-    completed_set: set[str] = set(checkpoint.get("completed", []))
-    items: list[dict] = []
-    since_last_ck = 0
-
-    for p_idx, provider in enumerate(providers):
-        pid = provider_key(provider)
-        models = fetch_models(provider)
-        total = len(models)
-        print(f"\n[provider {p_idx+1}] {pid}  ({total} models)")
-
-        for m_idx, model in enumerate(models):
-            key = f"{pid}:{model}"
-            if key in completed_set:
-                print(f"  [{m_idx+1}/{total}] {model} — skipped (checkpoint)")
-                continue
-
-            print(f"  [{m_idx+1}/{total}] {model}", end="", flush=True)
-            item = test_model(provider, model)
-            items.append(item)
-            completed_set.add(key)
-
-            status = (
-                "ok"
-                if item["success"]
-                else f"fail ({item['error_type'] or 'no_answer'})"
-            )
-            think = " (think)" if item["has_thinking"] else ""
-            print(
-                f" → {status}{think}  {item['total_time_ms']}ms  retry={item['retry_count']}"
-            )
-
-            since_last_ck += 1
-            if since_last_ck >= CHECKPOINT_EVERY_N:
-                ck = {
-                    "run_id": run_id,
-                    "config_fingerprint": config_fingerprint,
-                    "completed": list(completed_set),
-                    "updated_at": now_iso(),
-                }
-                try:
-                    worker.post_checkpoint(ck)
-                except Exception as exc:
-                    print(f"  [checkpoint write failed: {exc}]")
-                since_last_ck = 0
-
-    return items
-
-
-# ── Benchmark ──────────────────────────────────────────────────────────────────
-
-
-def run_benchmark(
-    providers_by_key: dict[str, dict], scorecard_items: list[dict]
-) -> list[dict]:
-    """Run 3 benchmark calls for each success model. Returns benchmark item list."""
-    success_items = [i for i in scorecard_items if i["success"]]
-    print(
-        f"\n[benchmark] {len(success_items)} success models × {BENCHMARK_RUNS_PER_MODEL} runs"
+def benchmark_model(provider: dict, model: str) -> list[dict]:
+    """执行 benchmark 多轮。注意：这里回传 runs，方便 checkpoint 持续累积。"""
+    mode = provider["mode"]
+    provider_type = provider["provider_type"]
+    prompt = (
+        BENCHMARK_PROMPT_THINKING if mode == "thinking" else BENCHMARK_PROMPT_VISION
     )
+    url, headers, payload = build_request(provider, model, prompt)
+    runs: list[dict] = []
 
-    results: list[dict] = []
-
-    for sc in success_items:
-        pid = sc["api_base"]
-        model = sc["model"]
-        pkey = f"{sc.get('provider_type','')}::{sc.get('mode','')}::{sc.get('api_base','')}"
-        provider = providers_by_key.get(pkey)
-        if not provider:
-            continue
-        if not is_benchmark_enabled(provider):
-            continue
-
-        mode = provider["mode"]
-        ptype = provider["provider_type"]
-        prompt = (
-            BENCHMARK_PROMPT_THINKING if mode == "thinking" else BENCHMARK_PROMPT_VISION
-        )
-        url, headers, payload = build_request(provider, model, prompt)
-
-        print(f"  {pid}:{model}", end="", flush=True)
-        runs: list[dict] = []
-
-        for ri in range(BENCHMARK_RUNS_PER_MODEL):
-            t0 = time.perf_counter()
-            try:
-                raw = http_post(url, headers, payload, TIMEOUT_SECONDS)
-                answer, _ = parse_response(ptype, raw)
-                total_ms = round((time.perf_counter() - t0) * 1000, 2)
-                output_chars = len(answer.strip())
-                runs.append(
-                    {
-                        "run_index": ri,
-                        "total_time_ms": total_ms,
-                        "ttft_ms": None,
-                        "output_chars": output_chars,
-                    }
-                )
-                print(f" {total_ms}ms", end="", flush=True)
-            except Exception as exc:
-                total_ms = round((time.perf_counter() - t0) * 1000, 2)
-                runs.append(
-                    {
-                        "run_index": ri,
-                        "total_time_ms": total_ms,
-                        "ttft_ms": None,
-                        "output_chars": 0,
-                        "error": classify_error(exc),
-                    }
-                )
-                print(f" err ({classify_error(exc)})", end="", flush=True)
-
-        penalized_times = [
-            (
-                BENCHMARK_ERROR_PENALTY_MS
-                if "error" in r
-                else min(float(r["total_time_ms"]), BENCHMARK_ERROR_PENALTY_MS)
+    for run_index in range(BENCHMARK_RUNS_PER_MODEL):
+        started = time.perf_counter()
+        try:
+            raw = http_post(url, headers, payload, TIMEOUT_SECONDS)
+            answer, _ = parse_response(provider_type, raw)
+            total_ms = round((time.perf_counter() - started) * 1000, 2)
+            runs.append(
+                {
+                    "run_index": run_index,
+                    "total_time_ms": total_ms,
+                    "ttft_ms": None,
+                    "output_chars": len(answer.strip()),
+                }
             )
-            for r in runs
-        ]
-        avg = (
-            round(sum(penalized_times) / len(penalized_times), 2)
-            if penalized_times
-            else None
-        )
-        print(f"  avg={avg}ms")
+        except Exception as exc:
+            total_ms = round((time.perf_counter() - started) * 1000, 2)
+            runs.append(
+                {
+                    "run_index": run_index,
+                    "total_time_ms": total_ms,
+                    "ttft_ms": None,
+                    "output_chars": 0,
+                    "error": classify_error(exc),
+                }
+            )
+    return runs
 
-        results.append(
+
+def compute_benchmark_average(runs: list[dict]) -> float | None:
+    penalized_times = [
+        (
+            BENCHMARK_ERROR_PENALTY_MS
+            if "error" in run
+            else min(float(run["total_time_ms"]), BENCHMARK_ERROR_PENALTY_MS)
+        )
+        for run in runs
+    ]
+    if not penalized_times:
+        return None
+    return round(sum(penalized_times) / len(penalized_times), 2)
+
+
+def build_tester_payload(
+    run_id: str, started_at: str, finished_at: str, items: list[dict]
+) -> dict:
+    def sort_key(item: dict):
+        return (
+            0 if item["success"] else 1,
+            item["total_time_ms"] if item["success"] else 0,
+            item["api_base"] + item["model"],
+        )
+
+    sorted_items = sorted(items, key=sort_key)
+    total = len(sorted_items)
+    success = sum(1 for item in sorted_items if item["success"])
+    return {
+        "run_id": run_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "items": sorted_items,
+        "summary": {"total": total, "success": success, "failed": total - success},
+    }
+
+
+def build_benchmark_payload(run_id: str, items: list[dict]) -> dict:
+    sorted_items = sorted(
+        items,
+        key=lambda item: (
+            item["avg_total_time_ms"] if item["avg_total_time_ms"] is not None else float("inf"),
+            item["api_base"] + item["model"],
+        ),
+    )
+    return {
+        "run_id": run_id,
+        "items": sorted_items,
+    }
+
+
+def checkpoint_model_key(model: str) -> str:
+    return model
+
+
+def build_tester_checkpoint(run_id: str, started_at: str, items: list[dict]) -> dict:
+    # 这里明确把 partial items 一起存进去，续跑时不用重跑已完成模型。
+    completed_models = sorted(item["model"] for item in items)
+    return {
+        "run_id": run_id,
+        "started_at": started_at,
+        "completed_models": completed_models,
+        "items": items,
+    }
+
+
+def build_benchmark_checkpoint(
+    run_id: str,
+    source_tester_run_id: str | None,
+    items: list[dict],
+) -> dict:
+    completed_models = sorted(item["model"] for item in items)
+    return {
+        "run_id": run_id,
+        "source_tester_run_id": source_tester_run_id,
+        "completed_models": completed_models,
+        "items": items,
+    }
+
+
+def write_checkpoint_every_n(
+    worker: WorkerClient,
+    stage: str,
+    fingerprint: str,
+    payload_builder,
+    flush_counter: int,
+) -> int:
+    if flush_counter < CHECKPOINT_EVERY_N:
+        return flush_counter
+    worker.post_checkpoint(stage, fingerprint, payload_builder())
+    return 0
+
+
+def run_tester_for_provider(
+    worker: WorkerClient,
+    provider: dict,
+    run_id: str,
+    provider_fingerprint: str,
+) -> dict | None:
+    """逐 provider 执行 tester，并把部分结果持续写进 checkpoint。"""
+    models = provider.get("models_list") or []
+    if not models:
+        print("  [skip] models_list 为空")
+        return None
+
+    checkpoint_items: list[dict] = []
+    completed_models: set[str] = set()
+    started_at = now_iso()
+
+    checkpoint = {}
+    try:
+        checkpoint = worker.get_checkpoint("tester", provider_fingerprint)
+    except Exception as exc:
+        print(f"  [warn] GET tester checkpoint failed: {exc}")
+
+    if checkpoint.get("exists") is True:
+        checkpoint_items = list(checkpoint.get("items") or [])
+        completed_models = {item.get("model", "") for item in checkpoint_items if item.get("model")}
+        started_at = checkpoint.get("started_at") or started_at
+        print(f"  [resume] tester checkpoint models={len(completed_models)}")
+
+    items = checkpoint_items[:]
+    since_last_checkpoint = 0
+
+    def checkpoint_payload() -> dict:
+        return build_tester_checkpoint(run_id, started_at, items)
+
+    for index, model in enumerate(models, start=1):
+        model_key = checkpoint_model_key(model)
+        if model_key in completed_models:
+            print(f"  [{index}/{len(models)}] {model} -> skipped (checkpoint)")
+            continue
+
+        print(f"  [{index}/{len(models)}] {model}", end="", flush=True)
+        item = test_model(provider, model)
+        items.append(item)
+        completed_models.add(model_key)
+        status = "ok" if item["success"] else f"fail ({item['error_type'] or 'no_answer'})"
+        think = " (think)" if item["has_thinking"] else ""
+        print(f" -> {status}{think} {item['total_time_ms']}ms retry={item['retry_count']}")
+
+        since_last_checkpoint += 1
+        if since_last_checkpoint >= CHECKPOINT_EVERY_N:
+            try:
+                worker.post_checkpoint(
+                    "tester",
+                    provider_fingerprint,
+                    checkpoint_payload(),
+                )
+            except Exception as exc:
+                print(f"  [warn] write tester checkpoint failed: {exc}")
+            since_last_checkpoint = 0
+
+    # 最后再落一次，避免少于 3 个模型的尾段没有存进去。
+    try:
+        worker.post_checkpoint("tester", provider_fingerprint, checkpoint_payload())
+    except Exception as exc:
+        print(f"  [warn] final tester checkpoint failed: {exc}")
+
+    return build_tester_payload(run_id, started_at, now_iso(), items)
+
+
+def load_tester_source_for_benchmark(
+    worker: WorkerClient,
+    provider: dict,
+    provider_fingerprint: str,
+) -> dict:
+    """
+    benchmark 的模型来源：
+    1. 若本次 tester 没跑，就从 latest_tester:{provider_fp} 读取
+    2. 若本次 tester 已跑，就直接用本次 tester 结果
+    """
+    result = worker.get_results(provider_fingerprint)
+    tester = result.get("tester")
+    if not result.get("exists") or not tester or not (tester.get("items") or []):
+        raise RuntimeError("该 provider_fingerprint 没有历史 tester 结果")
+    return tester
+
+
+def run_benchmark_for_provider(
+    worker: WorkerClient,
+    provider: dict,
+    provider_fingerprint: str,
+    source_tester: dict,
+    run_id: str,
+) -> dict | None:
+    """
+    benchmark 也支援 checkpoint。
+    checkpoint 直接保存已完成的 benchmark items，续跑时可无损恢复。
+    """
+    success_models = [
+        item["model"]
+        for item in (source_tester.get("items") or [])
+        if item.get("success")
+    ]
+    if not success_models:
+        print("  [skip] 没有 success tester models 可供 benchmark")
+        return None
+
+    checkpoint = {}
+    try:
+        checkpoint = worker.get_checkpoint("benchmark", provider_fingerprint)
+    except Exception as exc:
+        print(f"  [warn] GET benchmark checkpoint failed: {exc}")
+
+    items = list(checkpoint.get("items") or []) if checkpoint.get("exists") is True else []
+    completed_models = {item.get("model", "") for item in items if item.get("model")}
+    if completed_models:
+        print(f"  [resume] benchmark checkpoint models={len(completed_models)}")
+
+    since_last_checkpoint = 0
+
+    def checkpoint_payload() -> dict:
+        return build_benchmark_checkpoint(
+            run_id,
+            source_tester.get("run_id"),
+            items,
+        )
+
+    for index, model in enumerate(success_models, start=1):
+        if model in completed_models:
+            print(f"  [{index}/{len(success_models)}] {model} -> skipped (checkpoint)")
+            continue
+
+        print(f"  [{index}/{len(success_models)}] {model}", end="", flush=True)
+        runs = benchmark_model(provider, model)
+        avg = compute_benchmark_average(runs)
+        items.append(
             {
-                "api_base": pid,
+                "api_base": normalize_api_base(provider["api_base"]),
                 "provider_type": provider["provider_type"],
                 "mode": provider["mode"],
                 "model": model,
@@ -747,215 +784,155 @@ def run_benchmark(
                 "avg_total_time_ms": avg,
             }
         )
+        completed_models.add(model)
+        print(f" -> avg={avg}ms")
 
-    return results
+        since_last_checkpoint += 1
+        if since_last_checkpoint >= CHECKPOINT_EVERY_N:
+            try:
+                worker.post_checkpoint(
+                    "benchmark",
+                    provider_fingerprint,
+                    checkpoint_payload(),
+                )
+            except Exception as exc:
+                print(f"  [warn] write benchmark checkpoint failed: {exc}")
+            since_last_checkpoint = 0
 
+    try:
+        worker.post_checkpoint("benchmark", provider_fingerprint, checkpoint_payload())
+    except Exception as exc:
+        print(f"  [warn] final benchmark checkpoint failed: {exc}")
 
-# ── Build final payload ────────────────────────────────────────────────────────
-
-
-def build_results(
-    run_id: str,
-    started_at: str,
-    config_fingerprint: str,
-    items: list[dict],
-    benchmark: list[dict],
-) -> dict:
-    # Sort: success first, then by total_time_ms asc, then api_base+model lex
-    def sort_key(i: dict):
-        return (
-            0 if i["success"] else 1,
-            i["total_time_ms"] if i["success"] else 0,
-            i["api_base"] + i["model"],
-        )
-
-    sorted_items = sorted(items, key=sort_key)
-    total = len(sorted_items)
-    success = sum(1 for i in sorted_items if i["success"])
-    finished_at = now_iso()
-
-    scorecard = {
-        "run_id": run_id,
-        "config_fingerprint": config_fingerprint,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "items": sorted_items,
-        "summary": {"total": total, "success": success, "failed": total - success},
-    }
-
-    bm_payload = {
-        "run_id": run_id,
-        "config_fingerprint": config_fingerprint,
-        "items": benchmark,
-    }
-
-    return {
-        "config_fingerprint": config_fingerprint,
-        "scorecard": scorecard,
-        "benchmark": bm_payload,
-    }
+    return build_benchmark_payload(run_id, items)
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+def upload_provider_results(
+    worker: WorkerClient,
+    provider_fingerprint: str,
+    tester_payload: dict | None,
+    benchmark_payload: dict | None,
+) -> None:
+    payload = {"provider_fingerprint": provider_fingerprint}
+    if tester_payload is not None:
+        payload["tester"] = tester_payload
+    if benchmark_payload is not None:
+        payload["benchmark"] = benchmark_payload
+    worker.post_results(payload)
 
 
 def main() -> int:
     worker_url = os.environ.get("WORKER_API_URL", "").strip()
     token = os.environ.get("MASTER_API_TOKEN", "").strip()
-
     if not worker_url or not token:
         print("[error] WORKER_API_URL and MASTER_API_TOKEN env vars are required")
         return 1
 
     worker = WorkerClient(worker_url, token)
     run_id = generate_run_id()
-    started_at = now_iso()
-    print(f"run_id={run_id}  started_at={started_at}")
+    print(f"run_id={run_id}")
 
-    # 1. Fetch config
     try:
         config = worker.get_config()
     except Exception as exc:
         print(f"[error] GET /api/config failed: {exc}")
         return 1
 
-    providers: list[dict] = config.get("providers") or []
+    providers = config.get("providers") or []
     if not providers:
         print("[error] No providers in config")
         return 1
 
-    config_fingerprint = build_config_fingerprint(providers)
-    providers_by_key = {provider_key(p): p for p in providers}
-    tester_providers = [p for p in providers if is_tester_enabled(p)]
-    benchmark_enabled_providers = [p for p in providers if is_benchmark_enabled(p)]
-    benchmark_only_keys = {
-        provider_key(p)
-        for p in providers
-        if (not is_tester_enabled(p)) and is_benchmark_enabled(p)
-    }
+    # 统一先做本地正规化，确保日志和 fingerprint 输入一致。
+    for provider in providers:
+        provider["api_base"] = normalize_api_base(provider["api_base"])
 
-    if not tester_providers and not benchmark_enabled_providers:
+    print(f"Providers={len(providers)}")
+    for provider in providers:
         print(
-            "[skip] All providers have tester_enabled=false and benchmark_enabled=false. Nothing to run."
+            f"  {provider_key(provider)} "
+            f"tester={is_tester_enabled(provider)} "
+            f"benchmark={is_benchmark_enabled(provider)} "
+            f"models={len(provider.get('models_list') or [])} "
+            f"key={mask_key(provider.get('api_key', ''))}"
         )
+
+    if not any(is_tester_enabled(provider) or is_benchmark_enabled(provider) for provider in providers):
+        print("[skip] Nothing to run")
         return 0
 
-    print(f"Providers: {[p['api_base'] for p in providers]}")
-    print(f"config_fingerprint={config_fingerprint[:16]}...")
-    for p in providers:
-        print(f"  {p['api_base']}  key={mask_key(p.get('api_key',''))}")
+    any_failure = False
 
-    # 2. Fetch checkpoint (only when at least one provider enables tester)
-    checkpoint: dict = {}
-    if tester_providers:
+    for provider in providers:
+        provider_id = provider_key(provider)
+        provider_fingerprint = build_provider_fingerprint(provider)
+        print(f"\n=== provider {provider_id} ===")
+        print(f"fingerprint={provider_fingerprint[:16]}...")
+
+        tester_payload: dict | None = None
+        benchmark_payload: dict | None = None
+
         try:
-            ck = worker.get_checkpoint()
-            ck_fingerprint = ck.get("config_fingerprint")
-            current_fp_short = config_fingerprint[:12]
-            ck_fp_short = (
-                ck_fingerprint[:12]
-                if isinstance(ck_fingerprint, str) and ck_fingerprint
-                else None
-            )
-            if (
-                ck.get("exists") is not False
-                and ck_fingerprint
-                and ck_fingerprint == config_fingerprint
-            ):
-                checkpoint = ck
-                print(
-                    f"Resuming checkpoint: completed={len(checkpoint.get('completed', []))} "
-                    f"fingerprint={current_fp_short}..."
+            if is_tester_enabled(provider):
+                tester_payload = run_tester_for_provider(
+                    worker,
+                    provider,
+                    run_id,
+                    provider_fingerprint,
                 )
-            elif ck_fingerprint and ck_fingerprint != config_fingerprint:
-                print(
-                    "Checkpoint fingerprint mismatch — starting fresh "
-                    f"(checkpoint={ck_fp_short}... current={current_fp_short}...)"
+            else:
+                print("  [info] tester disabled")
+
+            if is_benchmark_enabled(provider):
+                if tester_payload is not None:
+                    source_tester = tester_payload
+                else:
+                    source_tester = load_tester_source_for_benchmark(
+                        worker,
+                        provider,
+                        provider_fingerprint,
+                    )
+
+                benchmark_payload = run_benchmark_for_provider(
+                    worker,
+                    provider,
+                    provider_fingerprint,
+                    source_tester,
+                    run_id,
                 )
-            elif ck.get("run_id"):
-                print(
-                    "Checkpoint has no fingerprint (legacy format) — starting fresh "
-                    f"(current={current_fp_short}...)"
-                )
+            else:
+                print("  [info] benchmark disabled")
+
+            if tester_payload is None and benchmark_payload is None:
+                print("  [skip] 该 provider 没有可上传结果")
+                continue
+
+            upload_provider_results(
+                worker,
+                provider_fingerprint,
+                tester_payload,
+                benchmark_payload,
+            )
+            print("  [ok] uploaded results")
+
+            # 上传成功后才清对应 stage 的 checkpoint。
+            if tester_payload is not None:
+                try:
+                    worker.delete_checkpoint("tester", provider_fingerprint)
+                except Exception as exc:
+                    print(f"  [warn] DELETE tester checkpoint failed: {exc}")
+
+            if benchmark_payload is not None:
+                try:
+                    worker.delete_checkpoint("benchmark", provider_fingerprint)
+                except Exception as exc:
+                    print(f"  [warn] DELETE benchmark checkpoint failed: {exc}")
+
         except Exception as exc:
-            print(f"[warn] GET /api/checkpoint failed: {exc} — starting fresh")
-    else:
-        print("[info] tester skipped for all providers (tester_enabled=false)")
+            any_failure = True
+            print(f"  [error] provider failed: {exc}")
 
-    # 3. Run tester only for tester-enabled providers
-    current_items: list[dict] = []
-    if tester_providers:
-        current_items = run_tester(
-            worker, tester_providers, run_id, config_fingerprint, checkpoint
-        )
-
-    # 4. For benchmark-only providers, load historical scorecard from current fingerprint
-    historical_items_for_benchmark: list[dict] = []
-    if benchmark_only_keys:
-        try:
-            historical = worker.get_results(config_fingerprint)
-        except Exception as exc:
-            print(
-                f"[error] benchmark-only requires historical scorecard, but GET /api/results failed: {exc}"
-            )
-            return 1
-
-        historical_items = (historical.get("scorecard") or {}).get("items") or []
-        if not historical_items:
-            print(
-                "[error] benchmark-only requested but no historical scorecard exists for current fingerprint"
-            )
-            return 1
-
-        historical_items_for_benchmark = [
-            it
-            for it in historical_items
-            if f"{it.get('provider_type','')}::{it.get('mode','')}::{it.get('api_base','')}"
-            in benchmark_only_keys
-        ]
-        if not historical_items_for_benchmark and not current_items:
-            print(
-                "[error] benchmark-only requested, but no matching historical scorecard items found"
-            )
-            return 1
-        if historical_items_for_benchmark:
-            print(
-                f"[info] loaded {len(historical_items_for_benchmark)} historical scorecard items "
-                "for benchmark-only providers"
-            )
-
-    merged_items_for_upload = current_items + historical_items_for_benchmark
-
-    # 5. Run benchmark only for benchmark-enabled providers using merged scorecard source
-    benchmark: list[dict] = []
-    if benchmark_enabled_providers:
-        benchmark = run_benchmark(providers_by_key, merged_items_for_upload)
-    else:
-        print("[info] benchmark skipped for all providers (benchmark_enabled=false)")
-
-    # 6. Build and upload results
-    payload = build_results(
-        run_id, started_at, config_fingerprint, merged_items_for_upload, benchmark
-    )
-    print(
-        f"\nUploading results: scorecard={len(merged_items_for_upload)} items, benchmark={len(benchmark)} items"
-    )
-    try:
-        worker.post_results(payload)
-    except Exception as exc:
-        print(f"[error] POST /api/results failed: {exc}")
-        return 1
-
-    # 7. Clear checkpoint only when tester actually ran
-    if tester_providers:
-        try:
-            worker.delete_checkpoint()
-        except Exception as exc:
-            print(f"[warn] DELETE /api/checkpoint failed: {exc}")
-
-    sc = payload["scorecard"]["summary"]
-    print(f"\nDone. total={sc['total']} success={sc['success']} failed={sc['failed']}")
-    return 0
+    return 1 if any_failure else 0
 
 
 if __name__ == "__main__":

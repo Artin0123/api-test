@@ -2,13 +2,15 @@
  * Cloudflare Worker API Gateway
  *
  * KV bindings required:
- *   KV_STORE  providers_config, run_checkpoint,
- *             latest_scorecard:{config_fingerprint},
- *             latest_benchmark:{config_fingerprint}
+ *   KV_STORE  providers_config
+ *             tester_checkpoint:{provider_fingerprint}
+ *             benchmark_checkpoint:{provider_fingerprint}
+ *             latest_tester:{provider_fingerprint}
+ *             latest_benchmark:{provider_fingerprint}
  *
  * Secrets required:
  *   MASTER_API_TOKEN
- *   GITHUB_ACTIONS_URL  (used by frontend Run Now button)
+ *   GITHUB_ACTIONS_URL
  */
 
 const ROUTES = {
@@ -19,36 +21,24 @@ const ROUTES = {
   "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
   "POST /api/results": handlePostResults,
-  "GET /api/results/catalog": handleGetResultsCatalog,
   "GET /api/results": handleGetResults,
 };
 
 const VALID_TYPES = new Set(["openai", "ollama", "gemini"]);
 const VALID_MODES = new Set(["thinking", "vision"]);
+const VALID_STAGES = new Set(["tester", "benchmark"]);
 
-const DEFAULT_ENDPOINT_PATH = {
-  openai: "/v1/chat/completions",
-  ollama: "/api/chat",
-  gemini: "/v1beta/models/{model}:streamGenerateContent?alt=sse",
-};
-
-const DEFAULT_MODELS_ENDPOINT = {
-  openai: "/v1/models",
-  ollama: "/api/tags",
-  gemini: "/v1beta/models",
-};
-
-const RESULTS_CATALOG_KEY = "results_catalog";
-const RESULTS_CATALOG_LIMIT = 100;
-
-// ── Entry point ───────────────────────────────────────────────────────────────
+const MODELS_LIST_ITEM_MAX_LENGTH = 200;
+const MODELS_LIST_MAX_ITEMS = 500;
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const key = `${request.method} ${url.pathname}`;
     const handler = ROUTES[key];
-    if (!handler) return text("Not Found", 404);
+    if (!handler) {
+      return text("Not Found", 404);
+    }
     try {
       return await handler(request, env, url);
     } catch (err) {
@@ -57,8 +47,6 @@ export default {
     }
   },
 };
-
-// ── Auth & helpers ────────────────────────────────────────────────────────────
 
 function requireAuth(request, env) {
   const auth = request.headers.get("Authorization") || "";
@@ -73,65 +61,46 @@ function json(data, status = 200) {
   });
 }
 
-function text(msg, status = 200) {
-  return new Response(msg, { status });
-}
-
-function maskKey(key) {
-  if (!key || key.length <= 6) return "***";
-  return key.slice(0, 4) + "***" + key.slice(-2);
+function text(value, status = 200) {
+  return new Response(value, { status });
 }
 
 function asNonEmptyString(value, fallback = "") {
-  if (typeof value !== "string") return fallback;
+  if (typeof value !== "string") {
+    return fallback;
+  }
   const normalized = value.trim();
   return normalized || fallback;
 }
 
-function normalizeProvider(p) {
-  const providerType = p.provider_type;
-  return {
-    ...p,
-    endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
-    models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
-    tester_enabled: typeof p.tester_enabled === "boolean" ? p.tester_enabled : true,
-    benchmark_enabled: typeof p.benchmark_enabled === "boolean" ? p.benchmark_enabled : true,
-  };
+function parseJsonOrNull(raw) {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
-function providerKey(p) {
-  return `${p.provider_type}::${p.mode}::${p.api_base}`;
+function maskKey(key) {
+  if (!key || key.length <= 6) {
+    return "***";
+  }
+  return key.slice(0, 4) + "***" + key.slice(-2);
+}
+
+function providerKey(provider) {
+  return `${provider.provider_type}::${provider.mode}::${provider.api_base}`;
 }
 
 function looksMaskedKey(value) {
   return typeof value === "string" && value.includes("***");
 }
 
-function normalizeForFingerprint(providers) {
-  const normalized = (providers || []).map((p) => {
-    const providerType = p.provider_type;
-    return {
-      provider_type: providerType,
-      mode: p.mode || "",
-      api_base: p.api_base || "",
-      endpoint_path: asNonEmptyString(p.endpoint_path, DEFAULT_ENDPOINT_PATH[providerType] || ""),
-      models_endpoint: asNonEmptyString(p.models_endpoint, DEFAULT_MODELS_ENDPOINT[providerType] || ""),
-    };
-  });
-
-  normalized.sort((a, b) => {
-    const ak = `${a.provider_type}::${a.mode}::${a.api_base}`;
-    const bk = `${b.provider_type}::${b.mode}::${b.api_base}`;
-    return ak.localeCompare(bk);
-  });
-
-  return normalized;
-}
-
-async function sha256Hex(input) {
-  const data = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+function normalizeApiBase(value) {
+  return asNonEmptyString(value).replace(/\/+$/, "");
 }
 
 function sortKeysDeep(value) {
@@ -148,388 +117,417 @@ function sortKeysDeep(value) {
   return value;
 }
 
-async function buildConfigFingerprint(providers) {
-  const normalized = normalizeForFingerprint(providers);
-  const payload = JSON.stringify(sortKeysDeep(normalized));
+async function handleGetEnv(_request, env) {
+  return json({ github_actions_url: env.GITHUB_ACTIONS_URL || null });
+}
+
+function normalizeModelsList(modelsList) {
+  // 后端只接受 canonical 的 string[]，并在这里做最终把关。
+  if (!Array.isArray(modelsList)) {
+    return { error: "models_list must be an array" };
+  }
+  if (modelsList.length > MODELS_LIST_MAX_ITEMS) {
+    return {
+      error: `models_list has ${modelsList.length} items, max allowed is ${MODELS_LIST_MAX_ITEMS}`,
+    };
+  }
+
+  const seen = new Set();
+  const normalized = [];
+
+  for (let i = 0; i < modelsList.length; i += 1) {
+    const item = modelsList[i];
+    if (typeof item !== "string") {
+      return { error: `models_list[${i}] must be a string` };
+    }
+    const trimmed = item.trim();
+    if (!trimmed) {
+      return { error: `models_list[${i}] is empty after trim` };
+    }
+    if (trimmed.length > MODELS_LIST_ITEM_MAX_LENGTH) {
+      return {
+        error: `models_list[${i}] exceeds max length ${MODELS_LIST_ITEM_MAX_LENGTH}`,
+      };
+    }
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed);
+      normalized.push(trimmed);
+    }
+  }
+
+  normalized.sort((a, b) => a.localeCompare(b));
+  return { value: normalized };
+}
+
+function normalizeProvider(input, previousProvider) {
+  if (!VALID_TYPES.has(input?.provider_type)) {
+    return { error: `Invalid provider_type: ${input?.provider_type}` };
+  }
+  if (!VALID_MODES.has(input?.mode)) {
+    return { error: `Invalid mode: ${input?.mode}` };
+  }
+
+  const apiBase = normalizeApiBase(input.api_base);
+  if (!apiBase) {
+    return { error: "api_base required" };
+  }
+
+  const modelsListResult = normalizeModelsList(input.models_list);
+  if (modelsListResult.error) {
+    return { error: modelsListResult.error };
+  }
+
+  let apiKey = asNonEmptyString(input.api_key);
+  if ((!apiKey || looksMaskedKey(apiKey)) && previousProvider?.api_key) {
+    apiKey = previousProvider.api_key;
+  }
+  if (!apiKey) {
+    return { error: `api_key required for provider: ${input.provider_type}::${input.mode}::${apiBase}` };
+  }
+
+  return {
+    value: {
+      provider_type: input.provider_type,
+      mode: input.mode,
+      api_base: apiBase,
+      api_key: apiKey,
+      tester_enabled: typeof input.tester_enabled === "boolean" ? input.tester_enabled : true,
+      benchmark_enabled:
+        typeof input.benchmark_enabled === "boolean" ? input.benchmark_enabled : true,
+      models_list: modelsListResult.value,
+    },
+  };
+}
+
+async function sha256Hex(input) {
+  const data = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function buildProviderFingerprint(provider) {
+  // fingerprint 故意不含 api_key / models_list / tester_enabled / benchmark_enabled。
+  const payload = JSON.stringify(
+    sortKeysDeep({
+      provider_type: provider.provider_type,
+      mode: provider.mode,
+      api_base: normalizeApiBase(provider.api_base),
+    }),
+  );
   return sha256Hex(payload);
 }
 
-async function getCurrentConfigFingerprint(env) {
-  const configRaw = await env.KV_STORE.get("providers_config");
-  if (!configRaw) return null;
-  try {
-    const config = JSON.parse(configRaw);
-    return await buildConfigFingerprint(config.providers || []);
-  } catch {
-    return null;
-  }
+function testerKey(providerFingerprint) {
+  return `latest_tester:${providerFingerprint}`;
 }
 
-function scorecardKey(configFingerprint) {
-  return configFingerprint ? `latest_scorecard:${configFingerprint}` : null;
+function benchmarkKey(providerFingerprint) {
+  return `latest_benchmark:${providerFingerprint}`;
 }
 
-function benchmarkKey(configFingerprint) {
-  return configFingerprint ? `latest_benchmark:${configFingerprint}` : null;
+function checkpointKey(stage, providerFingerprint) {
+  return `${stage}_checkpoint:${providerFingerprint}`;
 }
 
 function asFingerprint(value) {
-  if (typeof value !== "string") return null;
+  if (typeof value !== "string") {
+    return null;
+  }
   const normalized = value.trim();
   return normalized || null;
 }
 
-function parseJsonOrNull(raw) {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
+function getStageAndFingerprint(url) {
+  const stage = asNonEmptyString(url.searchParams.get("stage"), null);
+  const fingerprint = asFingerprint(url.searchParams.get("fingerprint"));
+
+  if (!VALID_STAGES.has(stage)) {
+    return { error: "stage must be tester or benchmark" };
   }
-}
-
-function asFiniteNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function buildProviderCatalogSummary(scorecardItems) {
-  const grouped = new Map();
-  for (const item of scorecardItems || []) {
-    const providerType = asNonEmptyString(item?.provider_type);
-    const mode = asNonEmptyString(item?.mode);
-    const apiBase = asNonEmptyString(item?.api_base);
-    const key = `${providerType}::${mode}::${apiBase}`;
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        provider_type: providerType,
-        mode,
-        api_base: apiBase,
-        total: 0,
-        success: 0,
-        failed: 0,
-      });
-    }
-    const row = grouped.get(key);
-    row.total += 1;
-    if (item?.success) row.success += 1;
-    else row.failed += 1;
+  if (!fingerprint) {
+    return { error: "fingerprint required" };
   }
-
-  return Array.from(grouped.values()).sort((a, b) => {
-    const ak = `${a.api_base}::${a.provider_type}::${a.mode}`;
-    const bk = `${b.api_base}::${b.provider_type}::${b.mode}`;
-    return ak.localeCompare(bk);
-  });
+  return { stage, fingerprint };
 }
 
-function buildResultsCatalogEntry(configFingerprint, scorecard) {
-  const items = Array.isArray(scorecard?.items) ? scorecard.items : [];
-  const derivedSuccess = items.filter((item) => !!item?.success).length;
-  const total = asFiniteNumber(scorecard?.summary?.total, items.length);
-  const success = asFiniteNumber(scorecard?.summary?.success, derivedSuccess);
-  const failed = asFiniteNumber(scorecard?.summary?.failed, Math.max(total - success, 0));
-
-  return {
-    config_fingerprint: configFingerprint,
-    run_id: asNonEmptyString(scorecard?.run_id, null),
-    started_at: asNonEmptyString(scorecard?.started_at, null),
-    finished_at: asNonEmptyString(scorecard?.finished_at, null),
-    summary: { total, success, failed },
-    providers: buildProviderCatalogSummary(items),
-    updated_at: new Date().toISOString(),
+async function loadConfig(env) {
+  return parseJsonOrNull(await env.KV_STORE.get("providers_config")) || {
+    providers: [],
+    updated_at: null,
   };
 }
 
-function normalizeCatalogItems(items) {
-  const list = Array.isArray(items) ? items : [];
-  return list
-    .filter((item) => asFingerprint(item?.config_fingerprint))
-    .sort((a, b) => asNonEmptyString(b?.finished_at).localeCompare(asNonEmptyString(a?.finished_at)));
-}
+async function getConfigProviderMaps(env) {
+  const config = await loadConfig(env);
+  const byKey = new Map();
+  const byFingerprint = new Map();
 
-async function upsertResultsCatalog(env, configFingerprint, scorecard) {
-  const raw = await env.KV_STORE.get(RESULTS_CATALOG_KEY);
-  const existing = normalizeCatalogItems(parseJsonOrNull(raw));
-  const nextEntry = buildResultsCatalogEntry(configFingerprint, scorecard);
-  const filtered = existing.filter((item) => item.config_fingerprint !== configFingerprint);
-  const merged = [nextEntry, ...filtered]
-    .sort((a, b) => asNonEmptyString(b?.finished_at).localeCompare(asNonEmptyString(a?.finished_at)))
-    .slice(0, RESULTS_CATALOG_LIMIT);
-  await env.KV_STORE.put(RESULTS_CATALOG_KEY, JSON.stringify(merged));
-}
-
-async function rebuildResultsCatalogFromKV(env) {
-  const prefix = "latest_scorecard:";
-  let cursor = undefined;
-  const entries = [];
-
-  do {
-    const page = await env.KV_STORE.list({ prefix, cursor, limit: 1000 });
-    const names = (page.keys || []).map((k) => k.name).filter((name) => name.startsWith(prefix));
-    const rawValues = await Promise.all(names.map((name) => env.KV_STORE.get(name)));
-    for (let i = 0; i < names.length; i += 1) {
-      const fingerprint = names[i].slice(prefix.length);
-      const scorecard = parseJsonOrNull(rawValues[i]);
-      if (!scorecard) continue;
-      entries.push(buildResultsCatalogEntry(fingerprint, scorecard));
-    }
-
-    cursor = page.list_complete ? null : page.cursor;
-  } while (cursor);
-
-  const normalized = normalizeCatalogItems(entries).slice(0, RESULTS_CATALOG_LIMIT);
-  if (normalized.length) {
-    await env.KV_STORE.put(RESULTS_CATALOG_KEY, JSON.stringify(normalized));
-  }
-  return normalized;
-}
-
-async function readResultBundle(env, configFingerprint) {
-  const scKey = scorecardKey(configFingerprint);
-  const bmKey = benchmarkKey(configFingerprint);
-
-  if (!scKey || !bmKey) {
-    return { scorecard: null, benchmark: null };
+  for (const provider of config.providers || []) {
+    const key = providerKey(provider);
+    byKey.set(key, provider);
+    const fingerprint = await buildProviderFingerprint(provider);
+    byFingerprint.set(fingerprint, provider);
   }
 
-  const [scorecardRaw, benchmarkRaw] = await Promise.all([
-    env.KV_STORE.get(scKey),
-    env.KV_STORE.get(bmKey),
-  ]);
-
-  const scorecard = parseJsonOrNull(scorecardRaw);
-  const benchmark = parseJsonOrNull(benchmarkRaw);
-
-  return { scorecard, benchmark };
+  return { config, byKey, byFingerprint };
 }
 
-// ── GET /api/env ──────────────────────────────────────────────────────────────
-
-async function handleGetEnv(request, env) {
-  return json({ github_actions_url: env.GITHUB_ACTIONS_URL || null });
+function getPayloadProviderKeys(payload) {
+  const keys = new Set();
+  for (const item of payload?.items || []) {
+    keys.add(`${item?.provider_type || ""}::${item?.mode || ""}::${item?.api_base || ""}`);
+  }
+  return keys;
 }
 
-// ── GET /api/config ───────────────────────────────────────────────────────────
-// ?full=1 + auth �?returns complete api_key (for GHA)
-// default + auth �?returns masked api_key (for frontend)
+function validateSingleProviderPayload(payload, expectedProvider, label) {
+  if (payload == null) {
+    return null;
+  }
+
+  if (!Array.isArray(payload.items)) {
+    return `${label}.items must be an array`;
+  }
+
+  const expectedKey = providerKey(expectedProvider);
+  const providerKeys = Array.from(getPayloadProviderKeys(payload));
+
+  // 新语义规定：一次上传只允许对应一个 provider_fingerprint。
+  if (providerKeys.length > 1) {
+    return `${label}.items must contain exactly one provider`;
+  }
+  if (providerKeys.length === 1 && providerKeys[0] !== expectedKey) {
+    return `${label}.items provider does not match fingerprint`;
+  }
+
+  return null;
+}
 
 async function handleGetConfig(request, env, url) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!requireAuth(request, env)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
-  const raw = await env.KV_STORE.get("providers_config");
-  if (!raw) return json({ providers: [], updated_at: null });
-
-  const config = JSON.parse(raw);
+  const config = await loadConfig(env);
   const full = url.searchParams.get("full") === "1";
 
   if (!full) {
-    config.providers = (config.providers || []).map((p) => ({
-      ...p,
-      api_key: maskKey(p.api_key),
+    config.providers = (config.providers || []).map((provider) => ({
+      ...provider,
+      api_key: maskKey(provider.api_key),
     }));
   }
 
   return json(config);
 }
 
-// ── POST /api/config ──────────────────────────────────────────────────────────
-
 async function handlePostConfig(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!requireAuth(request, env)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
   let body;
-  try { body = await request.json(); }
-  catch { return json({ error: "Invalid JSON" }, 400); }
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
 
   if (!Array.isArray(body.providers)) {
     return json({ error: "providers must be an array" }, 400);
   }
 
-  for (const p of body.providers) {
-    if (!VALID_TYPES.has(p.provider_type))
-      return json({ error: `Invalid provider_type: ${p.provider_type}` }, 400);
-    if (!VALID_MODES.has(p.mode))
-      return json({ error: `Invalid mode: ${p.mode}` }, 400);
-    if (typeof p.api_base !== "string" || !p.api_base.trim())
-      return json({ error: "api_base required" }, 400);
-  }
-
-  let existingConfig = { providers: [] };
-  const existingRaw = await env.KV_STORE.get("providers_config");
-  if (existingRaw) {
-    try {
-      existingConfig = JSON.parse(existingRaw);
-    } catch {
-      existingConfig = { providers: [] };
-    }
-  }
-
+  const existingConfig = await loadConfig(env);
   const existingByKey = new Map((existingConfig.providers || []).map((p) => [providerKey(p), p]));
+  const nextProviders = [];
+  const seenProviderKeys = new Set();
 
-  body.providers = body.providers.map((incoming) => {
-    const normalized = normalizeProvider(incoming);
-    const k = providerKey(normalized);
-    const prev = existingByKey.get(k);
-
-    if (!normalized.api_key || looksMaskedKey(normalized.api_key)) {
-      if (prev && typeof prev.api_key === "string" && prev.api_key.trim()) {
-        normalized.api_key = prev.api_key;
-      }
+  for (const rawProvider of body.providers) {
+    const candidateKey = `${rawProvider?.provider_type || ""}::${rawProvider?.mode || ""}::${normalizeApiBase(rawProvider?.api_base || "")}`;
+    const normalized = normalizeProvider(rawProvider, existingByKey.get(candidateKey));
+    if (normalized.error) {
+      return json({ error: normalized.error }, 400);
     }
 
-    return normalized;
-  });
+    const provider = normalized.value;
+    const key = providerKey(provider);
+    if (seenProviderKeys.has(key)) {
+      return json({ error: "Duplicate provider (provider_type + mode + api_base)" }, 400);
+    }
 
-  for (const p of body.providers) {
-    if (typeof p.api_key !== "string" || !p.api_key.trim())
-      return json({ error: `api_key required for provider: ${providerKey(p)}` }, 400);
+    seenProviderKeys.add(key);
+    nextProviders.push(provider);
   }
 
-  const keys = new Set();
-  for (const p of body.providers) {
-    const k = providerKey(p);
-    if (keys.has(k)) return json({ error: "Duplicate provider (provider_type + mode + api_base)" }, 400);
-    keys.add(k);
-  }
+  const payload = {
+    providers: nextProviders,
+    updated_at: new Date().toISOString(),
+  };
 
-  body.updated_at = new Date().toISOString();
-  await env.KV_STORE.put("providers_config", JSON.stringify(body));
+  await env.KV_STORE.put("providers_config", JSON.stringify(payload));
   return json({ ok: true });
 }
 
-// ── GET /api/checkpoint ───────────────────────────────────────────────────────
+async function handleGetCheckpoint(request, env, url) {
+  if (!requireAuth(request, env)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
-async function handleGetCheckpoint(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  const parsed = getStageAndFingerprint(url);
+  if (parsed.error) {
+    return json({ error: parsed.error }, 400);
+  }
 
-  const raw = await env.KV_STORE.get("run_checkpoint");
-  if (!raw) return json({ exists: false });
-  return json(JSON.parse(raw));
+  const raw = await env.KV_STORE.get(checkpointKey(parsed.stage, parsed.fingerprint));
+  if (!raw) {
+    return json({ exists: false, stage: parsed.stage, fingerprint: parsed.fingerprint });
+  }
+
+  const checkpoint = parseJsonOrNull(raw);
+  if (!checkpoint) {
+    return json({ exists: false, stage: parsed.stage, fingerprint: parsed.fingerprint });
+  }
+
+  return json({ exists: true, ...checkpoint });
 }
 
-// ── POST /api/checkpoint ──────────────────────────────────────────────────────
+async function handlePostCheckpoint(request, env, url) {
+  if (!requireAuth(request, env)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
-async function handlePostCheckpoint(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  const parsed = getStageAndFingerprint(url);
+  if (parsed.error) {
+    return json({ error: parsed.error }, 400);
+  }
 
   let body;
-  try { body = await request.json(); }
-  catch { return json({ error: "Invalid JSON" }, 400); }
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
 
-  if (!body.run_id) return json({ error: "run_id required" }, 400);
+  if (!asNonEmptyString(body.run_id)) {
+    return json({ error: "run_id required" }, 400);
+  }
 
-  body.updated_at = new Date().toISOString();
-  await env.KV_STORE.put("run_checkpoint", JSON.stringify(body));
+  const payload = {
+    ...body,
+    stage: parsed.stage,
+    fingerprint: parsed.fingerprint,
+    updated_at: new Date().toISOString(),
+  };
+
+  await env.KV_STORE.put(checkpointKey(parsed.stage, parsed.fingerprint), JSON.stringify(payload));
   return json({ ok: true });
 }
 
-// ── DELETE /api/checkpoint ────────────────────────────────────────────────────
+async function handleDeleteCheckpoint(request, env, url) {
+  if (!requireAuth(request, env)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
-async function handleDeleteCheckpoint(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  const parsed = getStageAndFingerprint(url);
+  if (parsed.error) {
+    return json({ error: parsed.error }, 400);
+  }
 
-  await env.KV_STORE.delete("run_checkpoint");
+  await env.KV_STORE.delete(checkpointKey(parsed.stage, parsed.fingerprint));
   return json({ ok: true });
 }
-
-// ── POST /api/results ─────────────────────────────────────────────────────────
 
 async function handlePostResults(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!requireAuth(request, env)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
   let body;
-  try { body = await request.json(); }
-  catch { return json({ error: "Invalid JSON" }, 400); }
-
-  // Required fields
-  for (const field of ["scorecard", "benchmark"]) {
-    if (body[field] == null) return json({ error: `Missing field: ${field}` }, 400);
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
   }
 
-  const configFingerprint =
-    (typeof body.config_fingerprint === "string" && body.config_fingerprint.trim())
-      ? body.config_fingerprint.trim()
-      : (typeof body.scorecard?.config_fingerprint === "string" && body.scorecard.config_fingerprint.trim())
-        ? body.scorecard.config_fingerprint.trim()
-        : (typeof body.benchmark?.config_fingerprint === "string" && body.benchmark.config_fingerprint.trim())
-          ? body.benchmark.config_fingerprint.trim()
-          : null;
-
-  if (!configFingerprint) {
-    return json({ error: "Missing field: config_fingerprint" }, 400);
+  const providerFingerprint = asFingerprint(body.provider_fingerprint);
+  if (!providerFingerprint) {
+    return json({ error: "provider_fingerprint required" }, 400);
   }
 
-  const scorecardRunId = asNonEmptyString(body.scorecard?.run_id);
-  const scorecardStartedAt = asNonEmptyString(body.scorecard?.started_at);
-  const scorecardFinishedAt = asNonEmptyString(body.scorecard?.finished_at);
-  if (!scorecardRunId || !scorecardStartedAt || !scorecardFinishedAt) {
-    return json({ error: "scorecard.run_id, scorecard.started_at, scorecard.finished_at are required" }, 400);
+  if (body.tester == null && body.benchmark == null) {
+    return json({ error: "At least one of tester or benchmark is required" }, 400);
   }
 
-  // Anti-IDOR: all items must refer to a registered provider
-  const configRaw = await env.KV_STORE.get("providers_config");
-  if (configRaw) {
-    const config = JSON.parse(configRaw);
-    const validKeys = new Set((config.providers || []).map(providerKey));
-    for (const item of body.scorecard.items || []) {
-      const k = `${item.provider_type}::${item.mode}::${item.api_base}`;
-      if (!validKeys.has(k)) return json({ error: `Unknown provider: ${k}` }, 400);
+  const { byFingerprint } = await getConfigProviderMaps(env);
+  const provider = byFingerprint.get(providerFingerprint);
+  if (!provider) {
+    return json({ error: "Unknown provider_fingerprint" }, 400);
+  }
+
+  // Anti-IDOR：即使 token 正确，也只能写回当前 providers_config 内存在的 provider。
+  const testerError = validateSingleProviderPayload(body.tester, provider, "tester");
+  if (testerError) {
+    return json({ error: testerError }, 400);
+  }
+
+  const benchmarkError = validateSingleProviderPayload(body.benchmark, provider, "benchmark");
+  if (benchmarkError) {
+    return json({ error: benchmarkError }, 400);
+  }
+
+  if (body.tester) {
+    const runId = asNonEmptyString(body.tester.run_id);
+    const startedAt = asNonEmptyString(body.tester.started_at);
+    const finishedAt = asNonEmptyString(body.tester.finished_at);
+    if (!runId || !startedAt || !finishedAt) {
+      return json(
+        { error: "tester.run_id, tester.started_at, tester.finished_at are required" },
+        400,
+      );
     }
-    for (const item of body.benchmark.items || []) {
-      const k = `${item.provider_type}::${item.mode}::${item.api_base}`;
-      if (!validKeys.has(k)) return json({ error: `Unknown provider: ${k}` }, 400);
-    }
   }
 
-  await Promise.all([
-    env.KV_STORE.put(scorecardKey(configFingerprint), JSON.stringify(body.scorecard)),
-    env.KV_STORE.put(benchmarkKey(configFingerprint), JSON.stringify(body.benchmark)),
-  ]);
-  await upsertResultsCatalog(env, configFingerprint, body.scorecard);
+  if (body.benchmark && !asNonEmptyString(body.benchmark.run_id)) {
+    return json({ error: "benchmark.run_id is required" }, 400);
+  }
 
+  const writes = [];
+  if (body.tester) {
+    writes.push(env.KV_STORE.put(testerKey(providerFingerprint), JSON.stringify(body.tester)));
+  }
+  if (body.benchmark) {
+    writes.push(env.KV_STORE.put(benchmarkKey(providerFingerprint), JSON.stringify(body.benchmark)));
+  }
+
+  await Promise.all(writes);
   return json({ ok: true });
 }
 
-// ── GET /api/results/catalog ──────────────────────────────────────────────────
-// Public endpoint — no auth required
-
-async function handleGetResultsCatalog(request, env) {
-  const raw = await env.KV_STORE.get(RESULTS_CATALOG_KEY);
-  let items = normalizeCatalogItems(parseJsonOrNull(raw));
-  if (!items.length) {
-    items = await rebuildResultsCatalogFromKV(env);
+async function handleGetResults(_request, env, url) {
+  const providerFingerprint = asFingerprint(url.searchParams.get("fingerprint"));
+  if (!providerFingerprint) {
+    return json({ error: "fingerprint required" }, 400);
   }
-  return json({ items });
-}
 
-// ── GET /api/results ──────────────────────────────────────────────────────────
-// Public endpoint — no auth required
+  const [testerRaw, benchmarkRaw] = await Promise.all([
+    env.KV_STORE.get(testerKey(providerFingerprint)),
+    env.KV_STORE.get(benchmarkKey(providerFingerprint)),
+  ]);
 
-async function handleGetResults(request, env, url) {
-  const requestedFingerprint = asFingerprint(url.searchParams.get("fingerprint"));
-  const resolvedFingerprint = requestedFingerprint || (await getCurrentConfigFingerprint(env));
-  const source = requestedFingerprint ? "requested_fingerprint" : "current_fingerprint";
-  const bundle = await readResultBundle(env, resolvedFingerprint);
+  const tester = parseJsonOrNull(testerRaw);
+  const benchmark = parseJsonOrNull(benchmarkRaw);
 
-  if (!bundle.scorecard && !bundle.benchmark) {
+  if (!tester && !benchmark) {
     return json({
       exists: false,
-      source,
-      requested_config_fingerprint: requestedFingerprint,
-      config_fingerprint: resolvedFingerprint,
+      provider_fingerprint: providerFingerprint,
     });
   }
 
   return json({
     exists: true,
-    source,
-    requested_config_fingerprint: requestedFingerprint,
-    config_fingerprint:
-      resolvedFingerprint ||
-      asFingerprint(bundle.scorecard?.config_fingerprint) ||
-      asFingerprint(bundle.benchmark?.config_fingerprint),
-    scorecard: bundle.scorecard,
-    benchmark: bundle.benchmark,
+    provider_fingerprint: providerFingerprint,
+    tester,
+    benchmark,
   });
 }

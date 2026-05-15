@@ -10,78 +10,66 @@
         if (localStorage.getItem('api_test_admin_token')) {
           document.documentElement.classList.add('auth-checking');
         }
-      } catch { }
+      } catch {}
     })();
   </script>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div id="app">
-    <!-- Auth overlay -->
     <div id="auth-overlay" class="overlay active">
       <div class="overlay-card">
         <h2>API Test Admin</h2>
-        <p class="overlay-subtitle">請輸入 MASTER_API_TOKEN 以繼續</p>
-        <input type="password" id="auth-token" placeholder="請輸入 Bearer Token" />
+        <p class="overlay-subtitle">请输入 `MASTER_API_TOKEN` 进入管理界面。</p>
+        <input type="password" id="auth-token" placeholder="Bearer Token">
         <button id="auth-btn" class="btn btn-primary">登入</button>
         <p id="auth-error" class="error"></p>
       </div>
     </div>
 
-    <!-- Main app -->
     <header class="app-header">
       <h1>API Test Admin</h1>
       <div class="header-actions">
-        <span id="auth-status" class="badge">已登入</span>
-        <a id="run-now-btn" class="btn btn-primary" href="#" target="_blank">立即執行</a>
+        <span class="badge">已登入</span>
+        <a id="run-now-btn" class="btn btn-primary" href="https://github.com/Artin0123/api-test/actions/workflows/main.yml" target="_blank" rel="noreferrer">Run Now</a>
         <button id="logout-btn" class="btn btn-ghost">登出</button>
       </div>
     </header>
 
     <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="config">供應商設定</button>
-      <button class="tab-btn" data-tab="results">測試結果</button>
+      <button class="tab-btn active" data-tab="config">Provider 设定</button>
+      <button class="tab-btn" data-tab="results">结果查看</button>
     </nav>
 
     <main>
-      <!-- Config Tab -->
       <section id="tab-config" class="tab-panel active section-surface">
         <div class="panel-header">
           <div class="panel-title-group">
-            <h2>供應商設定</h2>
-            <p>管理 API 供應商連線設定與模型端點來源</p>
+            <h2>Provider 设定</h2>
+            <p>以 `models_list` 手动维护模型清单，系统会依 `provider_type` 自动补固定请求路径。</p>
           </div>
           <div class="header-actions">
-            <button id="reveal-keys-btn" class="btn btn-ghost">顯示完整 key</button>
-            <button id="add-provider-btn" class="btn btn-primary">新增供應商</button>
+            <button id="reveal-keys-btn" class="btn btn-ghost">显示完整 key</button>
+            <button id="add-provider-btn" class="btn btn-primary">新增 Provider</button>
           </div>
         </div>
 
         <div class="card">
-          <h3>Checkpoint 狀態</h3>
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <p id="checkpoint-status-text">讀取中…</p>
-            </div>
-            <div class="header-actions">
-              <button id="refresh-checkpoint-btn" class="btn btn-ghost">刷新 Checkpoint</button>
-              <button id="clear-checkpoint-btn" class="btn btn-danger">清除 Checkpoint</button>
-            </div>
-          </div>
+          <h3>Checkpoint 状态</h3>
+          <p class="form-note">Checkpoint 已改成每个 provider 各自一份，并区分 tester / benchmark。</p>
         </div>
 
-        <div id="config-loading" class="loading">載入中…</div>
+        <div id="config-loading" class="loading">读取中...</div>
         <div id="config-error" class="alert alert-error hidden"></div>
 
         <div id="providers-table-wrap" class="table-wrap hidden">
           <table class="data-table">
             <thead>
               <tr>
-                <th>類型 (type)</th>
-                <th>模式 (mode)</th>
+                <th>type</th>
+                <th>mode</th>
                 <th>api_base</th>
-                <th>endpoint</th>
-                <th>models_endpoint</th>
+                <th>models_list</th>
                 <th>Tester</th>
                 <th>Benchmark</th>
                 <th>api_key</th>
@@ -93,89 +81,106 @@
         </div>
 
         <div id="provider-form-card" class="card hidden">
-          <h3 id="form-title">新增供應商</h3>
+          <h3 id="form-title">新增 Provider</h3>
           <form id="provider-form">
             <input type="hidden" id="form-index" value="-1">
 
             <div class="form-grid">
               <div class="field">
-                <label for="p-provider_type">供應商類型 (provider_type) *</label>
-                <select id="p-provider_type" required>
-                  <option value="openai">openai</option>
-                  <option value="ollama">ollama</option>
-                  <option value="gemini">gemini</option>
-                </select>
+                <label for="p-provider_type">provider_type *</label>
+                <div class="field-with-hint">
+                  <select id="p-provider_type" required>
+                    <option value="openai">openai</option>
+                    <option value="ollama">ollama</option>
+                    <option value="gemini">gemini</option>
+                  </select>
+                  <button type="button" id="provider-type-help-btn" class="info-btn" aria-label="provider type 说明">i</button>
+                </div>
+                <div id="provider-type-help" class="hint-box hidden"></div>
               </div>
+
               <div class="field">
-                <label for="p-mode">模式 (mode) *</label>
+                <label for="p-mode">mode *</label>
                 <select id="p-mode" required>
                   <option value="thinking">thinking</option>
                   <option value="vision">vision</option>
                 </select>
               </div>
+
               <div class="field">
                 <label for="p-api_base">api_base *</label>
-                <input type="text" id="p-api_base" required placeholder="https://integrate.api.nvidia.com">
+                <input type="text" id="p-api_base" required placeholder="https://api.openai.com/v1">
               </div>
+
+              <div class="field field-span-2">
+                <label for="p-models_list">models_list *</label>
+                <textarea id="p-models_list" rows="4" placeholder="可贴逗号、空格、换行，例如：gpt-4o, gpt-4.1"></textarea>
+                <p class="form-note">显示会自动正规化成 `a, b, c`，送出时会转成 `string[]`。</p>
+              </div>
+
               <div class="field">
-                <label for="p-endpoint_path">endpoint_path（可留空）</label>
-                <input type="text" id="p-endpoint_path" placeholder="(依 provider_type 預設)">
+                <label for="p-api_key">api_key（新增必填；编辑可留空沿用旧值）</label>
+                <input type="password" id="p-api_key" placeholder="编辑时留空可沿用原 key">
               </div>
-              <div class="field">
-                <label for="p-models_endpoint">models_endpoint（可留空）</label>
-                <input type="text" id="p-models_endpoint" placeholder="(依 provider_type 預設)">
-              </div>
-              <div class="field">
-                <label for="p-api_key">api_key（新增必填；編輯可留空不變更）</label>
-                <input type="password" id="p-api_key" placeholder="新增請填寫；編輯留空則沿用原 key">
-              </div>
+
               <div class="field field-inline">
                 <label>
                   <input type="checkbox" id="p-tester-enabled" checked>
-                  啟用 Tester 測試 (tester_enabled)
+                  tester_enabled
                 </label>
               </div>
+
               <div class="field field-inline">
                 <label>
                   <input type="checkbox" id="p-benchmark-enabled" checked>
-                  啟用 Benchmark 測試 (benchmark_enabled)
+                  benchmark_enabled
                 </label>
               </div>
             </div>
 
             <div class="form-actions">
-              <button type="submit" class="btn btn-primary">儲存</button>
+              <button type="submit" class="btn btn-primary">储存</button>
               <button type="button" id="cancel-form-btn" class="btn btn-ghost">取消</button>
             </div>
-            <p class="form-note">若 <code>endpoint_path</code> 或 <code>models_endpoint</code> 留空，會依 <code>provider_type</code> 套用預設值；模型抓取失敗時會跳過該供應商。</p>
             <p id="form-error" class="error"></p>
           </form>
         </div>
       </section>
 
-      <!-- Results Tab -->
       <section id="tab-results" class="tab-panel section-surface">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <h2>最新測試結果</h2>
-              <p>依 fingerprint 分組檢視各配置與供應商模型結果</p>
-            </div>
-            <button id="refresh-results-btn" class="btn btn-ghost">重新整理</button>
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <h2>结果查看</h2>
+            <p>直接以当前 `providers_config` 为准，逐 provider 读取 `latest_tester` / `latest_benchmark`。</p>
           </div>
+          <button id="refresh-results-btn" class="btn btn-ghost">重新读取</button>
+        </div>
 
-        <div id="results-loading" class="loading">載入中…</div>
+        <div id="results-loading" class="loading">读取中...</div>
         <div id="results-error" class="alert alert-error hidden"></div>
-        <div id="no-results" class="alert alert-info hidden">尚無測試結果</div>
+        <div id="no-results" class="alert alert-info hidden">目前没有结果。</div>
 
         <div id="results-content" class="hidden">
-          <div class="card">
-            <h3>結果分組 <small>(展開 fingerprint → provider → model)</small></h3>
-            <div id="results-groups" class="results-groups"></div>
-          </div>
+          <div id="results-groups" class="results-groups"></div>
         </div>
       </section>
     </main>
   </div>
+
+  <div id="detail-overlay" class="detail-overlay hidden">
+    <div class="detail-backdrop" data-close-detail="1"></div>
+    <section class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <div class="detail-panel-header">
+        <div>
+          <h3 id="detail-title">详情</h3>
+          <p id="detail-subtitle" class="form-note"></p>
+        </div>
+        <button id="detail-close-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+      </div>
+      <div id="detail-content" class="detail-content"></div>
+    </section>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
