@@ -1,5 +1,7 @@
 /**
- * Cloudflare Worker API Gateway
+ * Cloudflare Pages API Gateway
+ *
+ * `_worker.js` is the Cloudflare Pages advanced mode entry filename.
  *
  * KV bindings required:
  *   KV_STORE  providers_config
@@ -34,6 +36,11 @@ const MODELS_LIST_MAX_ITEMS = 500;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (!url.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request);
+    }
+
     const key = `${request.method} ${url.pathname}`;
     const handler = ROUTES[key];
     if (!handler) {

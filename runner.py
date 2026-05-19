@@ -2,11 +2,11 @@
 runner.py
 
 新的执行语义：
-1. 从 Worker 读取 providers_config（只接受手动 models_list）
+1. 从 Pages API 读取 providers_config（只接受手动 models_list）
 2. 逐 provider 计算 provider_fingerprint
 3. tester / benchmark 分开处理，各自使用自己的 checkpoint
 4. checkpoint 不只记录进度，也记录已完成的部分结果，避免中断后只剩 completed 标记
-5. 每个 provider 单独上传结果到 Worker
+5. 每个 provider 单独上传结果到 Pages API
 """
 
 import hashlib
@@ -112,8 +112,8 @@ def is_tester_enabled(provider: dict) -> bool:
     return bool(provider.get("tester_enabled", True))
 
 
-class WorkerClient:
-    """和 Worker API 沟通的薄客户端。"""
+class PagesClient:
+    """和 Pages API 沟通的薄客户端。"""
 
     def __init__(self, base_url: str, token: str):
         self.base = base_url.rstrip("/")
@@ -135,7 +135,7 @@ class WorkerClient:
                 return json.loads(response.read().decode())
         except error.HTTPError as exc:
             raise RuntimeError(
-                f"Worker {method} {path} -> HTTP {exc.code}: {exc.read().decode()[:400]}"
+                f"Pages API {method} {path} -> HTTP {exc.code}: {exc.read().decode()[:400]}"
             ) from exc
 
     def get_config(self) -> dict:
@@ -628,7 +628,7 @@ def build_benchmark_checkpoint(
 
 
 def write_checkpoint_every_n(
-    worker: WorkerClient,
+    pages: PagesClient,
     stage: str,
     fingerprint: str,
     payload_builder,
@@ -636,12 +636,12 @@ def write_checkpoint_every_n(
 ) -> int:
     if flush_counter < CHECKPOINT_EVERY_N:
         return flush_counter
-    worker.post_checkpoint(stage, fingerprint, payload_builder())
+    pages.post_checkpoint(stage, fingerprint, payload_builder())
     return 0
 
 
 def run_tester_for_provider(
-    worker: WorkerClient,
+    pages: PagesClient,
     provider: dict,
     run_id: str,
     provider_fingerprint: str,
@@ -658,7 +658,7 @@ def run_tester_for_provider(
 
     checkpoint = {}
     try:
-        checkpoint = worker.get_checkpoint("tester", provider_fingerprint)
+        checkpoint = pages.get_checkpoint("tester", provider_fingerprint)
     except Exception as exc:
         print(f"  [warn] GET tester checkpoint failed: {exc}")
 
@@ -691,7 +691,7 @@ def run_tester_for_provider(
         since_last_checkpoint += 1
         if since_last_checkpoint >= CHECKPOINT_EVERY_N:
             try:
-                worker.post_checkpoint(
+                pages.post_checkpoint(
                     "tester",
                     provider_fingerprint,
                     checkpoint_payload(),
@@ -702,7 +702,7 @@ def run_tester_for_provider(
 
     # 最后再落一次，避免少于 3 个模型的尾段没有存进去。
     try:
-        worker.post_checkpoint("tester", provider_fingerprint, checkpoint_payload())
+        pages.post_checkpoint("tester", provider_fingerprint, checkpoint_payload())
     except Exception as exc:
         print(f"  [warn] final tester checkpoint failed: {exc}")
 
@@ -710,7 +710,7 @@ def run_tester_for_provider(
 
 
 def load_tester_source_for_benchmark(
-    worker: WorkerClient,
+    pages: PagesClient,
     provider: dict,
     provider_fingerprint: str,
 ) -> dict:
@@ -719,7 +719,7 @@ def load_tester_source_for_benchmark(
     1. 若本次 tester 没跑，就从 latest_tester:{provider_fp} 读取
     2. 若本次 tester 已跑，就直接用本次 tester 结果
     """
-    result = worker.get_results(provider_fingerprint)
+    result = pages.get_results(provider_fingerprint)
     tester = result.get("tester")
     if not result.get("exists") or not tester or not (tester.get("items") or []):
         raise RuntimeError("该 provider_fingerprint 没有历史 tester 结果")
@@ -727,7 +727,7 @@ def load_tester_source_for_benchmark(
 
 
 def run_benchmark_for_provider(
-    worker: WorkerClient,
+    pages: PagesClient,
     provider: dict,
     provider_fingerprint: str,
     source_tester: dict,
@@ -748,7 +748,7 @@ def run_benchmark_for_provider(
 
     checkpoint = {}
     try:
-        checkpoint = worker.get_checkpoint("benchmark", provider_fingerprint)
+        checkpoint = pages.get_checkpoint("benchmark", provider_fingerprint)
     except Exception as exc:
         print(f"  [warn] GET benchmark checkpoint failed: {exc}")
 
@@ -790,7 +790,7 @@ def run_benchmark_for_provider(
         since_last_checkpoint += 1
         if since_last_checkpoint >= CHECKPOINT_EVERY_N:
             try:
-                worker.post_checkpoint(
+                pages.post_checkpoint(
                     "benchmark",
                     provider_fingerprint,
                     checkpoint_payload(),
@@ -800,7 +800,7 @@ def run_benchmark_for_provider(
             since_last_checkpoint = 0
 
     try:
-        worker.post_checkpoint("benchmark", provider_fingerprint, checkpoint_payload())
+        pages.post_checkpoint("benchmark", provider_fingerprint, checkpoint_payload())
     except Exception as exc:
         print(f"  [warn] final benchmark checkpoint failed: {exc}")
 
@@ -808,7 +808,7 @@ def run_benchmark_for_provider(
 
 
 def upload_provider_results(
-    worker: WorkerClient,
+    pages: PagesClient,
     provider_fingerprint: str,
     tester_payload: dict | None,
     benchmark_payload: dict | None,
@@ -818,22 +818,22 @@ def upload_provider_results(
         payload["tester"] = tester_payload
     if benchmark_payload is not None:
         payload["benchmark"] = benchmark_payload
-    worker.post_results(payload)
+    pages.post_results(payload)
 
 
 def main() -> int:
-    worker_url = os.environ.get("WORKER_API_URL", "").strip()
+    pages_url = os.environ.get("PAGES_URL", "").strip()
     token = os.environ.get("MASTER_API_TOKEN", "").strip()
-    if not worker_url or not token:
-        print("[error] WORKER_API_URL and MASTER_API_TOKEN env vars are required")
+    if not pages_url or not token:
+        print("[error] PAGES_URL and MASTER_API_TOKEN env vars are required")
         return 1
 
-    worker = WorkerClient(worker_url, token)
+    pages = PagesClient(pages_url, token)
     run_id = generate_run_id()
     print(f"run_id={run_id}")
 
     try:
-        config = worker.get_config()
+        config = pages.get_config()
     except Exception as exc:
         print(f"[error] GET /api/config failed: {exc}")
         return 1
@@ -875,7 +875,7 @@ def main() -> int:
         try:
             if is_tester_enabled(provider):
                 tester_payload = run_tester_for_provider(
-                    worker,
+                    pages,
                     provider,
                     run_id,
                     provider_fingerprint,
@@ -888,13 +888,13 @@ def main() -> int:
                     source_tester = tester_payload
                 else:
                     source_tester = load_tester_source_for_benchmark(
-                        worker,
+                        pages,
                         provider,
                         provider_fingerprint,
                     )
 
                 benchmark_payload = run_benchmark_for_provider(
-                    worker,
+                    pages,
                     provider,
                     provider_fingerprint,
                     source_tester,
@@ -908,7 +908,7 @@ def main() -> int:
                 continue
 
             upload_provider_results(
-                worker,
+                pages,
                 provider_fingerprint,
                 tester_payload,
                 benchmark_payload,
@@ -918,13 +918,13 @@ def main() -> int:
             # 上传成功后才清对应 stage 的 checkpoint。
             if tester_payload is not None:
                 try:
-                    worker.delete_checkpoint("tester", provider_fingerprint)
+                    pages.delete_checkpoint("tester", provider_fingerprint)
                 except Exception as exc:
                     print(f"  [warn] DELETE tester checkpoint failed: {exc}")
 
             if benchmark_payload is not None:
                 try:
-                    worker.delete_checkpoint("benchmark", provider_fingerprint)
+                    pages.delete_checkpoint("benchmark", provider_fingerprint)
                 except Exception as exc:
                     print(f"  [warn] DELETE benchmark checkpoint failed: {exc}")
 
