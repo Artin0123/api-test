@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>API Test Admin</title>
   <script>
     (() => {
@@ -16,152 +16,163 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div id="app">
-    <div id="auth-overlay" class="overlay active">
-      <div class="overlay-card">
-        <h2>API Test Admin</h2>
-        <p class="overlay-subtitle">请输入 `ADMIN_PASSWORD` 进入管理界面。</p>
-        <input type="password" id="auth-token" placeholder="Admin Password">
-        <button id="auth-btn" class="btn btn-primary">登入</button>
-        <p id="auth-error" class="error"></p>
+  <div id="auth-overlay" class="auth-screen active">
+    <section class="auth-card" aria-labelledby="auth-title">
+      <h1 id="auth-title">API Test Admin</h1>
+      <p class="muted">输入 `ADMIN_PASSWORD` 管理测试来源、检查点和测试结果。</p>
+      <div class="auth-form-row">
+        <input type="password" id="auth-token" autocomplete="current-password" placeholder="管理密码">
+        <button id="auth-btn" class="btn btn-primary" type="button">登入</button>
       </div>
-    </div>
+      <p id="auth-error" class="form-error" role="alert"></p>
+    </section>
+  </div>
 
-    <header class="app-header">
-      <h1>API Test Admin</h1>
-      <div class="header-actions">
-        <span class="badge">已登入</span>
-        <a id="run-now-btn" class="btn btn-primary" href="https://github.com/Artin0123/api-test/actions/workflows/main.yml" target="_blank" rel="noreferrer">Run Now</a>
-        <button id="logout-btn" class="btn btn-ghost">登出</button>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <div>
+          <h1>API Test Admin</h1>
+          <p class="topbar-subtitle">测试设定与结果管理</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <a id="run-now-btn" class="btn btn-primary" href="https://github.com/Artin0123/api-test/actions/workflows/main.yml" target="_blank" rel="noreferrer">立即执行</a>
+        <button id="logout-btn" class="btn btn-secondary" type="button">登出</button>
       </div>
     </header>
 
-    <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="config">Provider 设定</button>
-      <button class="tab-btn" data-tab="results">结果查看</button>
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab-btn active" type="button" data-tab="config">来源设定</button>
+      <button class="tab-btn" type="button" data-tab="results">结果查看</button>
     </nav>
 
-    <main>
-      <section id="tab-config" class="tab-panel active section-surface">
-        <div class="panel-header">
-          <div class="panel-title-group">
-            <h2>Provider 设定</h2>
-            <p>以 `models_list` 手动维护模型清单，系统会依 `provider_type` 自动补固定请求路径。</p>
+    <main class="workspace">
+      <section id="tab-config" class="tab-panel active" aria-labelledby="config-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="config-title">测试来源</h2>
+            <p class="muted">以 `models_list` 手动维护模型清单，请求路径由 `provider_type` 自动决定。</p>
           </div>
-          <div class="header-actions">
-            <button id="reveal-keys-btn" class="btn btn-ghost">显示完整 key</button>
-            <button id="add-provider-btn" class="btn btn-primary">新增 Provider</button>
+          <div class="panel-actions">
+            <button id="reveal-keys-btn" class="btn btn-secondary" type="button">显示完整 key</button>
+            <button id="add-provider-btn" class="btn btn-primary" type="button">新增来源</button>
           </div>
         </div>
 
-        <div class="card">
-          <h3>Checkpoint 状态</h3>
-          <p class="form-note">Checkpoint 已改成每个 provider 各自一份，并区分 tester / benchmark。</p>
+        <div class="notice-card">
+          <strong>检查点</strong>
+          <span>每个测试来源各自保存模型检查与效能测试的检查点，上传成功后才清除。</span>
         </div>
 
-        <div id="config-loading" class="loading">读取中...</div>
+        <div id="config-loading" class="loading-card">读取测试来源...</div>
         <div id="config-error" class="alert alert-error hidden"></div>
+        <div id="provider-list" class="provider-grid hidden"></div>
 
-        <div id="providers-table-wrap" class="table-wrap hidden">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>type</th>
-                <th>mode</th>
-                <th>api_base</th>
-                <th>models_list</th>
-                <th>Tester</th>
-                <th>Benchmark</th>
-                <th>api_key</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="providers-tbody"></tbody>
-          </table>
-        </div>
+        <section id="provider-form-card" class="editor-card hidden" aria-labelledby="form-title">
+          <div class="editor-header">
+            <div>
+              <h3 id="form-title">新增来源</h3>
+            </div>
+            <button type="button" id="cancel-form-btn" class="btn btn-secondary">关闭</button>
+          </div>
 
-        <div id="provider-form-card" class="card hidden">
-          <h3 id="form-title">新增 Provider</h3>
-          <form id="provider-form">
+          <form id="provider-form" class="provider-form">
             <input type="hidden" id="form-index" value="-1">
 
-            <div class="form-grid">
-              <div class="field">
-                <label for="p-provider_type">provider_type *</label>
-                <div class="field-with-hint">
-                  <select id="p-provider_type" required>
-                    <option value="openai">openai</option>
-                    <option value="ollama">ollama</option>
-                    <option value="gemini">gemini</option>
-                  </select>
-                  <button type="button" id="provider-type-help-btn" class="info-btn" aria-label="provider type 说明">i</button>
+            <fieldset class="form-section">
+              <legend>来源设定</legend>
+              <div class="form-grid identity-grid">
+                <label class="field">
+                  <span>provider_type *</span>
+                  <span class="select-shell">
+                    <select id="p-provider_type" required>
+                      <option value="openai">openai</option>
+                      <option value="ollama">ollama</option>
+                      <option value="gemini">gemini</option>
+                    </select>
+                  </span>
+                </label>
+
+                <label class="field">
+                  <span>mode *</span>
+                  <span class="select-shell">
+                    <select id="p-mode" required>
+                      <option value="thinking">thinking</option>
+                      <option value="vision">vision</option>
+                    </select>
+                  </span>
+                </label>
+
+                <label class="field wide-field">
+                  <span>api_base *</span>
+                  <input type="text" id="p-api_base" required placeholder="https://api.openai.com/v1">
+                </label>
+              </div>
+              <p id="provider-type-help" class="helper-text"></p>
+            </fieldset>
+
+            <div class="editor-columns">
+              <fieldset class="form-section model-section">
+                <legend>模型清单</legend>
+                <label class="field">
+                  <span>models_list *</span>
+                  <textarea id="p-models_list" rows="7" placeholder="可贴逗号、空格、换行，例如：gpt-4o, gpt-4.1"></textarea>
+                </label>
+                <p class="helper-text">显示会自动正规化成 `a, b, c`，送出时会转成 `string[]`。</p>
+              </fieldset>
+
+              <fieldset class="form-section side-section">
+                <legend>凭证与执行项目</legend>
+                <label class="field">
+                  <span>api_key（新增必填；编辑可留空沿用旧值）</span>
+                  <input type="password" id="p-api_key" placeholder="编辑时留空可沿用原 key">
+                </label>
+
+                <div class="toggle-group" aria-label="执行项目">
+                  <label class="toggle-card">
+                    <input type="checkbox" id="p-tester-enabled" checked>
+                    <span class="toggle-track" aria-hidden="true"></span>
+                    <span>
+                      <strong>模型检查</strong>
+                      <small>启用后执行检查</small>
+                    </span>
+                  </label>
+                  <label class="toggle-card">
+                    <input type="checkbox" id="p-benchmark-enabled" checked>
+                    <span class="toggle-track" aria-hidden="true"></span>
+                    <span>
+                      <strong>效能测试</strong>
+                      <small>启用后记录耗时</small>
+                    </span>
+                  </label>
                 </div>
-                <div id="provider-type-help" class="hint-box hidden"></div>
-              </div>
-
-              <div class="field">
-                <label for="p-mode">mode *</label>
-                <select id="p-mode" required>
-                  <option value="thinking">thinking</option>
-                  <option value="vision">vision</option>
-                </select>
-              </div>
-
-              <div class="field">
-                <label for="p-api_base">api_base *</label>
-                <input type="text" id="p-api_base" required placeholder="https://api.openai.com/v1">
-              </div>
-
-              <div class="field field-span-2">
-                <label for="p-models_list">models_list *</label>
-                <textarea id="p-models_list" rows="4" placeholder="可贴逗号、空格、换行，例如：gpt-4o, gpt-4.1"></textarea>
-                <p class="form-note">显示会自动正规化成 `a, b, c`，送出时会转成 `string[]`。</p>
-              </div>
-
-              <div class="field">
-                <label for="p-api_key">api_key（新增必填；编辑可留空沿用旧值）</label>
-                <input type="password" id="p-api_key" placeholder="编辑时留空可沿用原 key">
-              </div>
-
-              <div class="field field-inline">
-                <label>
-                  <input type="checkbox" id="p-tester-enabled" checked>
-                  tester_enabled
-                </label>
-              </div>
-
-              <div class="field field-inline">
-                <label>
-                  <input type="checkbox" id="p-benchmark-enabled" checked>
-                  benchmark_enabled
-                </label>
-              </div>
+              </fieldset>
             </div>
 
             <div class="form-actions">
-              <button type="submit" class="btn btn-primary">储存</button>
-              <button type="button" id="cancel-form-btn" class="btn btn-ghost">取消</button>
+              <button type="submit" class="btn btn-primary">储存来源</button>
+              <button type="button" id="reset-form-btn" class="btn btn-secondary">重设</button>
             </div>
-            <p id="form-error" class="error"></p>
+            <p id="form-error" class="form-error" role="alert"></p>
           </form>
-        </div>
+        </section>
       </section>
 
-      <section id="tab-results" class="tab-panel section-surface">
-        <div class="panel-header">
-          <div class="panel-title-group">
-            <h2>结果查看</h2>
-            <p>直接以当前 `providers_config` 为准，逐 provider 读取 `latest_tester` / `latest_benchmark`。</p>
+      <section id="tab-results" class="tab-panel" aria-labelledby="results-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="results-title">测试结果</h2>
+            <p class="muted">依当前 `providers_config` 读取每个测试来源的最新结果。</p>
           </div>
-          <button id="refresh-results-btn" class="btn btn-ghost">重新读取</button>
+          <button id="refresh-results-btn" class="btn btn-secondary" type="button">重新读取</button>
         </div>
 
-        <div id="results-loading" class="loading">读取中...</div>
+        <div id="results-loading" class="loading-card">读取测试结果...</div>
         <div id="results-error" class="alert alert-error hidden"></div>
         <div id="no-results" class="alert alert-info hidden">目前没有结果。</div>
-
         <div id="results-content" class="hidden">
-          <div id="results-groups" class="results-groups"></div>
+          <div id="results-groups" class="results-stack"></div>
         </div>
       </section>
     </main>
@@ -173,9 +184,9 @@
       <div class="detail-panel-header">
         <div>
           <h3 id="detail-title">详情</h3>
-          <p id="detail-subtitle" class="form-note"></p>
+          <p id="detail-subtitle" class="muted"></p>
         </div>
-        <button id="detail-close-btn" class="btn btn-ghost btn-sm" type="button">关闭</button>
+        <button id="detail-close-btn" class="btn btn-secondary btn-sm" type="button">关闭</button>
       </div>
       <div id="detail-content" class="detail-content"></div>
     </section>

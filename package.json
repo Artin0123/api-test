@@ -1,0 +1,14 @@
+{
+  "name": "api-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev public --kv=KV_STORE",
+    "check": "npm run check:js && npm run check:runner",
+    "check:js": "node --check public/_worker.js && node --check public/app.js",
+    "check:runner": "python -m py_compile runner.py"
+  },
+  "devDependencies": {
+    "wrangler": "^4.92.0"
+  }
+}

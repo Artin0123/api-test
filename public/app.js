@@ -1,150 +1,392 @@
-const API_BASE = '';
-const TOKEN_STORAGE_KEY = 'api_test_admin_password';
-
-let token = '';
-let currentProviders = [];
-let keysRevealed = false;
-let lastAuthError = '';
-
-const authOverlay = document.getElementById('auth-overlay');
-const authTokenInput = document.getElementById('auth-token');
-const authBtn = document.getElementById('auth-btn');
-const authError = document.getElementById('auth-error');
-const logoutBtn = document.getElementById('logout-btn');
-
-const configLoading = document.getElementById('config-loading');
-const configError = document.getElementById('config-error');
-const providersTableWrap = document.getElementById('providers-table-wrap');
-const providersTbody = document.getElementById('providers-tbody');
-const addProviderBtn = document.getElementById('add-provider-btn');
-const revealKeysBtn = document.getElementById('reveal-keys-btn');
-const providerFormCard = document.getElementById('provider-form-card');
-const providerForm = document.getElementById('provider-form');
-const cancelFormBtn = document.getElementById('cancel-form-btn');
-const formTitle = document.getElementById('form-title');
-const formIndex = document.getElementById('form-index');
-const formError = document.getElementById('form-error');
-const providerTypeHelpBtn = document.getElementById('provider-type-help-btn');
-const providerTypeHelp = document.getElementById('provider-type-help');
-const providerTypeSelect = document.getElementById('p-provider_type');
-const modelsListInput = document.getElementById('p-models_list');
-
-const refreshResultsBtn = document.getElementById('refresh-results-btn');
-const resultsLoading = document.getElementById('results-loading');
-const resultsError = document.getElementById('results-error');
-const noResults = document.getElementById('no-results');
-const resultsContent = document.getElementById('results-content');
-const resultsGroups = document.getElementById('results-groups');
-
-const detailOverlay = document.getElementById('detail-overlay');
-const detailCloseBtn = document.getElementById('detail-close-btn');
-const detailTitle = document.getElementById('detail-title');
-const detailSubtitle = document.getElementById('detail-subtitle');
-const detailContent = document.getElementById('detail-content');
+const TOKEN_STORAGE_KEY = "api_test_admin_password";
 
 const DEFAULT_ENDPOINT_HINT = {
-  openai: '/chat/completions',
-  ollama: '/api/chat',
-  gemini: '/models/{model}:streamGenerateContent?alt=sse',
+  openai: "/chat/completions",
+  ollama: "/api/chat",
+  gemini: "/models/{model}:streamGenerateContent?alt=sse",
 };
 
-authBtn.addEventListener('click', async () => {
-  token = authTokenInput.value.trim();
-  if (!token) {
-    authError.textContent = '请输入 ADMIN_PASSWORD';
-    return;
-  }
-  authError.textContent = '';
-  const ok = await checkAuth();
-  if (!ok) {
-    authError.textContent = lastAuthError || '认证失败，请确认 ADMIN_PASSWORD 是否正确';
-    token = '';
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    authOverlay.classList.add('active');
-    document.documentElement.classList.remove('auth-checking');
-    return;
-  }
-  localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  authOverlay.classList.remove('active');
-  authTokenInput.value = '';
-  document.documentElement.classList.remove('auth-checking');
-  initApp();
-});
+const state = {
+  token: "",
+  providers: [],
+  keysRevealed: false,
+  lastAuthError: "",
+};
 
-logoutBtn.addEventListener('click', () => {
-  token = '';
-  localStorage.removeItem(TOKEN_STORAGE_KEY);
-  authOverlay.classList.add('active');
-  authTokenInput.value = '';
-});
+const dom = {
+  authOverlay: document.getElementById("auth-overlay"),
+  authTokenInput: document.getElementById("auth-token"),
+  authBtn: document.getElementById("auth-btn"),
+  authError: document.getElementById("auth-error"),
+  logoutBtn: document.getElementById("logout-btn"),
+  runNowBtn: document.getElementById("run-now-btn"),
+
+  tabButtons: Array.from(document.querySelectorAll(".tab-btn")),
+  tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
+
+  configLoading: document.getElementById("config-loading"),
+  configError: document.getElementById("config-error"),
+  providerList: document.getElementById("provider-list"),
+  revealKeysBtn: document.getElementById("reveal-keys-btn"),
+  addProviderBtn: document.getElementById("add-provider-btn"),
+
+  formCard: document.getElementById("provider-form-card"),
+  form: document.getElementById("provider-form"),
+  formTitle: document.getElementById("form-title"),
+  formIndex: document.getElementById("form-index"),
+  formError: document.getElementById("form-error"),
+  cancelFormBtn: document.getElementById("cancel-form-btn"),
+  resetFormBtn: document.getElementById("reset-form-btn"),
+  providerType: document.getElementById("p-provider_type"),
+  mode: document.getElementById("p-mode"),
+  apiBase: document.getElementById("p-api_base"),
+  apiKey: document.getElementById("p-api_key"),
+  modelsList: document.getElementById("p-models_list"),
+  testerEnabled: document.getElementById("p-tester-enabled"),
+  benchmarkEnabled: document.getElementById("p-benchmark-enabled"),
+  providerTypeHelp: document.getElementById("provider-type-help"),
+
+  refreshResultsBtn: document.getElementById("refresh-results-btn"),
+  resultsLoading: document.getElementById("results-loading"),
+  resultsError: document.getElementById("results-error"),
+  noResults: document.getElementById("no-results"),
+  resultsContent: document.getElementById("results-content"),
+  resultsGroups: document.getElementById("results-groups"),
+
+  detailOverlay: document.getElementById("detail-overlay"),
+  detailCloseBtn: document.getElementById("detail-close-btn"),
+  detailTitle: document.getElementById("detail-title"),
+  detailSubtitle: document.getElementById("detail-subtitle"),
+  detailContent: document.getElementById("detail-content"),
+};
 
 function authHeaders() {
-  return { Authorization: `Bearer ${token}` };
+  return { Authorization: `Bearer ${state.token}` };
+}
+
+async function apiRequest(path, options = {}) {
+  const headers = {
+    ...(options.auth ? authHeaders() : {}),
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
+  };
+
+  const response = await fetch(path, {
+    method: options.method || "GET",
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const missing = data.missing ? `: ${data.missing}` : "";
+    throw new Error(data.error ? `${data.error}${missing}` : `HTTP ${response.status}`);
+  }
+  return data;
 }
 
 async function checkAuth() {
-  lastAuthError = '';
+  state.lastAuthError = "";
   try {
-    const response = await fetch('/api/config', { headers: authHeaders() });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      if (body?.missing) {
-        lastAuthError = `服务器设定缺少 ${body.missing}`;
-      } else if (response.status === 401) {
-        lastAuthError = '认证失败，请确认 ADMIN_PASSWORD 是否正确';
-      } else {
-        lastAuthError = body?.error || `认证检查失败：HTTP ${response.status}`;
-      }
-      return false;
-    }
-    return response.ok;
-  } catch {
-    lastAuthError = '无法连接 Pages API';
+    await apiRequest("/api/config", { auth: true });
+    return true;
+  } catch (err) {
+    const message = err.message || "认证检查失败";
+    state.lastAuthError = message.includes("Server misconfigured")
+      ? `服务器设定错误${message.replace("Server misconfigured", "")}`
+      : message === "Unauthorized"
+        ? "认证失败，请确认 ADMIN_PASSWORD 是否正确"
+        : message;
     return false;
   }
 }
 
+async function loadEnv() {
+  try {
+    const data = await apiRequest("/api/env");
+    if (data.github_actions_url) {
+      dom.runNowBtn.href = data.github_actions_url;
+    }
+  } catch {}
+}
+
 function initApp() {
-  loadConfig();
+  loadConfig(state.keysRevealed);
   loadResults();
 }
 
-document.querySelectorAll('.tab-btn').forEach((button) => {
-  button.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'));
-    button.classList.add('active');
-    document.getElementById(`tab-${button.dataset.tab}`).classList.add('active');
-    if (button.dataset.tab === 'results') {
-      loadResults();
-    }
+async function login() {
+  state.token = dom.authTokenInput.value.trim();
+  if (!state.token) {
+    dom.authError.textContent = "请输入 ADMIN_PASSWORD";
+    return;
+  }
+
+  dom.authError.textContent = "";
+  dom.authBtn.disabled = true;
+  const ok = await checkAuth();
+  dom.authBtn.disabled = false;
+
+  if (!ok) {
+    dom.authError.textContent = state.lastAuthError || "认证失败，请确认 ADMIN_PASSWORD 是否正确";
+    state.token = "";
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    dom.authOverlay.classList.add("active");
+    document.documentElement.classList.remove("auth-checking");
+    return;
+  }
+
+  localStorage.setItem(TOKEN_STORAGE_KEY, state.token);
+  dom.authOverlay.classList.remove("active");
+  dom.authTokenInput.value = "";
+  document.documentElement.classList.remove("auth-checking");
+  initApp();
+}
+
+function logout() {
+  state.token = "";
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  dom.authOverlay.classList.add("active");
+  dom.authTokenInput.value = "";
+}
+
+function switchTab(tabName) {
+  dom.tabButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tabName);
   });
-});
+  dom.tabPanels.forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `tab-${tabName}`);
+  });
+  if (tabName === "results") {
+    loadResults();
+  }
+}
 
 function normalizeModelsText(raw) {
-  const pieces = String(raw || '')
+  return String(raw || "")
     .split(/[\n,]+/g)
     .map((item) => item.trim())
-    .filter(Boolean);
-  return pieces.join(', ');
+    .filter(Boolean)
+    .join(", ");
 }
 
 function parseModelsList(raw) {
-  const normalizedText = normalizeModelsText(raw);
-  if (!normalizedText) {
-    return [];
-  }
-  return normalizedText.split(', ').filter(Boolean);
+  const normalized = normalizeModelsText(raw);
+  return normalized ? normalized.split(", ").filter(Boolean) : [];
 }
 
 function formatModelsList(modelsList) {
-  return (Array.isArray(modelsList) ? modelsList : []).join(', ');
+  return (Array.isArray(modelsList) ? modelsList : []).join(", ");
 }
 
-function providerFingerprint(provider) {
-  // 前端只用同一套输入字段算展示用 fingerprint，真正存储仍以后端为准。
+function normalizeApiBase(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function providerKey(provider) {
+  return `${provider.provider_type}::${provider.mode}::${normalizeApiBase(provider.api_base)}`;
+}
+
+function updateProviderTypeHint() {
+  const endpoint = DEFAULT_ENDPOINT_HINT[dom.providerType.value] || "-";
+  dom.providerTypeHelp.textContent = `固定请求路径: ${endpoint}`;
+}
+
+async function loadConfig(full = false) {
+  dom.configLoading.classList.remove("hidden");
+  dom.configError.classList.add("hidden");
+  dom.providerList.classList.add("hidden");
+
+  try {
+    const data = await apiRequest(full ? "/api/config?full=1" : "/api/config", { auth: true });
+    state.providers = Array.isArray(data.providers) ? data.providers : [];
+    state.keysRevealed = full;
+
+    dom.revealKeysBtn.textContent = full ? "已显示完整 key" : "显示完整 key";
+    dom.revealKeysBtn.disabled = full;
+    renderProviders();
+    dom.providerList.classList.remove("hidden");
+  } catch (err) {
+    dom.configError.textContent = `读取失败: ${err.message}`;
+    dom.configError.classList.remove("hidden");
+  } finally {
+    dom.configLoading.classList.add("hidden");
+  }
+}
+
+function renderProviders() {
+  if (!state.providers.length) {
+    dom.providerList.innerHTML = '<div class="empty-card">尚未新增测试来源。先建立一个来源后再触发测试。</div>';
+    return;
+  }
+
+  dom.providerList.innerHTML = state.providers
+    .map((provider, index) => renderProviderCard(provider, index))
+    .join("");
+
+  dom.providerList.querySelectorAll("[data-action='edit']").forEach((button) => {
+    button.addEventListener("click", () => editProvider(Number(button.dataset.idx)));
+  });
+  dom.providerList.querySelectorAll("[data-action='delete']").forEach((button) => {
+    button.addEventListener("click", () => deleteProvider(Number(button.dataset.idx)));
+  });
+}
+
+function renderProviderCard(provider, index) {
+  const models = Array.isArray(provider.models_list) ? provider.models_list : [];
+  const testerEnabled = provider.tester_enabled !== false;
+  const benchmarkEnabled = provider.benchmark_enabled !== false;
+  const modelsPreview = models.slice(0, 5).join(", ") || "-";
+  const extraModels = models.length > 5 ? ` +${models.length - 5}` : "";
+
+  return `
+    <article class="provider-card">
+      <div class="provider-card-header">
+        <div>
+          <div class="card-actions">
+            <span class="badge">${esc(provider.provider_type)}</span>
+            <span class="badge neutral">${esc(provider.mode)}</span>
+          </div>
+          <h3 class="provider-title">${esc(provider.api_base)}</h3>
+        </div>
+        <div class="provider-actions">
+          <button class="btn btn-sm btn-secondary" type="button" data-action="edit" data-idx="${index}">编辑</button>
+          <button class="btn btn-sm btn-danger" type="button" data-action="delete" data-idx="${index}">删除</button>
+        </div>
+      </div>
+      <div class="provider-meta">
+        <div class="meta-item"><span>模型数</span><strong>${models.length}</strong></div>
+        <div class="meta-item"><span>api_key</span><strong>${esc(provider.api_key || "-")}</strong></div>
+        <div class="meta-item"><span>模型检查</span><strong class="${testerEnabled ? "status-ok" : "status-fail"}">${testerEnabled ? "启用" : "停用"}</strong></div>
+        <div class="meta-item"><span>效能测试</span><strong class="${benchmarkEnabled ? "status-ok" : "status-fail"}">${benchmarkEnabled ? "启用" : "停用"}</strong></div>
+      </div>
+      <div class="meta-item"><span>models_list</span><strong>${esc(modelsPreview)}${esc(extraModels)}</strong></div>
+    </article>
+  `;
+}
+
+function openEditor(mode, index = -1) {
+  dom.formIndex.value = String(index);
+  dom.formTitle.textContent = mode === "edit" ? "编辑来源" : "新增来源";
+  dom.formCard.classList.remove("hidden");
+  dom.formCard.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetForm() {
+  dom.form.reset();
+  dom.formIndex.value = "-1";
+  dom.formTitle.textContent = "新增来源";
+  dom.testerEnabled.checked = true;
+  dom.benchmarkEnabled.checked = true;
+  dom.modelsList.value = "";
+  dom.formError.textContent = "";
+  updateProviderTypeHint();
+}
+
+function editProvider(index) {
+  const provider = state.providers[index];
+  if (!provider) return;
+
+  dom.providerType.value = provider.provider_type;
+  dom.mode.value = provider.mode;
+  dom.apiBase.value = provider.api_base;
+  dom.apiKey.value = "";
+  dom.testerEnabled.checked = provider.tester_enabled !== false;
+  dom.benchmarkEnabled.checked = provider.benchmark_enabled !== false;
+  dom.modelsList.value = formatModelsList(provider.models_list);
+  dom.formError.textContent = "";
+  updateProviderTypeHint();
+  openEditor("edit", index);
+}
+
+async function deleteProvider(index) {
+  const provider = state.providers[index];
+  if (!provider || !confirm(`确定删除 ${provider.api_base} ?`)) return;
+
+  const result = await saveConfig(state.providers.filter((_, idx) => idx !== index));
+  if (!result.ok) {
+    alert(result.error || "删除失败");
+    return;
+  }
+  await loadConfig(state.keysRevealed);
+}
+
+async function submitProviderForm(event) {
+  event.preventDefault();
+  dom.formError.textContent = "";
+
+  const index = Number(dom.formIndex.value);
+  const existing = index >= 0 ? state.providers[index] : null;
+  const apiKeyInput = dom.apiKey.value.trim();
+  const provider = {
+    provider_type: dom.providerType.value,
+    mode: dom.mode.value,
+    api_base: normalizeApiBase(dom.apiBase.value),
+    api_key: apiKeyInput || existing?.api_key || "",
+    tester_enabled: dom.testerEnabled.checked,
+    benchmark_enabled: dom.benchmarkEnabled.checked,
+    models_list: parseModelsList(dom.modelsList.value),
+  };
+
+  const validationError = validateProviderForm(provider, index, apiKeyInput);
+  if (validationError) {
+    dom.formError.textContent = validationError;
+    return;
+  }
+
+  const nextProviders = state.providers.slice();
+  if (index >= 0) nextProviders[index] = provider;
+  else nextProviders.push(provider);
+
+  const result = await saveConfig(nextProviders);
+  if (!result.ok) {
+    dom.formError.textContent = result.error || "储存失败";
+    return;
+  }
+
+  dom.formCard.classList.add("hidden");
+  resetForm();
+  await loadConfig(state.keysRevealed);
+}
+
+function validateProviderForm(provider, index, apiKeyInput) {
+  if (!provider.provider_type || !provider.mode || !provider.api_base) {
+    return "请填写所有必填栏位";
+  }
+  if (!provider.models_list.length) {
+    return "models_list 不能为空";
+  }
+  if (index < 0 && !apiKeyInput) {
+    return "新增来源时必须填写 api_key";
+  }
+
+  const keys = new Set();
+  const nextProviders = state.providers.slice();
+  if (index >= 0) nextProviders[index] = provider;
+  else nextProviders.push(provider);
+
+  for (const item of nextProviders) {
+    const key = providerKey(item);
+    if (keys.has(key)) return "provider_type + mode + api_base 不可重复";
+    keys.add(key);
+  }
+  return "";
+}
+
+async function saveConfig(providers) {
+  try {
+    await apiRequest("/api/config", {
+      method: "POST",
+      auth: true,
+      body: { providers },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+async function providerFingerprint(provider) {
   const payload = JSON.stringify({
-    api_base: String(provider.api_base || '').trim().replace(/\/+$/, ''),
+    api_base: normalizeApiBase(provider.api_base),
     mode: provider.mode,
     provider_type: provider.provider_type,
   });
@@ -153,493 +395,310 @@ function providerFingerprint(provider) {
 
 async function sha256Hex(text) {
   const data = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-function endpointHintText(providerType) {
-  return `此类型会自动使用固定 endpoint: ${DEFAULT_ENDPOINT_HINT[providerType] || '-'}`;
-}
-
-function updateProviderTypeHint() {
-  providerTypeHelp.textContent = endpointHintText(providerTypeSelect.value);
-}
-
-providerTypeHelpBtn.addEventListener('click', () => {
-  updateProviderTypeHint();
-  providerTypeHelp.classList.toggle('hidden');
-});
-
-providerTypeSelect.addEventListener('change', updateProviderTypeHint);
-
-modelsListInput.addEventListener('blur', () => {
-  modelsListInput.value = normalizeModelsText(modelsListInput.value);
-});
-
-addProviderBtn.addEventListener('click', () => {
-  resetForm();
-  providerFormCard.classList.remove('hidden');
-  providerFormCard.scrollIntoView({ behavior: 'smooth' });
-});
-
-revealKeysBtn.addEventListener('click', async () => {
-  if (keysRevealed) return;
-  await loadConfig(true);
-});
-
-cancelFormBtn.addEventListener('click', () => {
-  providerFormCard.classList.add('hidden');
-});
-
-providerForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  formError.textContent = '';
-
-  const index = Number(formIndex.value);
-  const existing = index >= 0 ? currentProviders[index] : null;
-  const apiKeyInput = document.getElementById('p-api_key').value.trim();
-  const modelsList = parseModelsList(modelsListInput.value);
-  const provider = {
-    provider_type: document.getElementById('p-provider_type').value,
-    mode: document.getElementById('p-mode').value,
-    api_base: document.getElementById('p-api_base').value.trim(),
-    api_key: apiKeyInput || existing?.api_key || '',
-    tester_enabled: document.getElementById('p-tester-enabled').checked,
-    benchmark_enabled: document.getElementById('p-benchmark-enabled').checked,
-    models_list: modelsList,
-  };
-
-  if (!provider.provider_type || !provider.mode || !provider.api_base) {
-    formError.textContent = '请填写所有必填栏位';
-    return;
-  }
-  if (!provider.models_list.length) {
-    formError.textContent = 'models_list 不能为空';
-    return;
-  }
-  if (index < 0 && !apiKeyInput) {
-    formError.textContent = '新增 provider 时必须填写 api_key';
-    return;
-  }
-
-  const nextProviders = currentProviders.slice();
-  if (index >= 0) {
-    nextProviders[index] = provider;
-  } else {
-    nextProviders.push(provider);
-  }
-
-  const duplicateKeys = new Set();
-  for (const item of nextProviders) {
-    const key = `${item.provider_type}::${item.mode}::${String(item.api_base || '').trim().replace(/\/+$/, '')}`;
-    if (duplicateKeys.has(key)) {
-      formError.textContent = 'provider_type + mode + api_base 不可重复';
-      return;
-    }
-    duplicateKeys.add(key);
-  }
-
-  const result = await saveConfig(nextProviders);
-  if (!result.ok) {
-    formError.textContent = result.error || '储存失败';
-    return;
-  }
-
-  providerFormCard.classList.add('hidden');
-  await loadConfig(keysRevealed);
-});
-
-async function loadConfig(full = false) {
-  configLoading.classList.remove('hidden');
-  configError.classList.add('hidden');
-  providersTableWrap.classList.add('hidden');
-
-  try {
-    const url = full ? '/api/config?full=1' : '/api/config';
-    const response = await fetch(url, { headers: authHeaders() });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || `HTTP ${response.status}`);
-    }
-    currentProviders = Array.isArray(data.providers) ? data.providers : [];
-    keysRevealed = full;
-    revealKeysBtn.textContent = full ? '已显示完整 key' : '显示完整 key';
-    revealKeysBtn.disabled = full;
-    renderProviders();
-    configLoading.classList.add('hidden');
-    providersTableWrap.classList.remove('hidden');
-  } catch (err) {
-    configLoading.classList.add('hidden');
-    configError.textContent = `读取失败: ${err.message}`;
-    configError.classList.remove('hidden');
-  }
-}
-
-function renderProviders() {
-  providersTbody.innerHTML = '';
-  if (!currentProviders.length) {
-    providersTbody.innerHTML = '<tr><td colspan="8" class="cell-empty">尚未新增 provider</td></tr>';
-    return;
-  }
-
-  currentProviders.forEach((provider, index) => {
-    const testerEnabled = provider.tester_enabled !== false;
-    const benchmarkEnabled = provider.benchmark_enabled !== false;
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${esc(provider.provider_type)}</td>
-      <td>${esc(provider.mode)}</td>
-      <td><code>${esc(provider.api_base)}</code></td>
-      <td>${esc(formatModelsList(provider.models_list))}</td>
-      <td>${testerEnabled ? '<span class="status-ok">on</span>' : '<span class="status-fail">off</span>'}</td>
-      <td>${benchmarkEnabled ? '<span class="status-ok">on</span>' : '<span class="status-fail">off</span>'}</td>
-      <td>${esc(provider.api_key)}</td>
-      <td class="cell-actions">
-        <button class="btn btn-sm btn-ghost" data-action="edit" data-idx="${index}">编辑</button>
-        <button class="btn btn-sm btn-danger" data-action="delete" data-idx="${index}">删除</button>
-      </td>
-    `;
-    providersTbody.appendChild(row);
-  });
-
-  providersTbody.querySelectorAll('[data-action="edit"]').forEach((button) => {
-    button.addEventListener('click', () => editProvider(Number(button.dataset.idx)));
-  });
-  providersTbody.querySelectorAll('[data-action="delete"]').forEach((button) => {
-    button.addEventListener('click', () => deleteProvider(Number(button.dataset.idx)));
-  });
-}
-
-function editProvider(index) {
-  const provider = currentProviders[index];
-  formIndex.value = String(index);
-  formTitle.textContent = '编辑 Provider';
-  document.getElementById('p-provider_type').value = provider.provider_type;
-  document.getElementById('p-mode').value = provider.mode;
-  document.getElementById('p-api_base').value = provider.api_base;
-  document.getElementById('p-api_key').value = '';
-  document.getElementById('p-tester-enabled').checked = provider.tester_enabled !== false;
-  document.getElementById('p-benchmark-enabled').checked = provider.benchmark_enabled !== false;
-  modelsListInput.value = formatModelsList(provider.models_list);
-  updateProviderTypeHint();
-  providerFormCard.classList.remove('hidden');
-  providerFormCard.scrollIntoView({ behavior: 'smooth' });
-}
-
-async function deleteProvider(index) {
-  const provider = currentProviders[index];
-  if (!confirm(`确定删除 ${provider.api_base} ?`)) {
-    return;
-  }
-  const nextProviders = currentProviders.filter((_, idx) => idx !== index);
-  const result = await saveConfig(nextProviders);
-  if (!result.ok) {
-    alert(result.error || '删除失败');
-    return;
-  }
-  await loadConfig(keysRevealed);
-}
-
-function resetForm() {
-  formIndex.value = '-1';
-  formTitle.textContent = '新增 Provider';
-  providerForm.reset();
-  document.getElementById('p-tester-enabled').checked = true;
-  document.getElementById('p-benchmark-enabled').checked = true;
-  modelsListInput.value = '';
-  providerTypeHelp.classList.add('hidden');
-  updateProviderTypeHint();
-  formError.textContent = '';
-}
-
-async function saveConfig(providers) {
-  try {
-    const response = await fetch('/api/config', {
-      method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providers }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return { ok: false, error: data.error || `HTTP ${response.status}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-
-refreshResultsBtn.addEventListener('click', loadResults);
 
 async function loadResults() {
-  resultsLoading.classList.remove('hidden');
-  resultsError.classList.add('hidden');
-  noResults.classList.add('hidden');
-  resultsContent.classList.add('hidden');
+  dom.resultsLoading.classList.remove("hidden");
+  dom.resultsError.classList.add("hidden");
+  dom.noResults.classList.add("hidden");
+  dom.resultsContent.classList.add("hidden");
 
   try {
-    const configResponse = await fetch('/api/config', { headers: authHeaders() });
-    const configData = await configResponse.json();
-    if (!configResponse.ok) {
-      throw new Error(configData.error || `HTTP ${configResponse.status}`);
-    }
-
-    const providers = Array.isArray(configData.providers) ? configData.providers : [];
+    const config = await apiRequest("/api/config", { auth: true });
+    const providers = Array.isArray(config.providers) ? config.providers : [];
     if (!providers.length) {
-      resultsLoading.classList.add('hidden');
-      noResults.classList.remove('hidden');
+      dom.noResults.classList.remove("hidden");
       return;
     }
 
-    const providersWithFingerprint = await Promise.all(
-      providers.map(async (provider) => ({
-        provider,
-        fingerprint: await providerFingerprint(provider),
-      })),
-    );
+    const bundles = await Promise.all(providers.map(async (provider) => {
+      const fingerprint = await providerFingerprint(provider);
+      const data = await apiRequest(`/api/results?fingerprint=${encodeURIComponent(fingerprint)}`);
+      return { provider, fingerprint, data };
+    }));
 
-    const resultBundles = await Promise.all(
-      providersWithFingerprint.map(async ({ provider, fingerprint }) => {
-        const response = await fetch(`/api/results?fingerprint=${encodeURIComponent(fingerprint)}`);
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || `HTTP ${response.status}`);
-        }
-        return { provider, fingerprint, data };
-      }),
-    );
-
-    const existingResults = resultBundles.filter((item) => item.data.exists);
-    if (!existingResults.length) {
-      resultsLoading.classList.add('hidden');
-      noResults.classList.remove('hidden');
+    const existing = bundles.filter((bundle) => bundle.data.exists);
+    if (!existing.length) {
+      dom.noResults.classList.remove("hidden");
       return;
     }
 
-    renderResults(existingResults);
-    resultsLoading.classList.add('hidden');
-    resultsContent.classList.remove('hidden');
+    renderResults(existing);
+    dom.resultsContent.classList.remove("hidden");
   } catch (err) {
-    resultsLoading.classList.add('hidden');
-    resultsError.textContent = `读取失败: ${err.message}`;
-    resultsError.classList.remove('hidden');
+    dom.resultsError.textContent = `读取失败: ${err.message}`;
+    dom.resultsError.classList.remove("hidden");
+  } finally {
+    dom.resultsLoading.classList.add("hidden");
   }
 }
 
-function renderResults(items) {
-  resultsGroups.innerHTML = items
-    .map(({ provider, fingerprint, data }) => renderProviderResults(provider, fingerprint, data))
-    .join('');
-
-  resultsGroups.querySelectorAll('.results-provider').forEach((details) => {
-    details.addEventListener('toggle', () => {
-      const chevron = details.querySelector('.chevron');
-      if (chevron) {
-        chevron.textContent = details.open ? '▾' : '▸';
-      }
-    });
-  });
-
-  resultsGroups.querySelectorAll('[data-detail-payload]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const payload = JSON.parse(button.dataset.detailPayload);
-      openDetail(payload);
-    });
+function renderResults(bundles) {
+  dom.resultsGroups.innerHTML = bundles.map(renderResultCard).join("");
+  dom.resultsGroups.querySelectorAll("[data-detail-payload]").forEach((button) => {
+    button.addEventListener("click", () => openDetail(JSON.parse(button.dataset.detailPayload)));
   });
 }
 
-function renderProviderResults(provider, fingerprint, data) {
+function renderResultCard({ provider, fingerprint, data }) {
   const tester = data.tester || null;
   const benchmark = data.benchmark || null;
   const testerItems = Array.isArray(tester?.items) ? tester.items : [];
   const benchmarkItems = Array.isArray(benchmark?.items) ? benchmark.items : [];
-  const benchmarkByModel = new Map(
-    benchmarkItems.map((item) => [item.model, item]),
-  );
-
-  const rows = testerItems
-    .slice()
-    .sort((a, b) => {
-      if (a.success !== b.success) return a.success ? -1 : 1;
-      return (a.total_time_ms ?? Infinity) - (b.total_time_ms ?? Infinity);
-    })
-    .map((item) => renderResultRow(item, benchmarkByModel.get(item.model) || null))
-    .join('');
+  const successCount = testerItems.filter((item) => item.success).length;
 
   return `
-    <details class="results-provider" open>
-      <summary class="results-provider-summary">
-        <span class="chevron">▾</span>
-        <span class="group-title">${esc(provider.api_base)}</span>
-        <span class="muted-inline">type:${esc(provider.provider_type)} / mode:${esc(provider.mode)} / fp:${esc(shortFingerprint(fingerprint))}</span>
-      </summary>
-      <div class="provider-config-strip">
-        <span><strong>provider_type</strong>: ${esc(provider.provider_type)}</span>
-        <span><strong>mode</strong>: ${esc(provider.mode)}</span>
-        <span><strong>api_base</strong>: <code>${esc(provider.api_base)}</code></span>
-        <span><strong>models_list</strong>: ${esc(formatModelsList(provider.models_list))}</span>
+    <article class="result-card">
+      <div class="result-card-header">
+        <div>
+          <div class="card-actions">
+            <span class="badge">${esc(provider.provider_type)}</span>
+            <span class="badge neutral">${esc(provider.mode)}</span>
+            <span class="badge neutral">指纹 ${esc(shortFingerprint(fingerprint))}</span>
+          </div>
+          <h3 class="result-title">${esc(provider.api_base)}</h3>
+        </div>
       </div>
-      <div class="results-table-wrap">
-        <table class="data-table results-table">
-          <thead>
-            <tr>
-              <th>model</th>
-              <th>status</th>
-              <th>tester total_time</th>
-              <th>benchmark avg</th>
-              <th>error_type</th>
-              <th>详情</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows || '<tr><td colspan="6" class="cell-empty">没有 tester 结果</td></tr>'}
-          </tbody>
-        </table>
+      <div class="result-card-body">
+        <div class="metric-grid">
+          <div class="meta-item"><span class="metric-label">测试执行</span><strong class="metric-value">${esc(tester?.run_id || "-")}</strong></div>
+          <div class="meta-item"><span class="metric-label">成功数</span><strong class="metric-value">${successCount}/${testerItems.length}</strong></div>
+          <div class="meta-item"><span class="metric-label">效能测试数</span><strong class="metric-value">${benchmarkItems.length}</strong></div>
+          <div class="meta-item"><span class="metric-label">模型数</span><strong class="metric-value">${(provider.models_list || []).length}</strong></div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th>状态</th>
+                <th>测试总耗时</th>
+                <th>平均耗时</th>
+                <th>错误</th>
+                <th>详情</th>
+              </tr>
+            </thead>
+            <tbody>${renderResultRows(testerItems, benchmarkItems)}</tbody>
+          </table>
+        </div>
       </div>
-    </details>
+    </article>
   `;
 }
 
-function renderResultRow(item, benchmark) {
+function renderResultRows(testerItems, benchmarkItems) {
+  const testerByModel = new Map(testerItems.map((item) => [item.model, item]));
+  const benchmarkByModel = new Map(benchmarkItems.map((item) => [item.model, item]));
+  const modelNames = Array.from(new Set([...testerByModel.keys(), ...benchmarkByModel.keys()]))
+    .sort((a, b) => {
+      const left = testerByModel.get(a);
+      const right = testerByModel.get(b);
+      if (left?.success !== right?.success) return left?.success ? -1 : 1;
+      return (left?.total_time_ms ?? Infinity) - (right?.total_time_ms ?? Infinity);
+    });
+
+  if (!modelNames.length) {
+    return '<tr><td colspan="6" class="cell-empty">没有可显示的结果</td></tr>';
+  }
+
+  return modelNames.map((model) => renderResultRow(model, testerByModel.get(model), benchmarkByModel.get(model))).join("");
+}
+
+function renderResultRow(model, tester, benchmark) {
   const detailPayload = {
-    title: item.model || '-',
-    subtitle: `${item.provider_type} / ${item.mode} / ${item.api_base}`,
-    item,
+    title: model || "-",
+    subtitle: tester ? `${tester.provider_type} / ${tester.mode} / ${tester.api_base}` : "仅效能测试",
+    tester,
     benchmark,
   };
+  const status = tester
+    ? tester.success
+      ? '<span class="status-ok">成功</span>'
+      : '<span class="status-fail">失败</span>'
+    : '<span class="status-muted">无模型检查</span>';
+
   return `
     <tr>
-      <td><code>${esc(item.model || '-')}</code></td>
-      <td>${item.success ? '<span class="status-ok">success</span>' : '<span class="status-fail">failed</span>'}</td>
-      <td>${fmtMs(item.total_time_ms)}</td>
-      <td>${benchmark ? fmtMs(benchmark.avg_total_time_ms) : '-'}</td>
-      <td>${esc(item.error_type || '-')}</td>
-      <td><button type="button" class="btn btn-sm btn-ghost" data-detail-payload="${escAttr(JSON.stringify(detailPayload))}">详情</button></td>
+      <td><code>${esc(model || "-")}</code></td>
+      <td>${status}</td>
+      <td>${fmtMs(tester?.total_time_ms)}</td>
+      <td>${benchmark ? fmtMs(benchmark.avg_total_time_ms) : "-"}</td>
+      <td>${esc(tester?.error_type || benchmark?.error || "-")}</td>
+      <td><button type="button" class="btn btn-sm btn-secondary" data-detail-payload="${escAttr(JSON.stringify(detailPayload))}">详情</button></td>
     </tr>
   `;
 }
 
 function openDetail(payload) {
-  detailTitle.textContent = payload.title || '详情';
-  detailSubtitle.textContent = payload.subtitle || '';
-  detailContent.innerHTML = `
-    <div class="detail-section">
-      <h4>Tester</h4>
-      <div class="detail-grid">
-        <div><strong>success</strong>: ${payload.item?.success ? 'true' : 'false'}</div>
-        <div><strong>has_answer</strong>: ${payload.item?.has_answer ? 'true' : 'false'}</div>
-        <div><strong>has_thinking</strong>: ${payload.item?.has_thinking ? 'true' : 'false'}</div>
-        <div><strong>retry_count</strong>: ${payload.item?.retry_count ?? 0}</div>
-        <div><strong>total_time_ms</strong>: ${fmtMs(payload.item?.total_time_ms)}</div>
-        <div><strong>error_type</strong>: ${esc(payload.item?.error_type || '-')}</div>
-      </div>
-      <pre class="detail-pre"><strong>answer</strong>\n${esc(payload.item?.answer_preview || '')}</pre>
-      <pre class="detail-pre"><strong>thinking</strong>\n${esc(payload.item?.thinking_preview || '')}</pre>
-      <pre class="detail-pre"><strong>error</strong>\n${esc(payload.item?.error_message_preview || '')}</pre>
-    </div>
-    <div class="detail-section">
-      <h4>Benchmark</h4>
+  dom.detailTitle.textContent = payload.title || "详情";
+  dom.detailSubtitle.textContent = payload.subtitle || "";
+  dom.detailContent.innerHTML = `
+    <section class="detail-section">
+      <h4>模型检查</h4>
+      ${renderTesterDetail(payload.tester)}
+    </section>
+    <section class="detail-section">
+      <h4>效能测试</h4>
       ${renderBenchmarkDetail(payload.benchmark)}
-    </div>
+    </section>
   `;
-  detailOverlay.classList.remove('hidden');
+  dom.detailOverlay.classList.remove("hidden");
+}
+
+function renderTesterDetail(item) {
+  if (!item) return '<p class="muted">没有模型检查结果。</p>';
+  return `
+    <div class="detail-grid">
+      <div><strong>成功</strong>: ${item.success ? "true" : "false"}</div>
+      <div><strong>有答案</strong>: ${item.has_answer ? "true" : "false"}</div>
+      <div><strong>有 thinking</strong>: ${item.has_thinking ? "true" : "false"}</div>
+      <div><strong>重试次数</strong>: ${item.retry_count ?? 0}</div>
+      <div><strong>总耗时</strong>: ${fmtMs(item.total_time_ms)}</div>
+      <div><strong>错误类型</strong>: ${esc(item.error_type || "-")}</div>
+    </div>
+    <pre class="detail-pre"><strong>答案</strong>\n${esc(item.answer_preview || "")}</pre>
+    <pre class="detail-pre"><strong>思考</strong>\n${esc(item.thinking_preview || "")}</pre>
+    <pre class="detail-pre"><strong>错误</strong>\n${esc(item.error_message_preview || "")}</pre>
+  `;
 }
 
 function renderBenchmarkDetail(benchmark) {
-  if (!benchmark) {
-    return '<p class="form-note">没有 benchmark 结果。</p>';
-  }
+  if (!benchmark) return '<p class="muted">没有效能测试结果。</p>';
   const runs = Array.isArray(benchmark.runs) ? benchmark.runs : [];
   return `
     <div class="detail-grid">
-      <div><strong>avg_total_time_ms</strong>: ${fmtMs(benchmark.avg_total_time_ms)}</div>
-      <div><strong>runs</strong>: ${runs.length}</div>
+      <div><strong>平均总耗时</strong>: ${fmtMs(benchmark.avg_total_time_ms)}</div>
+      <div><strong>执行次数</strong>: ${runs.length}</div>
     </div>
-    <table class="data-table detail-runs-table">
-      <thead>
-        <tr>
-          <th>run_index</th>
-          <th>total_time_ms</th>
-          <th>ttft_ms</th>
-          <th>output_chars</th>
-          <th>error</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${runs.map((run) => `
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
           <tr>
-            <td>${run.run_index}</td>
-            <td>${fmtMs(run.total_time_ms)}</td>
-            <td>${run.ttft_ms == null ? '-' : fmtMs(run.ttft_ms)}</td>
-            <td>${run.output_chars ?? 0}</td>
-            <td>${esc(run.error || '-')}</td>
+            <th>次数</th>
+            <th>总耗时</th>
+            <th>ttft</th>
+            <th>字数</th>
+            <th>错误</th>
           </tr>
-        `).join('')}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          ${runs.map((run) => `
+            <tr>
+              <td>${run.run_index}</td>
+              <td>${fmtMs(run.total_time_ms)}</td>
+              <td>${run.ttft_ms == null ? "-" : fmtMs(run.ttft_ms)}</td>
+              <td>${run.output_chars ?? 0}</td>
+              <td>${esc(run.error || "-")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
-detailCloseBtn.addEventListener('click', closeDetail);
-detailOverlay.addEventListener('click', (event) => {
-  if (event.target.dataset.closeDetail === '1') {
-    closeDetail();
-  }
-});
-
 function closeDetail() {
-  detailOverlay.classList.add('hidden');
+  dom.detailOverlay.classList.add("hidden");
 }
 
 function shortFingerprint(value) {
-  const text = String(value || '');
-  if (!text) return '-';
+  const text = String(value || "");
+  if (!text) return "-";
   if (text.length <= 18) return text;
   return `${text.slice(0, 12)}...${text.slice(-6)}`;
 }
 
 function fmtMs(value) {
-  if (value == null || Number.isNaN(Number(value))) {
-    return '-';
-  }
+  if (value == null || Number.isNaN(Number(value))) return "-";
   return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}ms`;
 }
 
 function esc(value) {
-  if (value == null) return '';
-  const div = document.createElement('div');
-  div.textContent = String(value);
-  return div.innerHTML;
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function escAttr(value) {
-  return esc(value).replace(/"/g, '&quot;');
+  return esc(value);
 }
 
-(async () => {
-  try {
-    const envResponse = await fetch('/api/env');
-    if (envResponse.ok) {
-      const envData = await envResponse.json();
-      if (envData.github_actions_url) {
-        document.getElementById('run-now-btn').href = envData.github_actions_url;
-      }
-    }
-  } catch {}
+function cleanupLegacyServiceWorker() {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .catch(() => {});
+  }
+  if ("caches" in window) {
+    caches.keys()
+      .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+      .catch(() => {});
+  }
+}
 
-  token = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
-  if (token) {
+function bindEvents() {
+  dom.authBtn.addEventListener("click", login);
+  dom.authTokenInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") login();
+  });
+  dom.logoutBtn.addEventListener("click", logout);
+
+  dom.tabButtons.forEach((button) => {
+    button.addEventListener("click", () => switchTab(button.dataset.tab));
+  });
+
+  dom.addProviderBtn.addEventListener("click", () => {
+    resetForm();
+    openEditor("new");
+  });
+  dom.revealKeysBtn.addEventListener("click", () => {
+    if (!state.keysRevealed) loadConfig(true);
+  });
+  dom.cancelFormBtn.addEventListener("click", () => dom.formCard.classList.add("hidden"));
+  dom.resetFormBtn.addEventListener("click", resetForm);
+  dom.form.addEventListener("submit", submitProviderForm);
+  dom.providerType.addEventListener("change", updateProviderTypeHint);
+  dom.modelsList.addEventListener("blur", () => {
+    dom.modelsList.value = normalizeModelsText(dom.modelsList.value);
+  });
+
+  dom.refreshResultsBtn.addEventListener("click", loadResults);
+  dom.detailCloseBtn.addEventListener("click", closeDetail);
+  dom.detailOverlay.addEventListener("click", (event) => {
+    if (event.target.dataset.closeDetail === "1") closeDetail();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !dom.detailOverlay.classList.contains("hidden")) {
+      closeDetail();
+    }
+  });
+}
+
+async function bootstrap() {
+  cleanupLegacyServiceWorker();
+  bindEvents();
+  updateProviderTypeHint();
+  await loadEnv();
+
+  state.token = localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  if (state.token) {
     const ok = await checkAuth();
     if (ok) {
-      authOverlay.classList.remove('active');
+      dom.authOverlay.classList.remove("active");
       initApp();
     } else {
-      token = '';
+      state.token = "";
       localStorage.removeItem(TOKEN_STORAGE_KEY);
-      authOverlay.classList.add('active');
+      dom.authOverlay.classList.add("active");
     }
   }
 
-  updateProviderTypeHint();
-  document.documentElement.classList.remove('auth-checking');
-})();
+  document.documentElement.classList.remove("auth-checking");
+}
+
+bootstrap();
