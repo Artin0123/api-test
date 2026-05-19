@@ -32,10 +32,10 @@ Cloudflare Pages + KV + GitHub Actions 的 API 测试与 benchmark 工具。
 
 ## 快速开始
 
-1. 在 Cloudflare Pages Dashboard 设定 `MASTER_API_TOKEN` 和 `GITHUB_ACTIONS_URL`
+1. 在 Cloudflare Pages Dashboard 设定 `ADMIN_PASSWORD` 和 `GITHUB_ACTIONS_URL`
 2. 在 Cloudflare Pages Dashboard 绑定 `KV_STORE`
 3. 在 `providers_config` 写入 provider
-4. 在 GitHub Actions secrets 设定 `PAGES_URL` 和 `MASTER_API_TOKEN`
+4. 在 GitHub Actions secrets 设定 `PAGES_URL` 和 `ADMIN_PASSWORD`
 5. 触发 GitHub Actions 跑 `runner.py`
 
 ## 需要查看的资料

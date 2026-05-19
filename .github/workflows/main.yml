@@ -26,5 +26,5 @@ jobs:
       - name: Run API tester
         env:
           PAGES_URL: ${{ secrets.PAGES_URL }}
-          MASTER_API_TOKEN: ${{ secrets.MASTER_API_TOKEN }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: python runner.py

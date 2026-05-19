@@ -1,9 +1,10 @@
 const API_BASE = '';
-const TOKEN_STORAGE_KEY = 'api_test_admin_token';
+const TOKEN_STORAGE_KEY = 'api_test_admin_password';
 
 let token = '';
 let currentProviders = [];
 let keysRevealed = false;
+let lastAuthError = '';
 
 const authOverlay = document.getElementById('auth-overlay');
 const authTokenInput = document.getElementById('auth-token');
@@ -50,13 +51,13 @@ const DEFAULT_ENDPOINT_HINT = {
 authBtn.addEventListener('click', async () => {
   token = authTokenInput.value.trim();
   if (!token) {
-    authError.textContent = '请输入 token';
+    authError.textContent = '请输入 ADMIN_PASSWORD';
     return;
   }
   authError.textContent = '';
   const ok = await checkAuth();
   if (!ok) {
-    authError.textContent = '认证失败，请确认 MASTER_API_TOKEN 是否正确';
+    authError.textContent = lastAuthError || '认证失败，请确认 ADMIN_PASSWORD 是否正确';
     token = '';
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     authOverlay.classList.add('active');
@@ -82,10 +83,23 @@ function authHeaders() {
 }
 
 async function checkAuth() {
+  lastAuthError = '';
   try {
     const response = await fetch('/api/config', { headers: authHeaders() });
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      if (body?.missing) {
+        lastAuthError = `服务器设定缺少 ${body.missing}`;
+      } else if (response.status === 401) {
+        lastAuthError = '认证失败，请确认 ADMIN_PASSWORD 是否正确';
+      } else {
+        lastAuthError = body?.error || `认证检查失败：HTTP ${response.status}`;
+      }
+      return false;
+    }
     return response.ok;
   } catch {
+    lastAuthError = '无法连接 Pages API';
     return false;
   }
 }

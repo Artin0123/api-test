@@ -823,9 +823,9 @@ def upload_provider_results(
 
 def main() -> int:
     pages_url = os.environ.get("PAGES_URL", "").strip()
-    token = os.environ.get("MASTER_API_TOKEN", "").strip()
+    token = os.environ.get("ADMIN_PASSWORD", "").strip()
     if not pages_url or not token:
-        print("[error] PAGES_URL and MASTER_API_TOKEN env vars are required")
+        print("[error] PAGES_URL and ADMIN_PASSWORD env vars are required")
         return 1
 
     pages = PagesClient(pages_url, token)

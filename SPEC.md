@@ -130,7 +130,7 @@ checkpoint 内会保存：
 
 ## 8. 安全与验证
 
-- 管理 API 一律要求 `Authorization: Bearer <MASTER_API_TOKEN>`
+- 管理 API 一律要求 `Authorization: Bearer <ADMIN_PASSWORD>`
 - `POST /api/results` 只接受当前 `providers_config` 中存在的 provider
 - `models_list` 只接受 array，且每个元素都要是有效字串
 - `GET /api/config` 默认遮罩 `api_key`
@@ -154,7 +154,7 @@ checkpoint 内会保存：
 
 ### Cloudflare Pages Dashboard
 
-- `MASTER_API_TOKEN`
+- `ADMIN_PASSWORD`
 - `GITHUB_ACTIONS_URL`
 - `KV_STORE`：手动绑定 KV namespace，沿用现有 namespace 即可，清空 KV 后重跑
 
@@ -165,7 +165,7 @@ checkpoint 内会保存：
 ### GitHub Actions
 
 - `PAGES_URL`
-- `MASTER_API_TOKEN`
+- `ADMIN_PASSWORD`
 
 ### 流程
 

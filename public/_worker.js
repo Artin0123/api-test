@@ -11,7 +11,7 @@
  *             latest_benchmark:{provider_fingerprint}
  *
  * Secrets required:
- *   MASTER_API_TOKEN
+ *   ADMIN_PASSWORD
  *   GITHUB_ACTIONS_URL
  */
 
@@ -50,15 +50,37 @@ export default {
       return await handler(request, env, url);
     } catch (err) {
       console.error(err);
+      if (err?.code === "CONFIG_ERROR") {
+        return json({ error: "Server misconfigured", missing: err.configName }, 500);
+      }
       return json({ error: "Internal Server Error" }, 500);
     }
   },
 };
 
+function configError(configName) {
+  const err = new Error(`${configName} is not configured`);
+  err.code = "CONFIG_ERROR";
+  err.configName = configName;
+  return err;
+}
+
+function kvStore(env) {
+  if (!env.KV_STORE || typeof env.KV_STORE.get !== "function") {
+    throw configError("KV_STORE");
+  }
+  return env.KV_STORE;
+}
+
 function requireAuth(request, env) {
+  const adminPassword = asNonEmptyString(env.ADMIN_PASSWORD);
+  if (!adminPassword) {
+    throw configError("ADMIN_PASSWORD");
+  }
+
   const auth = request.headers.get("Authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token === env.MASTER_API_TOKEN;
+  return token === adminPassword;
 }
 
 function json(data, status = 200) {
@@ -258,7 +280,7 @@ function getStageAndFingerprint(url) {
 }
 
 async function loadConfig(env) {
-  return parseJsonOrNull(await env.KV_STORE.get("providers_config")) || {
+  return parseJsonOrNull(await kvStore(env).get("providers_config")) || {
     providers: [],
     updated_at: null,
   };
@@ -371,7 +393,7 @@ async function handlePostConfig(request, env) {
     updated_at: new Date().toISOString(),
   };
 
-  await env.KV_STORE.put("providers_config", JSON.stringify(payload));
+  await kvStore(env).put("providers_config", JSON.stringify(payload));
   return json({ ok: true });
 }
 
@@ -385,7 +407,7 @@ async function handleGetCheckpoint(request, env, url) {
     return json({ error: parsed.error }, 400);
   }
 
-  const raw = await env.KV_STORE.get(checkpointKey(parsed.stage, parsed.fingerprint));
+  const raw = await kvStore(env).get(checkpointKey(parsed.stage, parsed.fingerprint));
   if (!raw) {
     return json({ exists: false, stage: parsed.stage, fingerprint: parsed.fingerprint });
   }
@@ -426,7 +448,7 @@ async function handlePostCheckpoint(request, env, url) {
     updated_at: new Date().toISOString(),
   };
 
-  await env.KV_STORE.put(checkpointKey(parsed.stage, parsed.fingerprint), JSON.stringify(payload));
+  await kvStore(env).put(checkpointKey(parsed.stage, parsed.fingerprint), JSON.stringify(payload));
   return json({ ok: true });
 }
 
@@ -440,7 +462,7 @@ async function handleDeleteCheckpoint(request, env, url) {
     return json({ error: parsed.error }, 400);
   }
 
-  await env.KV_STORE.delete(checkpointKey(parsed.stage, parsed.fingerprint));
+  await kvStore(env).delete(checkpointKey(parsed.stage, parsed.fingerprint));
   return json({ ok: true });
 }
 
@@ -499,11 +521,12 @@ async function handlePostResults(request, env) {
   }
 
   const writes = [];
+  const kv = kvStore(env);
   if (body.tester) {
-    writes.push(env.KV_STORE.put(testerKey(providerFingerprint), JSON.stringify(body.tester)));
+    writes.push(kv.put(testerKey(providerFingerprint), JSON.stringify(body.tester)));
   }
   if (body.benchmark) {
-    writes.push(env.KV_STORE.put(benchmarkKey(providerFingerprint), JSON.stringify(body.benchmark)));
+    writes.push(kv.put(benchmarkKey(providerFingerprint), JSON.stringify(body.benchmark)));
   }
 
   await Promise.all(writes);
@@ -516,9 +539,10 @@ async function handleGetResults(_request, env, url) {
     return json({ error: "fingerprint required" }, 400);
   }
 
+  const kv = kvStore(env);
   const [testerRaw, benchmarkRaw] = await Promise.all([
-    env.KV_STORE.get(testerKey(providerFingerprint)),
-    env.KV_STORE.get(benchmarkKey(providerFingerprint)),
+    kv.get(testerKey(providerFingerprint)),
+    kv.get(benchmarkKey(providerFingerprint)),
   ]);
 
   const tester = parseJsonOrNull(testerRaw);

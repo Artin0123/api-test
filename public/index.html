@@ -7,7 +7,7 @@
   <script>
     (() => {
       try {
-        if (localStorage.getItem('api_test_admin_token')) {
+        if (localStorage.getItem('api_test_admin_password')) {
           document.documentElement.classList.add('auth-checking');
         }
       } catch {}
@@ -20,8 +20,8 @@
     <div id="auth-overlay" class="overlay active">
       <div class="overlay-card">
         <h2>API Test Admin</h2>
-        <p class="overlay-subtitle">请输入 `MASTER_API_TOKEN` 进入管理界面。</p>
-        <input type="password" id="auth-token" placeholder="Bearer Token">
+        <p class="overlay-subtitle">请输入 `ADMIN_PASSWORD` 进入管理界面。</p>
+        <input type="password" id="auth-token" placeholder="Admin Password">
         <button id="auth-btn" class="btn btn-primary">登入</button>
         <p id="auth-error" class="error"></p>
       </div>
