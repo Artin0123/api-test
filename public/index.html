@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>API Key Tester</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E">
   <script>
     (() => {
       // Apply saved theme before paint to avoid flash
@@ -171,11 +172,11 @@
           <input type="url" id="set-github-url" class="input-text" placeholder="https://github.com/owner/repo/actions/workflows/main.yml">
         </label>
         <label class="field">
-          <span class="field-label">
-            Discord Webhook URL
-            <span id="discord-status" class="badge badge-ok hidden">已接入</span>
-          </span>
-          <input type="url" id="set-discord-url" class="input-text" placeholder="https://discord.com/api/webhooks/...">
+          <span class="field-label">Discord Webhook URL</span>
+          <div style="display:flex;gap:.5rem;">
+            <input type="url" id="set-discord-url" class="input-text" placeholder="https://discord.com/api/webhooks/...">
+            <button id="test-discord-btn" class="btn btn-secondary" type="button" style="flex-shrink:0;">测试</button>
+          </div>
         </label>
         <p id="settings-error" class="form-error" role="alert"></p>
         <p id="settings-ok" class="form-ok hidden" role="status">设定已储存。</p>

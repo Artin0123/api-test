@@ -74,7 +74,7 @@ const dom = {
   settingsOk:       $("settings-ok"),
   setGithubUrl:     $("set-github-url"),
   setDiscordUrl:    $("set-discord-url"),
-  discordStatus:    $("discord-status"),
+  testDiscordBtn:   $("test-discord-btn"),
 
   // sample modal
   sampleOverlay:    $("sample-overlay"),
@@ -203,17 +203,12 @@ function openSettings() {
   const s = state.settings || {};
   dom.setGithubUrl.value  = s.github_url || "";
   dom.setDiscordUrl.value = s.discord_webhook_url || "";
-  updateDiscordBadge(s.discord_webhook_url || "");
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
   dom.settingsOverlay.classList.remove("hidden");
 }
 
 function closeSettings() { dom.settingsOverlay.classList.add("hidden"); }
-
-function updateDiscordBadge(url) {
-  dom.discordStatus.classList.toggle("hidden", !url.trim());
-}
 
 async function saveSettings() {
   dom.settingsError.textContent = "";
@@ -234,12 +229,40 @@ async function saveSettings() {
     }
     state.settings = { ...current, ...patch };
     applySettingsToUI();
-    updateDiscordBadge(patch.discord_webhook_url);
     closeSettings();
   } catch (err) {
     dom.settingsError.textContent = err.message;
   } finally {
     dom.settingsSave.disabled = false;
+  }
+}
+
+async function testDiscordWebhook() {
+  const url = dom.setDiscordUrl.value.trim();
+  if (!url) {
+    dom.settingsError.textContent = "请先输入 Discord Webhook URL";
+    return;
+  }
+  dom.settingsError.textContent = "";
+  const originalText = dom.testDiscordBtn.textContent;
+  dom.testDiscordBtn.disabled = true;
+  dom.testDiscordBtn.textContent = "发送中...";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "🔔 **API Key Tester**：这是一条测试通知。如果您看到此消息，表示 Webhook 已成功连线！" })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    dom.testDiscordBtn.textContent = "发送成功！";
+    setTimeout(() => {
+      dom.testDiscordBtn.textContent = originalText;
+      dom.testDiscordBtn.disabled = false;
+    }, 2000);
+  } catch (err) {
+    dom.settingsError.textContent = `发送失败: ${err.message}`;
+    dom.testDiscordBtn.textContent = originalText;
+    dom.testDiscordBtn.disabled = false;
   }
 }
 
@@ -808,7 +831,8 @@ function bindEvents() {
     toggleMobileMenu(false);
   });
   dom.settingsCancel.addEventListener("click", closeSettings);
-  dom.setDiscordUrl.addEventListener("input", () => updateDiscordBadge(dom.setDiscordUrl.value));
+  dom.settingsSave.addEventListener("click", saveSettings);
+  dom.testDiscordBtn.addEventListener("click", testDiscordWebhook);
   dom.settingsOverlay.addEventListener("click", (e) => {
     if (e.target.dataset.closeModal === "settings") closeSettings();
   });
