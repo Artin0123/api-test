@@ -1,0 +1,92 @@
+{
+  "settings": {
+    "providers": [
+      {
+        "provider_type": "openai",
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "keys": "sk-aaaaaaaaaaaaaaaa\nsk-bbbbbbbbbbbbbbbb\nsk-cccccccccccccccc",
+        "models": "qwen-max,qwen-plus,qwen-turbo"
+      },
+      {
+        "provider_type": "gemini",
+        "api_base": "https://generativelanguage.googleapis.com/v1beta",
+        "keys": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "models": "gemini-2.5-pro,gemini-2.0-flash"
+      }
+    ],
+    "github_url": "https://github.com/owner/repo/actions/workflows/main.yml",
+    "discord_webhook_url": "https://discord.com/api/webhooks/000000000000000000/mock-token"
+  },
+  "results": {
+    "dashscope.aliyuncs.com": {
+      "exists": true,
+      "results": {
+        "provider_type": "openai",
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "uploaded_at": "2026-05-20T02:15:00Z",
+        "elapsed_seconds": 183.4,
+        "valid_keys": [
+          "sk-aaaaaaaaaaaaaaaa",
+          "sk-bbbbbbbbbbbbbbbb"
+        ],
+        "invalid_records": [
+          {
+            "api_key": "sk-cccccccccccccccc",
+            "error_reason": "Key 专属硬伤 (Hard Failure - 401)",
+            "failed_models_details": null
+          }
+        ],
+        "proven_working_models": ["qwen-max", "qwen-plus"],
+        "failed_models": ["qwen-turbo"],
+        "model_performance": {
+          "qwen-max": {
+            "sample_count": 2,
+            "thinking_only_count": 0,
+            "content_ever_seen": true,
+            "has_thinking_ratio": 1.0,
+            "avg_ttft": 1.234,
+            "avg_total": 8.567,
+            "timeout_count": 0,
+            "total_tested": 2,
+            "timeout_rate": 0.0,
+            "sample": {
+              "thinking": "Let me think step by step.\n17 × 19 = 17 × (20 - 1) = 340 - 17 = 323",
+              "content": "The answer is **323**."
+            }
+          },
+          "qwen-plus": {
+            "sample_count": 2,
+            "thinking_only_count": 0,
+            "content_ever_seen": true,
+            "has_thinking_ratio": 0.5,
+            "avg_ttft": 0.891,
+            "avg_total": 5.123,
+            "timeout_count": 0,
+            "total_tested": 2,
+            "timeout_rate": 0.0,
+            "sample": {
+              "thinking": "",
+              "content": "17 × 19 = 323"
+            }
+          }
+        }
+      }
+    },
+    "generativelanguage.googleapis.com": {
+      "exists": false
+    }
+  },
+  "checkpoints": {
+    "generativelanguage.googleapis.com": {
+      "exists": true,
+      "checkpoint": {
+        "provider_type": "gemini",
+        "api_base": "https://generativelanguage.googleapis.com/v1beta",
+        "saved_at": "2026-05-20T02:10:33Z",
+        "total_tasks": 2,
+        "completed_tasks": 1,
+        "dead_keys": []
+      }
+    }
+  }
+}

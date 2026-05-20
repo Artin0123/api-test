@@ -3,3 +3,8 @@
 node_modules/
 .wrangler/
 __pycache__
+.venv
+venv
+models_list
+valid_keys
+async_test_results.json

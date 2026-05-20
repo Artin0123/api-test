@@ -1,18 +1,18 @@
-name: API Test Run
+name: API Key Test
 
 on:
-  workflow_dispatch:  # Manual trigger via GitHub Actions UI
+  workflow_dispatch:
   schedule:
-    - cron: "0 2 * * *"  # Daily at UTC 02:00
+    - cron: "0 2 * * *" # Daily UTC 02:00
 
 concurrency:
   group: api-test-run
-  cancel-in-progress: false  # Queue, don't cancel running jobs
+  cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -23,8 +23,43 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Run API tester
+      - name: Install dependencies
+        run: pip install aiohttp
+
+      - name: Run tester
         env:
           PAGES_URL: ${{ secrets.PAGES_URL }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-        run: python runner.py
+        run: python async_test_keys.py
+
+      - name: Notify Discord
+        if: always()
+        env:
+          PAGES_URL: ${{ secrets.PAGES_URL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          # Fetch discord_webhook_url from KV settings
+          SETTINGS=$(curl -sf \
+            -H "Authorization: Bearer $ADMIN_PASSWORD" \
+            "$PAGES_URL/api/settings" || echo '{}')
+          WEBHOOK=$(echo "$SETTINGS" | python3 -c \
+            "import sys,json; s=json.load(sys.stdin).get('settings',{}); print(s.get('discord_webhook_url',''))" 2>/dev/null || true)
+
+          if [ -z "$WEBHOOK" ]; then
+            echo "No Discord webhook configured, skipping notification."
+            exit 0
+          fi
+
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            ICON="✅"
+            MSG="API Key 测试完成"
+          else
+            ICON="❌"
+            MSG="API Key 测试失败或被取消"
+          fi
+
+          curl -sf -X POST "$WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\": \"$ICON $MSG — $PAGES_URL\"}" \
+            || echo "Discord notification failed (non-fatal)"
