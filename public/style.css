@@ -50,7 +50,7 @@ html {
 }
 body { min-height: 100%; line-height: 1.6; overflow-x: hidden; }
 
-html.auth-checking #auth-overlay { display: flex; }
+html.has-token #auth-overlay { display: none !important; }
 
 a { color: var(--accent-h); text-decoration: none; }
 a:hover { text-decoration: underline; }

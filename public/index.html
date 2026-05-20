@@ -13,7 +13,7 @@
         const theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
         document.documentElement.setAttribute('data-theme', theme);
         if (localStorage.getItem('atk_token')) {
-          document.documentElement.classList.add('auth-checking');
+          document.documentElement.classList.add('has-token');
         }
       } catch {}
     })();

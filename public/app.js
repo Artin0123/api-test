@@ -156,7 +156,7 @@ async function login() {
     localStorage.setItem("atk_token", tok);
     dom.authOverlay.classList.remove("active");
     dom.authInput.value = "";
-    document.documentElement.classList.remove("auth-checking");
+    document.documentElement.classList.remove("has-token");
     await initApp();
   } catch (err) {
     state.token = "";
@@ -868,7 +868,7 @@ async function bootstrap() {
     // Skip auth in mock mode
     state.token = "mock";
     dom.authOverlay.classList.remove("active");
-    document.documentElement.classList.remove("auth-checking");
+    document.documentElement.classList.remove("has-token");
     await initApp();
     return;
   }
@@ -879,16 +879,16 @@ async function bootstrap() {
     try {
       await api("/api/settings", { auth: true });
       dom.authOverlay.classList.remove("active");
-      document.documentElement.classList.remove("auth-checking");
+      document.documentElement.classList.remove("has-token");
       await initApp();
     } catch {
       state.token = "";
       localStorage.removeItem("atk_token");
-      dom.authOverlay.classList.add("active");
-      document.documentElement.classList.remove("auth-checking");
+      document.documentElement.classList.remove("has-token");
+      dom.authError.textContent = "登入已过期，请重新输入密码";
     }
   } else {
-    document.documentElement.classList.remove("auth-checking");
+    document.documentElement.classList.remove("has-token");
   }
 }
 
