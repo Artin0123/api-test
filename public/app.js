@@ -226,14 +226,16 @@ async function saveSettings() {
   try {
     // Merge into existing settings and save
     const current = state.settings || {};
-    await api("/api/settings", {
-      method: "POST", auth: true,
-      body: { ...current, ...patch },
-    });
-    state.settings = { ...(state.settings || {}), ...patch };
+    if (!MOCK) {
+      await api("/api/settings", {
+        method: "POST", auth: true,
+        body: { ...current, ...patch },
+      });
+    }
+    state.settings = { ...current, ...patch };
     applySettingsToUI();
-    dom.settingsOk.classList.remove("hidden");
     updateDiscordBadge(patch.discord_webhook_url);
+    closeSettings();
   } catch (err) {
     dom.settingsError.textContent = err.message;
   } finally {
