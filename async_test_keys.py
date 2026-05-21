@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -36,6 +37,13 @@ PAGES_URL = os.environ.get("PAGES_URL", "").strip().rstrip("/")
 ADMIN_TOKEN = os.environ.get("ADMIN_PASSWORD", "").strip()
 
 # ==========================================
+
+
+def compute_fingerprint(api_base: str, provider_type: str) -> str:
+    """与 _worker.js / app.js 中的 fingerprintPayload 保持完全一致。
+    键名按字母序排列：api_base 在 provider_type 之前。"""
+    payload = json.dumps({"api_base": api_base.rstrip("/"), "provider_type": provider_type}, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def _pages_request(method: str, path: str, body=None):
@@ -459,7 +467,7 @@ async def run_provider(api_base, provider_type, keys, models):
                 task_queue.task_done()
                 continue
 
-            print(f"[{processed_count}/{total_in_queue}] 测试 {masked} -> {model}")
+            print(f"[{processed_count}/{total_in_queue}] 测试 {masked} -> {model}", flush=True)
 
             (
                 success,
@@ -696,6 +704,14 @@ async def run_provider(api_base, provider_type, keys, models):
             print("[Pages] 上传成功。")
         except Exception as e:
             print(f"[Pages] 上传失败（本地文件仍保留）: {e}")
+
+        # 删除 KV 中的 checkpoint，否则前端会一直显示"执行中"进度条
+        try:
+            fp = compute_fingerprint(api_base, provider_type)
+            _pages_request("DELETE", f"/api/checkpoint?fp={fp}", None)
+            print(f"[Pages] 已删除 KV checkpoint（fp={fp[:8]}...）。")
+        except Exception as e:
+            print(f"[Pages] 删除 KV checkpoint 失败: {e}")
 
     # 清理: 成功产出最终报表后，自动删除本地存档，避免下次执行时被当成恢复进度而全部跳过
     if os.path.exists(CHECKPOINT_PATH):

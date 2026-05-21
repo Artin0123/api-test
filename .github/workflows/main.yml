@@ -30,7 +30,7 @@ jobs:
         env:
           PAGES_URL: ${{ secrets.PAGES_URL }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-        run: python async_test_keys.py
+        run: python -u async_test_keys.py
 
       - name: Notify Discord
         if: always()
