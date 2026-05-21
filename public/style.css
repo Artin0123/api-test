@@ -405,6 +405,9 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
   background: var(--bg-2);
   transition: border-color .15s, box-shadow .15s;
+  min-height: 6rem;
+  max-height: 50vh;
+  resize: vertical;
 }
 .lined-editor:focus-within {
   border-color: var(--accent);
@@ -423,6 +426,7 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
   user-select: none;
   overflow: hidden;
+  min-height: 0;
 }
 .line-nums span {
   display: block;
@@ -434,24 +438,41 @@ a:hover { text-decoration: underline; }
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
-  resize: vertical;
+  resize: none;
   background: transparent;
   padding: .65rem .9rem;
-  min-height: 6rem;
-  max-height: 50vh;
+  min-height: 0;
+  height: 100%;
 }
 .lined-editor--wrap .lined-textarea {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  resize: vertical;
 }
 
 .info-icon {
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-muted); cursor: help;
-  margin-left: .25rem; opacity: .7; transition: opacity .2s;
+  margin-left: .35rem; transition: color .15s;
+  position: relative;
 }
-.info-icon:hover { opacity: 1; color: var(--text); }
+.info-icon:hover, .info-icon:focus-within { color: var(--text); outline: none; }
+.info-tooltip {
+  position: absolute; bottom: 100%; left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  background: var(--bg-3); color: var(--text);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  padding: .85rem 1rem; border-radius: var(--radius-sm);
+  font-size: var(--text-xs); white-space: nowrap; line-height: 1.6;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity .1s, transform .1s, visibility .1s;
+  z-index: 100; text-align: left; font-weight: normal;
+  margin-bottom: .4rem;
+}
+.info-icon:hover .info-tooltip,
+.info-icon:focus-within .info-tooltip,
+.info-icon:active .info-tooltip {
+  opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0);
+}
 
 /* ── Modals ────────────────────────────────────────────────────────────── */
 .modal-overlay {

@@ -123,8 +123,9 @@
         <label class="field">
           <span class="field-label">
             Provider Type
-            <span class="info-icon" title="提示各服务商预设后缀：&#10;OpenAI: /v1&#10;Gemini: /v1beta&#10;Ollama: /api">
+            <span class="info-icon" tabindex="0">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span class="info-tooltip">系统会自动补全以下后缀：<br>OpenAI: <code>/chat/completions</code><br>Gemini: <code>/models/{model}:streamGenerateContent</code><br>Ollama: <code>/api/chat</code></span>
             </span>
           </span>
           <select id="ed-provider-type" class="input-select">

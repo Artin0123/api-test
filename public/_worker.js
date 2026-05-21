@@ -20,6 +20,7 @@ const ROUTES = {
   "GET /api/results":     handleGetResults,
   "POST /api/results":    handlePostResults,
   "GET /api/checkpoint":  handleGetCheckpoint,
+  "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
 };
 
@@ -210,6 +211,22 @@ async function handleGetCheckpoint(request, env, url) {
   const checkpoint = parseJsonOrNull(raw);
   if (!checkpoint) return json({ exists: false });
   return json({ exists: true, checkpoint });
+}
+
+async function handlePostCheckpoint(request, env) {
+  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+
+  const { provider_type, api_base } = body;
+  if (!provider_type || !api_base) return json({ error: "provider_type and api_base required" }, 400);
+
+  const fp = await providerFingerprint(provider_type.trim(), api_base.trim());
+  const kv = kvStore(env);
+  const payload = { ...body, saved_at: new Date().toISOString() };
+  await kv.put(`checkpoint:${fp}`, JSON.stringify(payload));
+  return json({ ok: true, fingerprint: fp });
 }
 
 async function handleDeleteCheckpoint(request, env, url) {

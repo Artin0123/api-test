@@ -62,11 +62,11 @@
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `provider_type` | string | `openai` / `ollama` / `gemini` |
-| `api_base` | string | API 根地址，trailing slash 会被 trim |
+| `api_base` | string | API 根地址，trailing slash 会被 trim。测试脚本会自动根据类型补齐后缀路由（如 `/chat/completions` 等）。 |
 | `keys` | string | 多个 API Key，**换行分隔**，原始字符串存储，由脚本 `splitlines()` 拆分 |
 | `models` | string | 多个模型名，**逗号分隔**，原始字符串存储，由脚本 `split(",")` 拆分 |
 
-`keys` 和 `models` 均以字符串原样存储，后端不做 split / validate，解析逻辑在脚本里。前端 textarea 的值直接存入、读出后直接填回，零转换。
+`keys` 和 `models` 均以字符串原样存储。前端按下保存时会执行 `normalize`（移除 API Key 的多余空行与前后空白、合并或移除 Models 间多余的逗号与空白），再存入后端，解析核心逻辑由脚本处理。
 
 ### 2.3 Provider Fingerprint
 
@@ -258,7 +258,8 @@ dashscope.aliyuncs.com  [openai]  ⏳ 执行中
    a. 计算 fingerprint
    b. GET /api/checkpoint?fp=... 尝试恢复进度
    c. 执行多 Key × 多 Model 矩阵测试
-      - Checkpoint 每 N 任务写一次（POST KV 或本地文件，两种模式统一处理）
+      - 测试时根据 `provider_type` 自动拼接端点后缀。
+      - Checkpoint 每 N 任务写一次（`POST /api/checkpoint` 推送给 KV，同时可存本地）。
    d. 完成后 POST /api/results
    e. 删除 checkpoint（DEL /api/checkpoint?fp=...，或删本地文件）
 3. 所有 provider 跑完后通知 Discord（由 GHA workflow YAML 负责）
@@ -285,10 +286,10 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
   - `api_base` 主域名（截取，过长加省略号）
   - Key 数量（行数统计）、Model 数量（逗号分隔计数）
 - **新增 / 编辑**弹出 modal：
-  - `provider_type`：下拉选择
+  - `provider_type`：带箭头下拉选择（附加后缀 Tooltip 提示）
   - `api_base`：文字输入
-  - `API Keys`：多行 textarea（纵向滚动，一行一个）
-  - `Models`：单行 / 横向滚动 textarea（逗号分隔）
+  - `API Keys`：多行 lined-editor（带行号），定高带内部滚动
+  - `Models`：多行 lined-editor（带行号），定高带内部滚动（保存时自动清理多余逗号）
 - **删除**：卡片删除按钮
 - 所有变动 → `POST /api/settings`（全量提交整个 `providers[]`）
 - 登录后展示完整明文 key（无需掩码，因为已认证）
@@ -302,8 +303,8 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 - 每个 provider 显示一个**可折叠区块**，header 显示主域名 + `provider_type`
 - 若 checkpoint 存在，在区块顶部显示进度摘要（`completed/total`、死 key 数、最后存档时间）
 - 区块展开内容（来自 results）：
-  - **有效 Key**：只读 textarea（一行一个，明文）+ 一键复制
-  - **有效模型**：只读 textarea（逗号分隔，横向滚动）+ 一键复制
+  - **有效 Key**：带行号的 lined-editor 只读框（一行一个，明文）+ 一键复制
+  - **有效模型**：带行号的 lined-editor 只读框（逗号分隔，自动换行）+ 一键复制
   - **模型性能列表**：表格，每行一个模型，含 sample 弹窗按钮
   - **无效 Key**：按 `error_reason` 分组折叠，含 `failed_models_details`
   - **失效模型**：逗号分隔纯文本
@@ -311,7 +312,7 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 ### 9.3 应用设定（topbar modal）
 
 - GitHub Actions URL（「立即执行」按钮跳转目标）
-- Discord Webhook URL（已填显示「已接入」badge）
+- Discord Webhook URL（附带一键「测试」按钮，点击直接从前端 POST 测试消息）
 - `pages_url` 字段已移除（GHA 从 Secret 读，前端从 `window.location.origin` 得到）
 - 变动 → `POST /api/settings`（merge 更新，不覆盖 providers）
 
@@ -323,7 +324,8 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 
 ### 9.5 Mock 数据（开发用）
 
-前端 `app.js` 顶部提供 `DEV_MOCK = false` 开关。设为 `true` 时，`loadResults()` 返回硬编码的 mock 数据而不发网络请求，用于快速验证 UI 渲染。
+通过在 URL 附加 `?mock` 进入开发模式（例：`http://127.0.0.1:8788/?mock`）。
+此时系统会跳过登入验证，并直接读取本地的 `public/mock.json` 档案来渲染全套设定、进度及结果资料，无需发送真实 API 请求。
 
 ---
 
@@ -331,10 +333,10 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 
 - **字体**：正文 16px，辅助文字 14px，代码 / key 使用等宽字体，最小不低于 13px
 - **间距**：区块间 `gap: 1.5rem`，表单字段间 `gap: 1rem`，label 与 input 间 `gap: 0.5rem`
-- **认证卡**：居中卡片，输入框与按钮同行，圆角 border，focus ring 明显
+- **弹窗设计**：所有 Modal 在电脑版和手机版均采取「屏幕正中央置中（并保留 padding）」设计，内容过长时自动出现内部滚轮，且只在 footer 保留取消/储存按钮。
 - **过长文字**：非关键区块（api_base 主域名展示、模型名列表等）超长时用 `text-overflow: ellipsis` 截断，不让布局撑破
-- **RWD**：断点 `640px`，列布局在手机端改为单列，modal 宽度 `min(90vw, 520px)`
-- **上下排版**：表单 label 在上、input 在下，不做 label-inline 布局
+- **RWD (手机版)**：断点 `640px`。Topbar 转为汉堡抽屉选单（从右侧滑出，点击外部可关闭）。表单变为单列。
+- **登录防闪烁**：运用 App Shell 骨架屏架构与 `<head>` 的 inline-script 检查 `localStorage`，若已有 Token 会利用纯 CSS 瞬间隐藏登入画面，无缝等待接口验证。
 
 ---
 

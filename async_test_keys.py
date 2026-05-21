@@ -20,7 +20,7 @@ INPUT_FILE_PATH = r"valid_keys\keys.txt"
 MODELS_FILE_PATH = r"models_list\models.txt"
 OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
-API_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini'
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
@@ -64,6 +64,17 @@ def extract_think_xml(text):
         think = m.group(1).strip()
         text = re.sub(r"<think>.*?</think>\n?", "", text, flags=re.DOTALL).strip()
     return text, think
+
+
+def get_full_endpoint(api_base, provider_type, model):
+    base = api_base.rstrip("/")
+    if provider_type == "openai":
+        return f"{base}/chat/completions"
+    elif provider_type == "ollama":
+        return f"{base}/api/chat"
+    elif provider_type == "gemini":
+        return f"{base}/models/{model}:streamGenerateContent?alt=sse"
+    return base
 
 
 def build_payload(provider_type, model, stream):
@@ -170,14 +181,14 @@ async def parse_stream(response, provider_type):
     return first_chunk_time, has_content, has_thinking, sample_content, sample_thinking
 
 
-async def test_single_request(session, key, model, stream):
+async def test_single_request(session, key, model, stream, provider_type, api_base):
     headers = {"Content-Type": "application/json", "User-Agent": "async-tester/1.0"}
-    if PROVIDER_TYPE == "gemini":
+    if provider_type == "gemini":
         headers["x-goog-api-key"] = key
     else:
         headers["Authorization"] = f"Bearer {key}"
 
-    payload = build_payload(PROVIDER_TYPE, model, stream)
+    payload = build_payload(provider_type, model, stream)
     timeout = aiohttp.ClientTimeout(
         total=STREAM_TIMEOUT if stream else NON_STREAM_TIMEOUT
     )
@@ -189,9 +200,11 @@ async def test_single_request(session, key, model, stream):
     sample_content = ""
     sample_thinking = ""
 
+    endpoint = get_full_endpoint(api_base, provider_type, model)
+
     try:
         async with session.post(
-            API_ENDPOINT, json=payload, headers=headers, timeout=timeout
+            endpoint, json=payload, headers=headers, timeout=timeout
         ) as resp:
             status = resp.status
             if status != 200:
@@ -205,14 +218,14 @@ async def test_single_request(session, key, model, stream):
                     has_thinking,
                     sample_content,
                     sample_thinking,
-                ) = await parse_stream(resp, PROVIDER_TYPE)
+                ) = await parse_stream(resp, provider_type)
                 if first_t:
                     ttft = first_t - start_t
             else:
                 body = await resp.text()
                 try:
                     data = json.loads(body)
-                    if PROVIDER_TYPE == "openai":
+                    if provider_type == "openai":
                         msg = data.get("choices", [{}])[0].get("message", {})
                         sample_content = (msg.get("content") or "").strip()
                         reasoning = (msg.get("reasoning_content") or "") or (
@@ -222,13 +235,13 @@ async def test_single_request(session, key, model, stream):
                         sample_thinking = (reasoning or xml_think).strip()
                         has_thinking = bool(sample_thinking)
                         has_content = bool(sample_content)
-                    elif PROVIDER_TYPE == "ollama":
+                    elif provider_type == "ollama":
                         msg = data.get("message", {})
                         sample_content = (msg.get("content") or "").strip()
                         sample_thinking = (msg.get("thinking") or "").strip()
                         has_content = bool(sample_content)
                         has_thinking = bool(sample_thinking)
-                    elif PROVIDER_TYPE == "gemini":
+                    elif provider_type == "gemini":
                         candidates = data.get("candidates", [])
                         for c in candidates:
                             parts = c.get("content", {}).get("parts", [])
@@ -270,13 +283,13 @@ async def test_single_request(session, key, model, stream):
         return False, 500, str(e), None, None, False, False, "", ""
 
 
-async def benchmark_model(session, key, model, dead_keys=None):
-    # 在发出第一个请求前，再检查一次熔断状态
-    # （应对并发期间其他 worker 已触发熔断但本协程已被调度的情况）
+async def benchmark_model(session, key, model, provider_type, api_base, dead_keys=None):
+    # 在发起请求前，再次检查当前 Key 是否已断状态
+    # 应对并发情况：可能有 worker 已处理断点，此协程才刚被调度执行
     if dead_keys is not None and key in dead_keys:
         return False, -1, "Key already dead (skipped)", None, None, False, False, "", ""
 
-    # 追踪样本内容（取第一次成功的）
+    # 追踪最佳数据（取最后一次成功的）
     final_sample_content = ""
     final_sample_thinking = ""
     final_has_content = False
@@ -285,9 +298,9 @@ async def benchmark_model(session, key, model, dead_keys=None):
     penalty_time = 0.0
     first_status = None
 
-    # ── 内部辅助：解包 test_single_request 的 9 个返回值 ──
+    # 闭包：内部绑定参数传给 test_single_request 拿 9 个返回值 元组
     async def _run(stream):
-        return await test_single_request(session, key, model, stream=stream)
+        return await test_single_request(session, key, model, stream=stream, provider_type=provider_type, api_base=api_base)
 
     # 1. 优先尝试流式 (第一次测试)
     (
@@ -386,6 +399,8 @@ async def benchmark_model(session, key, model, dead_keys=None):
 
 async def main():
     global_start_time = time.perf_counter()
+    provider_type = PROVIDER_TYPE
+    api_base = API_BASE
 
     # ── 读取 keys 和 models ──────────────────────────────────────────────
     if PAGES_URL and ADMIN_TOKEN:
@@ -394,8 +409,18 @@ async def main():
         try:
             resp = _pages_request("GET", "/api/settings")
             settings = resp.get("settings") or {}
-            raw_keys = settings.get("keys", "")
-            raw_models = settings.get("models", "")
+            
+            # 读取第一个 provider 进行测试 (日后可扩展成回圈跑所有 provider)
+            providers = settings.get("providers", [])
+            if not providers:
+                return print("[错误] 远端设定中没有任何服务商 (Providers)。")
+            
+            first_p = providers[0]
+            api_base = first_p.get("api_base", "").strip().rstrip("/")
+            provider_type = first_p.get("provider_type", "openai")
+            raw_keys = first_p.get("keys", "")
+            raw_models = first_p.get("models", "")
+            
         except Exception as e:
             return print(f"[错误] 无法从 Pages 读取设定: {e}")
 
@@ -486,7 +511,7 @@ async def main():
                 has_content,
                 sample_content,
                 sample_thinking,
-            ) = await benchmark_model(session, key, model, dead_keys=dead_keys)
+            ) = await benchmark_model(session, key, model, provider_type=provider_type, api_base=api_base, dead_keys=dead_keys)
 
             # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
             if status == -1:
@@ -527,8 +552,19 @@ async def main():
 
             tasks_done_since_ckpt += 1
             if tasks_done_since_ckpt >= CHECKPOINT_EVERY_N_TASKS:
+                ckpt_data = {
+                    "provider_type": provider_type,
+                    "api_base": api_base,
+                    "total_tasks": total_in_queue,
+                    "completed_tasks": processed_count,
+                    "dead_keys": list(dead_keys),
+                    "results": results
+                }
                 with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
-                    json.dump({"results": results}, f, ensure_ascii=False)
+                    json.dump(ckpt_data, f, ensure_ascii=False)
+                if PAGES_URL and ADMIN_TOKEN:
+                    try: _pages_request("POST", "/api/checkpoint", ckpt_data)
+                    except: pass
                 tasks_done_since_ckpt = 0
 
             task_queue.task_done()
@@ -539,8 +575,19 @@ async def main():
         await asyncio.gather(*workers)
 
     # Final Checkpoint Save
+    ckpt_data = {
+        "provider_type": provider_type,
+        "api_base": api_base,
+        "total_tasks": total_in_queue,
+        "completed_tasks": processed_count,
+        "dead_keys": list(dead_keys),
+        "results": results
+    }
     with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
-        json.dump({"results": results}, f, ensure_ascii=False)
+        json.dump(ckpt_data, f, ensure_ascii=False)
+    if PAGES_URL and ADMIN_TOKEN:
+        try: _pages_request("POST", "/api/checkpoint", ckpt_data)
+        except: pass
 
     print("\n--- 并发测试结束，开始交叉验证(Cross-Key Validation) ---")
 
@@ -663,6 +710,8 @@ async def main():
     failed_models = sorted(set(models) - proven_working_models)
 
     final_report = {
+        "provider_type": provider_type,
+        "api_base": api_base,
         "valid_keys": sorted(valid_keys),
         "invalid_records": invalid_output,
         "proven_working_models": sorted(proven_working_models),
