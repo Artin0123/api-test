@@ -514,8 +514,11 @@ async function loadResults() {
     });
 
     dom.resultsBody.innerHTML = bundles.map(renderProviderResult).join("");
-    // Seed line numbers in result copy blocks (readonly, one-time)
-    dom.resultsBody.querySelectorAll(".result-lined-editor textarea").forEach(syncLineNums);
+    // Seed line numbers in result copy blocks & bind scroll for live syncing
+    dom.resultsBody.querySelectorAll(".result-lined-editor textarea").forEach(function(textarea) {
+      syncLineNums(textarea);
+      textarea.addEventListener("scroll", function() { syncLineNums(textarea); });
+    });
     // Keyboard support for result-group-header (click handled by delegation)
     dom.resultsBody.querySelectorAll(".result-group-header").forEach((h) => {
       h.addEventListener("keydown", (e) => {
@@ -560,7 +563,8 @@ function renderProviderResult({ provider, host, resultData, checkpointData }) {
     ? `上次更新：${new Date(r.uploaded_at).toLocaleString()}`
     : "";
 
-  const checkpointHtml = hasCheckpoint
+  // Only show checkpoint bar when no results exist yet (defense against stale checkpoint)
+  const checkpointHtml = (hasCheckpoint && !hasResult)
     ? renderCheckpointBar(checkpointData.checkpoint || checkpointData)
     : "";
 

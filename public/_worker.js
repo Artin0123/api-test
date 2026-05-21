@@ -193,6 +193,8 @@ async function handlePostResults(request, env) {
   const kv = kvStore(env);
   const payload = { ...body, uploaded_at: new Date().toISOString() };
   await kv.put(`results:${fp}`, JSON.stringify(payload));
+  // Auto-clean checkpoint so frontend won't show stale "执行中"
+  await kv.delete(`checkpoint:${fp}`);
   return json({ ok: true, fingerprint: fp });
 }
 
