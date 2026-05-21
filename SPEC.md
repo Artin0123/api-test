@@ -269,7 +269,7 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 ### 8.3 核心测试逻辑摘要（不因多 provider 改变）
 
 - 多 Key × 多 Model → asyncio 并发队列（`MAX_CONCURRENCY = 32`）
-- 流式优先 15s → 失败回退非流式 20s
+- 流式优先 10s → 失败回退非流式 15s
 - 429 / 408 触发一次重试（+2s 等待，惩罚时间叠加）
 - 401 / 403 → Key 熔断，跳过剩余模型
 - 交叉验证：`proven_working_models` 决定软失效判断

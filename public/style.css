@@ -387,6 +387,16 @@ a:hover { text-decoration: underline; }
   font-family: var(--mono);
   font-size: var(--text-xs);
 }
+.input-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238892a4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1.2em;
+  padding-right: 2.5rem;
+}
+
 /* ── Lined editor (textarea with line numbers) ─────────────────────────── */
 .lined-editor {
   display: flex;
@@ -427,6 +437,8 @@ a:hover { text-decoration: underline; }
   resize: vertical;
   background: transparent;
   padding: .65rem .9rem;
+  min-height: 6rem;
+  max-height: 50vh;
 }
 .lined-editor--wrap .lined-textarea {
   white-space: pre-wrap;
@@ -434,8 +446,12 @@ a:hover { text-decoration: underline; }
   resize: vertical;
 }
 
-
-.input-select { cursor: pointer; appearance: none; }
+.info-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-muted); cursor: help;
+  margin-left: .25rem; opacity: .7; transition: opacity .2s;
+}
+.info-icon:hover { opacity: 1; color: var(--text); }
 
 /* ── Modals ────────────────────────────────────────────────────────────── */
 .modal-overlay {

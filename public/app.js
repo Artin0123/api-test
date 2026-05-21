@@ -129,6 +129,14 @@ function normalizeModels(raw) {
     .join(",");
 }
 
+function normalizeKeys(raw) {
+  return raw
+    .split("\n")
+    .map((k) => k.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 // ── Theme ────────────────────────────────────────────────────────────────
 function getTheme() {
   return document.documentElement.getAttribute("data-theme") || "dark";
@@ -374,9 +382,15 @@ async function saveEditor() {
   dom.editorError.textContent = "";
   const index    = Number(dom.editorIndex.value);
   const apiBase  = dom.edApiBase.value.trim().replace(/\/+$/, "");
-  const keys     = dom.edKeys.value;
+  const keys     = normalizeKeys(dom.edKeys.value);
   const models   = normalizeModels(dom.edModels.value);
   const pType    = dom.edProviderType.value;
+
+  // Update UI immediately so the user sees the cleaned up data if they reopen
+  dom.edKeys.value = keys;
+  dom.edModels.value = models;
+  syncLineNums(dom.edKeys);
+  syncLineNums(dom.edModels);
 
   if (!apiBase) { dom.editorError.textContent = "请填写 API Base URL"; return; }
   if (!keys.trim()) { dom.editorError.textContent = "请填写至少一个 API Key"; return; }
@@ -610,7 +624,7 @@ function renderResultBody(r) {
       <div class="copy-block">
         <div class="lined-editor lined-editor--wrap result-lined-editor">
           <div class="line-nums" aria-hidden="true"></div>
-          <textarea class="copy-textarea lined-textarea" readonly rows="3" spellcheck="false">${esc(provenModels.join(","))}</textarea>
+          <textarea class="copy-textarea lined-textarea" readonly rows="4" spellcheck="false">${esc(provenModels.join(","))}</textarea>
         </div>
         <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(provenModels.join(","))}" type="button">一键复制</button>
       </div>

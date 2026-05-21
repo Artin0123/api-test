@@ -121,7 +121,12 @@
         <input type="hidden" id="editor-index" value="-1">
 
         <label class="field">
-          <span class="field-label">Provider Type</span>
+          <span class="field-label">
+            Provider Type
+            <span class="info-icon" title="提示各服务商预设后缀：&#10;OpenAI: /v1&#10;Gemini: /v1beta&#10;Ollama: /api">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            </span>
+          </span>
           <select id="ed-provider-type" class="input-select">
             <option value="openai">openai</option>
             <option value="ollama">ollama</option>
@@ -138,7 +143,7 @@
           <span class="field-label">API Keys <small class="muted">一行一个</small></span>
           <div class="lined-editor">
             <div class="line-nums" aria-hidden="true"></div>
-            <textarea id="ed-keys" class="input-textarea lined-textarea" rows="6" spellcheck="false" placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"></textarea>
+            <textarea id="ed-keys" class="input-textarea lined-textarea" rows="8" spellcheck="false" placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"></textarea>
           </div>
         </label>
 
@@ -146,7 +151,7 @@
           <span class="field-label">Models <small class="muted">逗号分隔（一行）</small></span>
           <div class="lined-editor lined-editor--wrap">
             <div class="line-nums" aria-hidden="true"></div>
-            <textarea id="ed-models" class="input-textarea lined-textarea" rows="4" spellcheck="false" placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini"></textarea>
+            <textarea id="ed-models" class="input-textarea lined-textarea" rows="8" spellcheck="false" placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini"></textarea>
           </div>
         </label>
 

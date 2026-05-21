@@ -11,25 +11,30 @@ from collections import defaultdict
 import aiohttp
 
 # ================= 配置区 =================
-# 本地 fallback（不设 PAGES_URL 时仍可直接本地跑）
+
+# ─── 1. 本地测试 Fallback 设定 (仅在未设置 PAGES_URL 环境变量时生效) ───
+# 当你在自己电脑上直接执行此脚本时，会读取以下档案与固定一个 API 端点进行测试。
+# 如果是透过 GitHub Actions 触发 (设定了 PAGES_URL)，以下 6 行设定将「被完全忽略」，
+# 程式会自动去远端抓取你在 UI 上设定的所有服务商 (Providers) 并逐一进行测试。
 INPUT_FILE_PATH = r"valid_keys\keys.txt"
 MODELS_FILE_PATH = r"models_list\models.txt"
 OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
-
 API_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini'
 
-MAX_CONCURRENCY = 32
-STREAM_TIMEOUT = 15.0
-NON_STREAM_TIMEOUT = 20.0
+# ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
+# 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
+MAX_CONCURRENCY = 40
+STREAM_TIMEOUT = 10.0
+NON_STREAM_TIMEOUT = 15.0
 CHECKPOINT_EVERY_N_TASKS = 20
-
 PROMPT = "What is 17 multiplied by 19? Think step by step."
 
-# Pages 集成（由 GHA 通过环境变量注入，本地不设则跳过）
-PAGES_URL    = os.environ.get("PAGES_URL", "").strip().rstrip("/")
-ADMIN_TOKEN  = os.environ.get("ADMIN_PASSWORD", "").strip()
+# ─── 3. 云端集成 (由 GitHub Actions 通过环境变量注入，本地开发请留空) ───
+PAGES_URL = os.environ.get("PAGES_URL", "").strip().rstrip("/")
+ADMIN_TOKEN = os.environ.get("ADMIN_PASSWORD", "").strip()
+
 # ==========================================
 
 
@@ -47,7 +52,9 @@ def _pages_request(method: str, path: str, body=None):
         with urllib.request.urlopen(req, timeout=20) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Pages API {method} {path} -> HTTP {e.code}: {e.read().decode()[:300]}") from e
+        raise RuntimeError(
+            f"Pages API {method} {path} -> HTTP {e.code}: {e.read().decode()[:300]}"
+        ) from e
 
 
 def extract_think_xml(text):
@@ -387,12 +394,12 @@ async def main():
         try:
             resp = _pages_request("GET", "/api/settings")
             settings = resp.get("settings") or {}
-            raw_keys   = settings.get("keys", "")
+            raw_keys = settings.get("keys", "")
             raw_models = settings.get("models", "")
         except Exception as e:
             return print(f"[错误] 无法从 Pages 读取设定: {e}")
 
-        keys   = [line.strip() for line in raw_keys.splitlines() if line.strip()]
+        keys = [line.strip() for line in raw_keys.splitlines() if line.strip()]
         models = [m.strip() for m in raw_models.split(",") if m.strip()]
     else:
         # 本地文件 fallback
