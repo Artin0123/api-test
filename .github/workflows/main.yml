@@ -3,7 +3,7 @@ name: API Key Test
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" # Daily UTC 02:00
+    - cron: "0 0 * * *" # Daily UTC 00:00
 
 concurrency:
   group: api-test-run
@@ -38,10 +38,12 @@ jobs:
           PAGES_URL: ${{ secrets.PAGES_URL }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: |
-          # Fetch discord_webhook_url from KV settings
+          # Strip trailing slash to match Python's rstrip("/") behavior
+          BASE="${PAGES_URL%/}"
+
           SETTINGS=$(curl -sf \
             -H "Authorization: Bearer $ADMIN_PASSWORD" \
-            "$PAGES_URL/api/settings" || echo '{}')
+            "$BASE/api/settings" || echo '{}')
           WEBHOOK=$(echo "$SETTINGS" | python3 -c \
             "import sys,json; s=json.load(sys.stdin).get('settings',{}); print(s.get('discord_webhook_url',''))" 2>/dev/null || true)
 
@@ -61,5 +63,5 @@ jobs:
 
           curl -sf -X POST "$WEBHOOK" \
             -H "Content-Type: application/json" \
-            -d "{\"content\": \"$ICON $MSG — $PAGES_URL\"}" \
+            -d "{\"content\": \"$ICON $MSG — $BASE\"}" \
             || echo "Discord notification failed (non-fatal)"
