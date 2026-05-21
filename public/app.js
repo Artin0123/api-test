@@ -608,9 +608,9 @@ function renderResultBody(r) {
         <span class="badge badge-ok">${validKeys.length}</span>
       </div>
       <div class="copy-block">
-        <div class="lined-editor result-lined-editor">
+        <div class="lined-editor result-lined-editor result-editor-box">
           <div class="line-nums" aria-hidden="true"></div>
-          <textarea class="copy-textarea lined-textarea" readonly rows="4" spellcheck="false">${esc(validKeys.join("\n"))}</textarea>
+          <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(validKeys.join("\n"))}</textarea>
         </div>
         <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(validKeys.join("\n"))}" type="button">一键复制</button>
       </div>
@@ -622,9 +622,9 @@ function renderResultBody(r) {
         <span class="badge badge-ok">${provenModels.length}</span>
       </div>
       <div class="copy-block">
-        <div class="lined-editor lined-editor--wrap result-lined-editor">
+        <div class="lined-editor lined-editor--wrap result-lined-editor result-editor-box">
           <div class="line-nums" aria-hidden="true"></div>
-          <textarea class="copy-textarea lined-textarea" readonly rows="4" spellcheck="false">${esc(provenModels.join(","))}</textarea>
+          <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(provenModels.join(","))}</textarea>
         </div>
         <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(provenModels.join(","))}" type="button">一键复制</button>
       </div>
