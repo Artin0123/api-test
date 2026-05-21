@@ -15,11 +15,11 @@
  */
 
 const ROUTES = {
-  "GET /api/settings":    handleGetSettings,
-  "POST /api/settings":   handlePostSettings,
-  "GET /api/results":     handleGetResults,
-  "POST /api/results":    handlePostResults,
-  "GET /api/checkpoint":  handleGetCheckpoint,
+  "GET /api/settings": handleGetSettings,
+  "POST /api/settings": handlePostSettings,
+  "GET /api/results": handleGetResults,
+  "POST /api/results": handlePostResults,
+  "GET /api/checkpoint": handleGetCheckpoint,
   "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
 };
@@ -70,18 +70,22 @@ function kvStore(env) {
 function requireAuth(request, env) {
   const adminPassword = (env.ADMIN_PASSWORD || "").trim();
   if (!adminPassword) return false;
-  const auth  = request.headers.get("Authorization") || "";
+  const auth = request.headers.get("Authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   return token === adminPassword;
 }
 
 function parseJsonOrNull(raw) {
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 async function sha256Hex(str) {
-  const buf  = new TextEncoder().encode(str);
+  const buf = new TextEncoder().encode(str);
   const hash = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -116,7 +120,7 @@ const DEFAULT_SETTINGS = {
 
 async function handleGetSettings(request, env) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
-  const kv  = kvStore(env);
+  const kv = kvStore(env);
   const raw = await kv.get(SETTINGS_KEY);
   const settings = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
   return json({ ok: true, settings });
@@ -126,7 +130,11 @@ async function handlePostSettings(request, env) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
 
   let body;
-  try { body = await request.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
 
   // Full-replace: accept the entire settings object from client.
   // Validate top-level shape only; provider internals are trusted from authenticated clients.
@@ -134,17 +142,45 @@ async function handlePostSettings(request, env) {
     return json({ error: "providers must be an array" }, 400);
   }
 
-  const kv  = kvStore(env);
+  const kv = kvStore(env);
   const raw = await kv.get(SETTINGS_KEY);
   const existing = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
 
   const next = {
-    providers: Array.isArray(body.providers) ? body.providers : existing.providers,
-    github_url:          typeof body.github_url          === "string" ? body.github_url          : existing.github_url,
-    discord_webhook_url: typeof body.discord_webhook_url === "string" ? body.discord_webhook_url : existing.discord_webhook_url,
+    providers: Array.isArray(body.providers)
+      ? body.providers
+      : existing.providers,
+    github_url:
+      typeof body.github_url === "string"
+        ? body.github_url
+        : existing.github_url,
+    discord_webhook_url:
+      typeof body.discord_webhook_url === "string"
+        ? body.discord_webhook_url
+        : existing.discord_webhook_url,
   };
 
   await kv.put(SETTINGS_KEY, JSON.stringify(next));
+
+  // Clean up stale checkpoints for all providers in the new settings.
+  // If a test is actively running, the Python script will recreate its
+  // checkpoint on the next periodic save, so this is safe.
+  const providers = next.providers || [];
+  const checkpointDeletions = providers.map(async (p) => {
+    if (p.api_base && p.provider_type) {
+      try {
+        const fp = await providerFingerprint(
+          p.provider_type.trim(),
+          p.api_base.trim(),
+        );
+        await kv.delete(`checkpoint:${fp}`);
+      } catch {
+        // best-effort: fingerprint computation or KV delete may fail; never block settings save
+      }
+    }
+  });
+  await Promise.allSettled(checkpointDeletions);
+
   return json({ ok: true });
 }
 
@@ -155,7 +191,7 @@ async function handleGetResults(request, env, url) {
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
-  const kv  = kvStore(env);
+  const kv = kvStore(env);
   const raw = await kv.get(`results:${fp}`);
   if (!raw) return json({ exists: false });
 
@@ -168,7 +204,11 @@ async function handlePostResults(request, env) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
 
   let body;
-  try { body = await request.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
 
   // Require provider identity fields to compute fingerprint
   const { provider_type, api_base } = body;
@@ -204,7 +244,7 @@ async function handleGetCheckpoint(request, env, url) {
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
-  const kv  = kvStore(env);
+  const kv = kvStore(env);
   const raw = await kv.get(`checkpoint:${fp}`);
   if (!raw) return json({ exists: false });
 
@@ -217,10 +257,15 @@ async function handlePostCheckpoint(request, env) {
   if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
 
   let body;
-  try { body = await request.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
 
   const { provider_type, api_base } = body;
-  if (!provider_type || !api_base) return json({ error: "provider_type and api_base required" }, 400);
+  if (!provider_type || !api_base)
+    return json({ error: "provider_type and api_base required" }, 400);
 
   const fp = await providerFingerprint(provider_type.trim(), api_base.trim());
   const kv = kvStore(env);

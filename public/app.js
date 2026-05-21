@@ -20,69 +20,69 @@ const state = {
 const $ = (id) => document.getElementById(id);
 
 const dom = {
-  authOverlay:  $("auth-overlay"),
-  authInput:    $("auth-input"),
-  authBtn:      $("auth-btn"),
-  authError:    $("auth-error"),
+  authOverlay: $("auth-overlay"),
+  authInput: $("auth-input"),
+  authBtn: $("auth-btn"),
+  authError: $("auth-error"),
 
-  topbarMenu:   $("topbar-menu"),
-  mobileMenuBtn:$("mobile-menu-btn"),
-  mobileMenuClose:$("mobile-menu-close"),
-  topbarMenuBackdrop:$("topbar-menu-backdrop"),
-  runNowBtn:    $("run-now-btn"),
-  settingsBtn:  $("settings-btn"),
-  themeToggle:  $("theme-toggle"),
-  logoutBtn:    $("logout-btn"),
+  topbarMenu: $("topbar-menu"),
+  mobileMenuBtn: $("mobile-menu-btn"),
+  mobileMenuClose: $("mobile-menu-close"),
+  topbarMenuBackdrop: $("topbar-menu-backdrop"),
+  runNowBtn: $("run-now-btn"),
+  settingsBtn: $("settings-btn"),
+  themeToggle: $("theme-toggle"),
+  logoutBtn: $("logout-btn"),
 
-  tabBtns:   Array.from(document.querySelectorAll(".tab-btn")),
+  tabBtns: Array.from(document.querySelectorAll(".tab-btn")),
   tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
 
   // config tab
-  configLoading:   $("config-loading"),
-  configError:     $("config-error"),
-  providerGrid:    $("provider-grid"),
-  providerEmpty:   $("provider-empty"),
-  addProviderBtn:  $("add-provider-btn"),
+  configLoading: $("config-loading"),
+  configError: $("config-error"),
+  providerGrid: $("provider-grid"),
+  providerEmpty: $("provider-empty"),
+  addProviderBtn: $("add-provider-btn"),
   configSaveError: $("config-save-error"),
-  configSaveOk:    $("config-save-ok"),
+  configSaveOk: $("config-save-ok"),
 
   // results tab
-  refreshBtn:       $("refresh-results-btn"),
-  resultsTs:        $("results-timestamp"),
-  resultsLoading:   $("results-loading"),
-  resultsError:     $("results-error"),
-  resultsEmpty:     $("results-empty"),
-  resultsBody:      $("results-body"),
+  refreshBtn: $("refresh-results-btn"),
+  resultsTs: $("results-timestamp"),
+  resultsLoading: $("results-loading"),
+  resultsError: $("results-error"),
+  resultsEmpty: $("results-empty"),
+  resultsBody: $("results-body"),
 
   // provider editor modal
-  editorOverlay:    $("editor-overlay"),
-  editorTitle:      $("editor-title"),
-  editorIndex:      $("editor-index"),
-  edEnabled:        $("ed-enabled"),
-  editorSave:       $("editor-save-btn"),
-  editorCancel:     $("editor-cancel-btn"),
-  editorError:      $("editor-error"),
-  edProviderType:   $("ed-provider-type"),
-  edApiBase:        $("ed-api-base"),
-  edKeys:           $("ed-keys"),
-  edModels:         $("ed-models"),
+  editorOverlay: $("editor-overlay"),
+  editorTitle: $("editor-title"),
+  editorIndex: $("editor-index"),
+  edEnabled: $("ed-enabled"),
+  editorSave: $("editor-save-btn"),
+  editorCancel: $("editor-cancel-btn"),
+  editorError: $("editor-error"),
+  edProviderType: $("ed-provider-type"),
+  edApiBase: $("ed-api-base"),
+  edKeys: $("ed-keys"),
+  edModels: $("ed-models"),
 
   // app settings modal
-  settingsOverlay:  $("settings-overlay"),
-  settingsCancel:   $("settings-cancel-btn"),
-  settingsSave:     $("settings-save-btn"),
-  settingsError:    $("settings-error"),
-  settingsOk:       $("settings-ok"),
-  setGithubUrl:     $("set-github-url"),
-  setDiscordUrl:    $("set-discord-url"),
-  testDiscordBtn:   $("test-discord-btn"),
+  settingsOverlay: $("settings-overlay"),
+  settingsCancel: $("settings-cancel-btn"),
+  settingsSave: $("settings-save-btn"),
+  settingsError: $("settings-error"),
+  settingsOk: $("settings-ok"),
+  setGithubUrl: $("set-github-url"),
+  setDiscordUrl: $("set-discord-url"),
+  testDiscordBtn: $("test-discord-btn"),
 
   // sample modal
-  sampleOverlay:    $("sample-overlay"),
-  sampleClose:      $("sample-close-btn"),
-  sampleTitle:      $("sample-title"),
-  sampleSubtitle:   $("sample-subtitle"),
-  sampleContent:    $("sample-content"),
+  sampleOverlay: $("sample-overlay"),
+  sampleClose: $("sample-close-btn"),
+  sampleTitle: $("sample-title"),
+  sampleSubtitle: $("sample-subtitle"),
+  sampleContent: $("sample-content"),
 };
 
 // ── API ──────────────────────────────────────────────────────────────────
@@ -107,8 +107,9 @@ function syncLineNums(textarea) {
   const nums = editor.querySelector(".line-nums");
   if (!nums) return;
   const lines = textarea.value.split("\n").length;
-  nums.innerHTML = Array.from({ length: lines }, (_, i) =>
-    `<span>${i + 1}</span>`
+  nums.innerHTML = Array.from(
+    { length: lines },
+    (_, i) => `<span>${i + 1}</span>`,
   ).join("");
   nums.scrollTop = textarea.scrollTop;
 }
@@ -146,7 +147,9 @@ function getTheme() {
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   dom.themeToggle.textContent = theme === "dark" ? "🌙" : "☀️";
-  try { localStorage.setItem("atk_theme", theme); } catch {}
+  try {
+    localStorage.setItem("atk_theme", theme);
+  } catch {}
 }
 
 function toggleTheme() {
@@ -156,7 +159,10 @@ function toggleTheme() {
 // ── Auth ─────────────────────────────────────────────────────────────────
 async function login() {
   const tok = dom.authInput.value.trim();
-  if (!tok) { dom.authError.textContent = "请输入密码"; return; }
+  if (!tok) {
+    dom.authError.textContent = "请输入密码";
+    return;
+  }
   dom.authError.textContent = "";
   dom.authBtn.disabled = true;
   state.token = tok;
@@ -186,7 +192,10 @@ function logout() {
 
 // ── UI Helpers ────────────────────────────────────────────────────────────
 function toggleMobileMenu(force) {
-  const open = typeof force === "boolean" ? force : !dom.topbarMenu.classList.contains("open");
+  const open =
+    typeof force === "boolean"
+      ? force
+      : !dom.topbarMenu.classList.contains("open");
   dom.topbarMenu.classList.toggle("open", open);
   dom.topbarMenuBackdrop.classList.toggle("open", open);
   dom.mobileMenuBtn.setAttribute("aria-expanded", String(open));
@@ -194,7 +203,9 @@ function toggleMobileMenu(force) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  dom.tabBtns.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  dom.tabBtns.forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === name),
+  );
   dom.tabPanels.forEach((p) => {
     const active = p.id === `tab-${name}`;
     p.classList.toggle("active", active);
@@ -202,7 +213,7 @@ function switchTab(name) {
   });
   if (name === "results") loadResults();
   if (name === "config") loadConfig();
-  
+
   // Close mobile menu if open
   toggleMobileMenu(false);
 }
@@ -210,21 +221,23 @@ function switchTab(name) {
 // ── Settings modal ────────────────────────────────────────────────────────
 function openSettings() {
   const s = state.settings || {};
-  dom.setGithubUrl.value  = s.github_url || "";
+  dom.setGithubUrl.value = s.github_url || "";
   dom.setDiscordUrl.value = s.discord_webhook_url || "";
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
   dom.settingsOverlay.classList.remove("hidden");
 }
 
-function closeSettings() { dom.settingsOverlay.classList.add("hidden"); }
+function closeSettings() {
+  dom.settingsOverlay.classList.add("hidden");
+}
 
 async function saveSettings() {
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
   dom.settingsSave.disabled = true;
   const patch = {
-    github_url:          dom.setGithubUrl.value.trim(),
+    github_url: dom.setGithubUrl.value.trim(),
     discord_webhook_url: dom.setDiscordUrl.value.trim(),
   };
   try {
@@ -232,7 +245,8 @@ async function saveSettings() {
     const current = state.settings || {};
     if (!MOCK) {
       await api("/api/settings", {
-        method: "POST", auth: true,
+        method: "POST",
+        auth: true,
         body: { ...current, ...patch },
       });
     }
@@ -260,7 +274,10 @@ async function testDiscordWebhook() {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "🔔 **API Key Tester**：这是一条测试通知。如果您看到此消息，表示 Webhook 已成功连线！" })
+      body: JSON.stringify({
+        content:
+          "🔔 **API Key Tester**：这是一条测试通知。如果您看到此消息，表示 Webhook 已成功连线！",
+      }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     dom.testDiscordBtn.textContent = "发送成功！";
@@ -313,27 +330,37 @@ function renderProviderGrid() {
     dom.providerGrid.classList.add("hidden");
     return;
   }
-  dom.providerGrid.innerHTML = providers.map((p, i) => renderProviderCard(p, i)).join("");
+  dom.providerGrid.innerHTML = providers
+    .map((p, i) => renderProviderCard(p, i))
+    .join("");
   dom.providerGrid.classList.remove("hidden");
   dom.providerEmpty.classList.add("hidden");
 
-  dom.providerGrid.querySelectorAll("[data-edit]").forEach((btn) =>
-    btn.addEventListener("click", () => openEditor(Number(btn.dataset.edit)))
-  );
-  dom.providerGrid.querySelectorAll("[data-delete]").forEach((btn) =>
-    btn.addEventListener("click", () => deleteProvider(Number(btn.dataset.delete)))
-  );
+  dom.providerGrid
+    .querySelectorAll("[data-edit]")
+    .forEach((btn) =>
+      btn.addEventListener("click", () => openEditor(Number(btn.dataset.edit))),
+    );
+  dom.providerGrid
+    .querySelectorAll("[data-delete]")
+    .forEach((btn) =>
+      btn.addEventListener("click", () =>
+        deleteProvider(Number(btn.dataset.delete)),
+      ),
+    );
 }
 
 function renderProviderCard(p, index) {
   const host = extractHost(p.api_base);
-  const keyCount   = (p.keys || "").split("\n").filter((l) => l.trim()).length;
+  const keyCount = (p.keys || "").split("\n").filter((l) => l.trim()).length;
   const modelCount = (p.models || "").split(",").filter((m) => m.trim()).length;
-  const isEnabled  = p.enabled !== false;
-  const opacityStyle = isEnabled ? "" : 'style="opacity: 0.5; filter: grayscale(1);"';
-  const badgeStyle = isEnabled ? "" : 'badge-warn';
+  const isEnabled = p.enabled !== false;
+  const opacityStyle = isEnabled
+    ? ""
+    : 'style="opacity: 0.5; filter: grayscale(1);"';
+  const badgeStyle = isEnabled ? "" : "badge-warn";
   const badgeText = isEnabled ? esc(p.provider_type) : "已停用";
-  
+
   return `
     <div class="provider-card" ${opacityStyle}>
       <div class="provider-card-header">
@@ -365,18 +392,18 @@ function openEditor(index = -1) {
   if (index >= 0) {
     const p = ((state.settings || {}).providers || [])[index] || {};
     dom.editorTitle.textContent = "编辑服务商";
-    dom.edEnabled.checked    = p.enabled !== false; // default true
+    dom.edEnabled.checked = p.enabled !== false; // default true
     dom.edProviderType.value = p.provider_type || "openai";
-    dom.edApiBase.value      = p.api_base || "";
-    dom.edKeys.value         = p.keys || "";
-    dom.edModels.value       = p.models || "";
+    dom.edApiBase.value = p.api_base || "";
+    dom.edKeys.value = p.keys || "";
+    dom.edModels.value = p.models || "";
   } else {
     dom.editorTitle.textContent = "新增服务商";
-    dom.edEnabled.checked    = true;
+    dom.edEnabled.checked = true;
     dom.edProviderType.value = "openai";
     dom.edApiBase.value = "";
-    dom.edKeys.value    = "";
-    dom.edModels.value  = "";
+    dom.edKeys.value = "";
+    dom.edModels.value = "";
   }
   dom.editorOverlay.classList.remove("hidden");
   dom.edApiBase.focus();
@@ -385,16 +412,18 @@ function openEditor(index = -1) {
   syncLineNums(dom.edModels);
 }
 
-function closeEditor() { dom.editorOverlay.classList.add("hidden"); }
+function closeEditor() {
+  dom.editorOverlay.classList.add("hidden");
+}
 
 async function saveEditor() {
   dom.editorError.textContent = "";
-  const index    = Number(dom.editorIndex.value);
-  const enabled  = dom.edEnabled.checked;
-  const apiBase  = dom.edApiBase.value.trim().replace(/\/+$/, "");
-  const keys     = normalizeKeys(dom.edKeys.value);
-  const models   = normalizeModels(dom.edModels.value);
-  const pType    = dom.edProviderType.value;
+  const index = Number(dom.editorIndex.value);
+  const enabled = dom.edEnabled.checked;
+  const apiBase = dom.edApiBase.value.trim().replace(/\/+$/, "");
+  const keys = normalizeKeys(dom.edKeys.value);
+  const models = normalizeModels(dom.edModels.value);
+  const pType = dom.edProviderType.value;
 
   // Update UI immediately so the user sees the cleaned up data if they reopen
   dom.edKeys.value = keys;
@@ -402,13 +431,28 @@ async function saveEditor() {
   syncLineNums(dom.edKeys);
   syncLineNums(dom.edModels);
 
-  if (!apiBase) { dom.editorError.textContent = "请填写 API Base URL"; return; }
-  if (!keys.trim()) { dom.editorError.textContent = "请填写至少一个 API Key"; return; }
-  if (!models.trim()) { dom.editorError.textContent = "请填写至少一个模型名"; return; }
+  if (!apiBase) {
+    dom.editorError.textContent = "请填写 API Base URL";
+    return;
+  }
+  if (!keys.trim()) {
+    dom.editorError.textContent = "请填写至少一个 API Key";
+    return;
+  }
+  if (!models.trim()) {
+    dom.editorError.textContent = "请填写至少一个模型名";
+    return;
+  }
 
-  const entry = { enabled, provider_type: pType, api_base: apiBase, keys, models };
+  const entry = {
+    enabled,
+    provider_type: pType,
+    api_base: apiBase,
+    keys,
+    models,
+  };
   const settings = state.settings || {};
-  const providers = [...((settings.providers) || [])];
+  const providers = [...(settings.providers || [])];
 
   if (index >= 0) {
     providers[index] = entry;
@@ -420,7 +464,8 @@ async function saveEditor() {
   try {
     if (!MOCK) {
       await api("/api/settings", {
-        method: "POST", auth: true,
+        method: "POST",
+        auth: true,
         body: { ...settings, providers },
       });
     }
@@ -436,14 +481,22 @@ async function saveEditor() {
 
 async function deleteProvider(index) {
   const p = ((state.settings || {}).providers || [])[index];
-  if (!p || !confirm(`确定删除 ${extractHost(p.api_base)} (${p.provider_type}) ？`)) return;
+  if (
+    !p ||
+    !confirm(`确定删除 ${extractHost(p.api_base)} (${p.provider_type}) ？`)
+  )
+    return;
 
-  const settings  = state.settings || {};
-  const providers = ((settings.providers) || []).filter((_, i) => i !== index);
+  const settings = state.settings || {};
+  const providers = (settings.providers || []).filter((_, i) => i !== index);
 
   try {
     if (!MOCK) {
-      await api("/api/settings", { method: "POST", auth: true, body: { ...settings, providers } });
+      await api("/api/settings", {
+        method: "POST",
+        auth: true,
+        body: { ...settings, providers },
+      });
     }
     state.settings = { ...settings, providers };
     renderProviderGrid();
@@ -473,34 +526,42 @@ async function loadResults() {
       }
     }
 
-    const providers = (state.settings.providers) || [];
+    const providers = state.settings.providers || [];
     if (!providers.length) {
       dom.resultsEmpty.classList.remove("hidden");
       return;
     }
 
     // Fetch results + checkpoints per provider in parallel
-    const bundles = await Promise.all(providers.map(async (p) => {
-      const fp = await sha256(fingerprintPayload(p));
-      const host = extractHost(p.api_base);
+    const bundles = await Promise.all(
+      providers.map(async (p) => {
+        const fp = await sha256(fingerprintPayload(p));
+        const host = extractHost(p.api_base);
 
-      let resultData = { exists: false };
-      let checkpointData = { exists: false };
+        let resultData = { exists: false };
+        let checkpointData = { exists: false };
 
-      if (MOCK) {
-        const mock = await getMock();
-        resultData     = (mock.results     || {})[host] || { exists: false };
-        checkpointData = (mock.checkpoints || {})[host] || { exists: false };
-      } else {
-        [resultData, checkpointData] = await Promise.all([
-          api(`/api/results?fp=${encodeURIComponent(fp)}`).catch(() => ({ exists: false })),
-          api(`/api/checkpoint?fp=${encodeURIComponent(fp)}`, { auth: true }).catch(() => ({ exists: false })),
-        ]);
-      }
-      return { provider: p, fp, host, resultData, checkpointData };
-    }));
+        if (MOCK) {
+          const mock = await getMock();
+          resultData = (mock.results || {})[host] || { exists: false };
+          checkpointData = (mock.checkpoints || {})[host] || { exists: false };
+        } else {
+          [resultData, checkpointData] = await Promise.all([
+            api(`/api/results?fp=${encodeURIComponent(fp)}`).catch(() => ({
+              exists: false,
+            })),
+            api(`/api/checkpoint?fp=${encodeURIComponent(fp)}`, {
+              auth: true,
+            }).catch(() => ({ exists: false })),
+          ]);
+        }
+        return { provider: p, fp, host, resultData, checkpointData };
+      }),
+    );
 
-    const hasAny = bundles.some((b) => b.resultData.exists || b.checkpointData.exists);
+    const hasAny = bundles.some(
+      (b) => b.resultData.exists || b.checkpointData.exists,
+    );
     if (!hasAny) {
       dom.resultsEmpty.classList.remove("hidden");
       return;
@@ -514,12 +575,22 @@ async function loadResults() {
     });
 
     dom.resultsBody.innerHTML = bundles.map(renderProviderResult).join("");
-    // Seed line numbers in result copy blocks (readonly, one-time)
-    dom.resultsBody.querySelectorAll(".result-lined-editor textarea").forEach(syncLineNums);
+    // Seed line numbers in result copy blocks and bind scroll sync
+    dom.resultsBody
+      .querySelectorAll(".result-lined-editor textarea")
+      .forEach((ta) => {
+        syncLineNums(ta);
+        ta.addEventListener("scroll", () => syncLineNums(ta), {
+          passive: true,
+        });
+      });
     // Keyboard support for result-group-header (click handled by delegation)
     dom.resultsBody.querySelectorAll(".result-group-header").forEach((h) => {
       h.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); h.click(); }
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          h.click();
+        }
       });
     });
     // Bind inv-group toggles
@@ -531,7 +602,10 @@ async function loadResults() {
       };
       h.addEventListener("click", toggle);
       h.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggle();
+        }
       });
     });
     // Bind sample buttons
@@ -552,9 +626,21 @@ async function loadResults() {
 }
 
 function renderProviderResult({ provider, host, resultData, checkpointData }) {
-  const hasResult     = resultData.exists;
-  const hasCheckpoint = checkpointData.exists;
+  const hasResult = resultData.exists;
   const r = hasResult ? resultData.results : null;
+
+  // If results exist and are newer than the checkpoint, the checkpoint is
+  // stale (left over from a crashed/interrupted run).  Ignore it so the UI
+  // does not misleadingly show "执行中".
+  let hasCheckpoint = checkpointData.exists;
+  if (hasCheckpoint && hasResult && r?.uploaded_at) {
+    const ck = checkpointData.checkpoint || checkpointData;
+    const ckTime = ck?.saved_at ? new Date(ck.saved_at).getTime() : 0;
+    const resTime = new Date(r.uploaded_at).getTime();
+    if (resTime > ckTime) {
+      hasCheckpoint = false;
+    }
+  }
 
   const uploadedAt = r?.uploaded_at
     ? `上次更新：${new Date(r.uploaded_at).toLocaleString()}`
@@ -591,9 +677,11 @@ function renderProviderResult({ provider, host, resultData, checkpointData }) {
 
 function renderCheckpointBar(ck) {
   const completed = ck.completed_tasks ?? 0;
-  const total     = ck.total_tasks ?? 0;
+  const total = ck.total_tasks ?? 0;
   const deadCount = Array.isArray(ck.dead_keys) ? ck.dead_keys.length : 0;
-  const savedAt   = ck.saved_at ? new Date(ck.saved_at).toLocaleTimeString() : "-";
+  const savedAt = ck.saved_at
+    ? new Date(ck.saved_at).toLocaleTimeString()
+    : "-";
   return `
     <div class="checkpoint-bar">
       <span class="checkpoint-bar-label">⏳ 进行中</span>
@@ -605,11 +693,11 @@ function renderCheckpointBar(ck) {
 }
 
 function renderResultBody(r) {
-  const validKeys    = r.valid_keys || [];
-  const invalidRecs  = r.invalid_records || [];
+  const validKeys = r.valid_keys || [];
+  const invalidRecs = r.invalid_records || [];
   const provenModels = r.proven_working_models || [];
   const failedModels = r.failed_models || [];
-  const modelPerf    = r.model_performance || {};
+  const modelPerf = r.model_performance || {};
 
   return `
     <div class="result-section">
@@ -668,21 +756,26 @@ function renderPerfTable(modelPerf) {
   const models = Object.keys(modelPerf).sort();
   if (!models.length) return `<p class="muted">（无数据）</p>`;
 
-  const rows = models.map((model) => {
-    const p = modelPerf[model];
-    const ttft  = p.avg_ttft  != null ? `${p.avg_ttft}s`  : "-";
-    const total = p.avg_total != null ? `${p.avg_total}s` : "-";
-    const toRate = p.timeout_rate != null
-      ? `<span class="${p.timeout_rate > 0.3 ? "fail" : "na"}">${(p.timeout_rate * 100).toFixed(1)}%</span>` : "-";
-    const thinkRatio = p.has_thinking_ratio != null
-      ? `${(p.has_thinking_ratio * 100).toFixed(0)}%` : "-";
-    const hasSample = p.sample && (p.sample.content || p.sample.thinking);
-    const sampleBtn = hasSample
-      ? `<button class="btn btn-ghost btn-xs" type="button"
+  const rows = models
+    .map((model) => {
+      const p = modelPerf[model];
+      const ttft = p.avg_ttft != null ? `${p.avg_ttft}s` : "-";
+      const total = p.avg_total != null ? `${p.avg_total}s` : "-";
+      const toRate =
+        p.timeout_rate != null
+          ? `<span class="${p.timeout_rate > 0.3 ? "fail" : "na"}">${(p.timeout_rate * 100).toFixed(1)}%</span>`
+          : "-";
+      const thinkRatio =
+        p.has_thinking_ratio != null
+          ? `${(p.has_thinking_ratio * 100).toFixed(0)}%`
+          : "-";
+      const hasSample = p.sample && (p.sample.content || p.sample.thinking);
+      const sampleBtn = hasSample
+        ? `<button class="btn btn-ghost btn-xs" type="button"
            data-sample="${escAttr(JSON.stringify({ model, sample: p.sample }))}">查看</button>`
-      : `<span class="na">-</span>`;
+        : `<span class="na">-</span>`;
 
-    return `<tr>
+      return `<tr>
       <td><code>${esc(model)}</code></td>
       <td>${p.sample_count ?? 0}</td>
       <td class="na">${esc(ttft)}</td>
@@ -691,7 +784,8 @@ function renderPerfTable(modelPerf) {
       <td class="na">${esc(thinkRatio)}</td>
       <td>${sampleBtn}</td>
     </tr>`;
-  }).join("");
+    })
+    .join("");
 
   return `
     <div class="table-scroll">
@@ -717,17 +811,23 @@ function renderInvalidGroups(records) {
     groups.get(reason).push(rec);
   }
 
-  return Array.from(groups.entries()).map(([reason, recs]) => {
-    const items = recs.map((rec) => {
-      const details = Array.isArray(rec.failed_models_details) && rec.failed_models_details.length
-        ? `<div class="inv-models-details">${rec.failed_models_details.map(esc).join("<br>")}</div>` : "";
-      return `<div class="inv-key-item">
+  return Array.from(groups.entries())
+    .map(([reason, recs]) => {
+      const items = recs
+        .map((rec) => {
+          const details =
+            Array.isArray(rec.failed_models_details) &&
+            rec.failed_models_details.length
+              ? `<div class="inv-models-details">${rec.failed_models_details.map(esc).join("<br>")}</div>`
+              : "";
+          return `<div class="inv-key-item">
         <span class="inv-key-mono">${esc(rec.api_key || "")}</span>
         ${details ? `<div>${details}</div>` : ""}
       </div>`;
-    }).join("");
+        })
+        .join("");
 
-    return `<div class="inv-group">
+      return `<div class="inv-group">
       <div class="inv-group-header" tabindex="0" role="button" aria-expanded="false">
         <span class="inv-group-title">${esc(reason)}</span>
         <span class="badge badge-fail">${recs.length}</span>
@@ -735,7 +835,8 @@ function renderInvalidGroups(records) {
       </div>
       <div class="inv-group-body">${items}</div>
     </div>`;
-  }).join("");
+    })
+    .join("");
 }
 
 // ── Result group open/close ──────────────────────────────────────────────
@@ -746,12 +847,16 @@ function openSample(model, sample) {
   dom.sampleTitle.textContent = model;
   dom.sampleSubtitle.textContent = "";
   const thinking = sample?.thinking || "";
-  const content  = sample?.content  || "";
+  const content = sample?.content || "";
   dom.sampleContent.innerHTML = `
-    ${thinking ? `<div class="sample-block">
+    ${
+      thinking
+        ? `<div class="sample-block">
       <div class="sample-block-label">Thinking</div>
       <pre class="sample-pre">${esc(thinking)}</pre>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
     <div class="sample-block">
       <div class="sample-block-label">Content</div>
       <pre class="sample-pre">${content ? esc(content) : `<span class="na">（空）</span>`}</pre>
@@ -759,57 +864,87 @@ function openSample(model, sample) {
   `;
   dom.sampleOverlay.classList.remove("hidden");
 }
-function closeSample() { dom.sampleOverlay.classList.add("hidden"); }
+function closeSample() {
+  dom.sampleOverlay.classList.add("hidden");
+}
 
 // ── Copy ──────────────────────────────────────────────────────────────────
 function copyText(text, btn) {
-  navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
-    btn.textContent = "已复制!";
-    btn.disabled = true;
-    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
-  }).catch(() => {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select(); document.execCommand("copy");
-    document.body.removeChild(ta);
-  });
+  navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      const orig = btn.textContent;
+      btn.textContent = "已复制!";
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.textContent = orig;
+        btn.disabled = false;
+      }, 1500);
+    })
+    .catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function esc(v) {
   return String(v ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
-function escAttr(v) { return esc(v); }
+function escAttr(v) {
+  return esc(v);
+}
 
 function extractHost(url) {
-  try { return new URL(url).hostname; } catch { return url || ""; }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url || "";
+  }
 }
 
 function fingerprintPayload(p) {
   // Must match _worker.js: sorted keys { api_base, provider_type }
-  return JSON.stringify({ api_base: p.api_base.replace(/\/+$/, ""), provider_type: p.provider_type });
+  return JSON.stringify({
+    api_base: p.api_base.replace(/\/+$/, ""),
+    provider_type: p.provider_type,
+  });
 }
 
 async function sha256(str) {
-  const buf  = new TextEncoder().encode(str);
+  const buf = new TextEncoder().encode(str);
   const hash = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 // ── Events ────────────────────────────────────────────────────────────────
 function bindEvents() {
   // Auth
   dom.authBtn.addEventListener("click", login);
-  dom.authInput.addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+  dom.authInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") login();
+  });
   dom.logoutBtn.addEventListener("click", logout);
 
   // Topbar mobile menu
   dom.mobileMenuBtn.addEventListener("click", () => toggleMobileMenu());
   dom.mobileMenuClose?.addEventListener("click", () => toggleMobileMenu(false));
-  dom.topbarMenuBackdrop?.addEventListener("click", () => toggleMobileMenu(false));
+  dom.topbarMenuBackdrop?.addEventListener("click", () =>
+    toggleMobileMenu(false),
+  );
 
   // Theme
   dom.themeToggle.addEventListener("click", () => {
@@ -818,7 +953,9 @@ function bindEvents() {
   });
 
   // Tabs
-  dom.tabBtns.forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+  dom.tabBtns.forEach((b) =>
+    b.addEventListener("click", () => switchTab(b.dataset.tab)),
+  );
 
   // Line numbers
   bindLineNums(dom.edKeys);
@@ -870,9 +1007,9 @@ function bindEvents() {
   // Esc closes any open modal
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (!dom.editorOverlay.classList.contains("hidden"))   closeEditor();
+    if (!dom.editorOverlay.classList.contains("hidden")) closeEditor();
     if (!dom.settingsOverlay.classList.contains("hidden")) closeSettings();
-    if (!dom.sampleOverlay.classList.contains("hidden"))   closeSample();
+    if (!dom.sampleOverlay.classList.contains("hidden")) closeSample();
   });
 }
 

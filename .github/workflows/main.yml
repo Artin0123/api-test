@@ -3,7 +3,7 @@ name: API Key Test
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * *" # Daily UTC 02:00
+    - cron: "0 0 * * *" # Daily UTC 02:00
 
 concurrency:
   group: api-test-run
