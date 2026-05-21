@@ -52,6 +52,7 @@
 
 ```json
 {
+  "enabled": true,
   "provider_type": "openai",
   "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "keys": "sk-aaa\nsk-bbb\nsk-ccc",
@@ -61,6 +62,7 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
+| `enabled` | boolean | 是否启用测试（`true` 或 `false`），设为 `false` 时脚本直接跳过 |
 | `provider_type` | string | `openai` / `ollama` / `gemini` |
 | `api_base` | string | API 根地址，trailing slash 会被 trim。测试脚本会自动根据类型补齐后缀路由（如 `/chat/completions` 等）。 |
 | `keys` | string | 多个 API Key，**换行分隔**，原始字符串存储，由脚本 `splitlines()` 拆分 |
@@ -286,6 +288,7 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
   - `api_base` 主域名（截取，过长加省略号）
   - Key 数量（行数统计）、Model 数量（逗号分隔计数）
 - **新增 / 编辑**弹出 modal：
+  - `enabled`：是否启用的 Checkbox 开关
   - `provider_type`：带箭头下拉选择（附加后缀 Tooltip 提示）
   - `api_base`：文字输入
   - `API Keys`：多行 lined-editor（带行号），定高带内部滚动

@@ -58,6 +58,7 @@ const dom = {
   editorOverlay:    $("editor-overlay"),
   editorTitle:      $("editor-title"),
   editorIndex:      $("editor-index"),
+  edEnabled:        $("ed-enabled"),
   editorSave:       $("editor-save-btn"),
   editorCancel:     $("editor-cancel-btn"),
   editorError:      $("editor-error"),
@@ -328,12 +329,18 @@ function renderProviderCard(p, index) {
   const host = extractHost(p.api_base);
   const keyCount   = (p.keys || "").split("\n").filter((l) => l.trim()).length;
   const modelCount = (p.models || "").split(",").filter((m) => m.trim()).length;
+  const isEnabled  = p.enabled !== false;
+  const opacityStyle = isEnabled ? "" : 'style="opacity: 0.5; filter: grayscale(1);"';
+  const badgeStyle = isEnabled ? "" : 'badge-warn';
+  const badgeText = isEnabled ? esc(p.provider_type) : "已停用";
+  
   return `
-    <div class="provider-card">
+    <div class="provider-card" ${opacityStyle}>
       <div class="provider-card-header">
         <div style="flex:1;min-width:0">
           <div style="margin-bottom:.35rem">
-            <span class="badge">${esc(p.provider_type)}</span>
+            <span class="badge ${badgeStyle}">${badgeText}</span>
+            ${!isEnabled ? `<span class="badge" style="margin-left:.2rem">${esc(p.provider_type)}</span>` : ""}
           </div>
           <div class="provider-card-host" title="${esc(p.api_base)}">${esc(host)}</div>
         </div>
@@ -358,12 +365,14 @@ function openEditor(index = -1) {
   if (index >= 0) {
     const p = ((state.settings || {}).providers || [])[index] || {};
     dom.editorTitle.textContent = "编辑服务商";
+    dom.edEnabled.checked    = p.enabled !== false; // default true
     dom.edProviderType.value = p.provider_type || "openai";
     dom.edApiBase.value      = p.api_base || "";
     dom.edKeys.value         = p.keys || "";
     dom.edModels.value       = p.models || "";
   } else {
     dom.editorTitle.textContent = "新增服务商";
+    dom.edEnabled.checked    = true;
     dom.edProviderType.value = "openai";
     dom.edApiBase.value = "";
     dom.edKeys.value    = "";
@@ -381,6 +390,7 @@ function closeEditor() { dom.editorOverlay.classList.add("hidden"); }
 async function saveEditor() {
   dom.editorError.textContent = "";
   const index    = Number(dom.editorIndex.value);
+  const enabled  = dom.edEnabled.checked;
   const apiBase  = dom.edApiBase.value.trim().replace(/\/+$/, "");
   const keys     = normalizeKeys(dom.edKeys.value);
   const models   = normalizeModels(dom.edModels.value);
@@ -396,7 +406,7 @@ async function saveEditor() {
   if (!keys.trim()) { dom.editorError.textContent = "请填写至少一个 API Key"; return; }
   if (!models.trim()) { dom.editorError.textContent = "请填写至少一个模型名"; return; }
 
-  const entry = { provider_type: pType, api_base: apiBase, keys, models };
+  const entry = { enabled, provider_type: pType, api_base: apiBase, keys, models };
   const settings = state.settings || {};
   const providers = [...((settings.providers) || [])];
 

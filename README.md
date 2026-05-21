@@ -12,7 +12,7 @@ Cloudflare Pages（存储设定与结果）+ GitHub Actions（定时执行）+ `
 
 - **管理多个 API 服务商**（支持 OpenAI / Ollama / Gemini 架构的端点）。
 - **动态端点后缀**：前端只需填入 API Base URL（如 `https://api.openai.com/v1`），系统在测试时会自动根据 Provider 类型补全正确的路径（如 `/chat/completions`、`/api/chat` 或 Gemini 的专属模型路径）。
-- 每个 Provider 独立执行多 Key × 多 Model 矩阵并发测试。
+- 每个 Provider 独立执行多 Key × 多 Model 矩阵并发测试（**支援随时切换「启用 / 停用」状态来控制要测试的服务商**）。
 - 自动判定有效 Key、无效 Key 死因、模型健康状态、性能指标、以及是否具备「思考 (Thinking)」能力。
 - 结果存 Cloudflare KV，前端（RWD 手机自适应设计、全屏居中 Modal、自动化清洗多余空白与符号）实时查看。
 - 每日定时执行，完成后自动发 Discord 通知（前端支援一键发送测试通知）。

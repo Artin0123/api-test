@@ -2,12 +2,14 @@
   "settings": {
     "providers": [
       {
+        "enabled": true,
         "provider_type": "openai",
         "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "keys": "sk-aaaaaaaaaaaaaaaa\nsk-bbbbbbbbbbbbbbbb\nsk-cccccccccccccccc",
         "models": "qwen-max,qwen-plus,qwen-turbo"
       },
       {
+        "enabled": false,
         "provider_type": "gemini",
         "api_base": "https://generativelanguage.googleapis.com/v1beta",
         "keys": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",

@@ -397,54 +397,14 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
         return False, status, err, None, None, False, False, "", ""
 
 
-async def main():
+
+async def run_provider(api_base, provider_type, keys, models):
     global_start_time = time.perf_counter()
-    provider_type = PROVIDER_TYPE
-    api_base = API_BASE
+    print(f"\n{'='*50}")
+    print(f"▶ 开始测试服务商: {provider_type} | {api_base}")
+    print(f"▶ 载入 {len(keys)} 个 Key，{len(models)} 个模型")
+    print(f"{'='*50}\n")
 
-    # ── 读取 keys 和 models ──────────────────────────────────────────────
-    if PAGES_URL and ADMIN_TOKEN:
-        # 从 Pages KV 读取（GHA 模式）
-        print(f"[Pages] 从 {PAGES_URL}/api/settings 读取设定...")
-        try:
-            resp = _pages_request("GET", "/api/settings")
-            settings = resp.get("settings") or {}
-            
-            # 读取第一个 provider 进行测试 (日后可扩展成回圈跑所有 provider)
-            providers = settings.get("providers", [])
-            if not providers:
-                return print("[错误] 远端设定中没有任何服务商 (Providers)。")
-            
-            first_p = providers[0]
-            api_base = first_p.get("api_base", "").strip().rstrip("/")
-            provider_type = first_p.get("provider_type", "openai")
-            raw_keys = first_p.get("keys", "")
-            raw_models = first_p.get("models", "")
-            
-        except Exception as e:
-            return print(f"[错误] 无法从 Pages 读取设定: {e}")
-
-        keys = [line.strip() for line in raw_keys.splitlines() if line.strip()]
-        models = [m.strip() for m in raw_models.split(",") if m.strip()]
-    else:
-        # 本地文件 fallback
-        if not os.path.exists(INPUT_FILE_PATH):
-            return print(f"找不到 {INPUT_FILE_PATH}")
-        if not os.path.exists(MODELS_FILE_PATH):
-            return print(f"找不到 {MODELS_FILE_PATH}")
-        with open(INPUT_FILE_PATH, "r", encoding="utf-8") as f:
-            keys = [line.strip() for line in f if line.strip()]
-        with open(MODELS_FILE_PATH, "r", encoding="utf-8") as f:
-            models = [m.strip() for m in f.read().split(",") if m.strip()]
-
-    if not keys:
-        return print("[错误] 没有可用的 API Key，请先在设定页面填入。")
-    if not models:
-        return print("[错误] 没有可用的模型，请先在设定页面填入。")
-
-    print(f"载入 {len(keys)} 个 Key，{len(models)} 个模型。准备测试...")
-
-    # State tracking（须在 Load Checkpoint 之前声明，checkpoint 恢复时会写入 dead_keys）
     dead_keys = set()
     model_timeout_stats = defaultdict(int)  # 各模型超时/限流次数
     model_test_counts = defaultdict(int)  # 各模型实际发出请求次数（用于计算超时率）
@@ -745,6 +705,65 @@ async def main():
         except Exception as e:
             print(f"[警告] 无法删除临时存档档: {e}")
 
+
+
+
+async def main():
+    providers_to_run = []
+
+    if PAGES_URL and ADMIN_TOKEN:
+        print(f"[Pages] 从 {PAGES_URL}/api/settings 读取设定...")
+        try:
+            resp = _pages_request("GET", "/api/settings")
+            settings = resp.get("settings") or {}
+            providers = settings.get("providers", [])
+            if not providers:
+                return print("[错误] 远端设定中没有任何服务商 (Providers)。")
+            
+            for p in providers:
+                # 严格检查 enabled 字段
+                if not p["enabled"]:
+                    print(f"\n[跳过] 服务商 {p['provider_type']} | {p['api_base']} (已设定为停用)")
+                    continue
+                
+                ab = p["api_base"].strip().rstrip("/")
+                pt = p["provider_type"]
+                rk = p["keys"]
+                rm = p["models"]
+                k_list = [line.strip() for line in rk.splitlines() if line.strip()]
+                m_list = [m.strip() for m in rm.split(",") if m.strip()]
+                
+                if not k_list or not m_list:
+                    print(f"\n[跳过] 服务商 {pt} | {ab} (缺少 Key 或 Model)")
+                    continue
+                
+                providers_to_run.append((ab, pt, k_list, m_list))
+                
+        except Exception as e:
+            return print(f"[错误] 无法从 Pages 读取设定: {e}")
+    else:
+        # 本地文件 fallback
+        if not os.path.exists(INPUT_FILE_PATH) or not os.path.exists(MODELS_FILE_PATH):
+            return print(f"[错误] 本地 fallback 找不到 keys.txt 或 models.txt")
+        with open(INPUT_FILE_PATH, "r", encoding="utf-8") as f:
+            keys = [line.strip() for line in f if line.strip()]
+        with open(MODELS_FILE_PATH, "r", encoding="utf-8") as f:
+            models = [m.strip() for m in f.read().split(",") if m.strip()]
+            
+        if not keys or not models:
+            return print("[错误] 本地 fallback 缺少 Key 或 Model。")
+            
+        providers_to_run.append((API_BASE, PROVIDER_TYPE, keys, models))
+
+    if not providers_to_run:
+        return print("\n[结束] 没有需要执行的服务商。")
+
+    print(f"\n总共将执行 {len(providers_to_run)} 个服务商测试。")
+    
+    for ab, pt, k_list, m_list in providers_to_run:
+        await run_provider(ab, pt, k_list, m_list)
+        
+    print(f"\n{'='*50}\n全部服务商测试执行完毕！\n{'='*50}")
 
 if __name__ == "__main__":
     if sys.platform == "win32":
