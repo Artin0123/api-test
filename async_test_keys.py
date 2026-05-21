@@ -27,9 +27,9 @@ PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini'
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
 MAX_CONCURRENCY = 40
-STREAM_TIMEOUT = 10.0
-NON_STREAM_TIMEOUT = 15.0
-CHECKPOINT_EVERY_N_TASKS = 20
+TTFT_TIMEOUT = 5.0
+TOTAL_TIMEOUT = 20.0
+CHECKPOINT_EVERY_N_TASKS = 200
 PROMPT = "What is 17 multiplied by 19? Think step by step."
 
 # ─── 3. 云端集成 (由 GitHub Actions 通过环境变量注入，本地开发请留空) ───
@@ -42,7 +42,10 @@ ADMIN_TOKEN = os.environ.get("ADMIN_PASSWORD", "").strip()
 def compute_fingerprint(api_base: str, provider_type: str) -> str:
     """与 _worker.js / app.js 中的 fingerprintPayload 保持完全一致。
     键名按字母序排列：api_base 在 provider_type 之前。"""
-    payload = json.dumps({"api_base": api_base.rstrip("/"), "provider_type": provider_type}, separators=(",", ":"))
+    payload = json.dumps(
+        {"api_base": api_base.rstrip("/"), "provider_type": provider_type},
+        separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -108,82 +111,112 @@ def build_payload(provider_type, model, stream):
     return {}
 
 
-async def parse_stream(response, provider_type):
+def extract_stream_chunk(line, provider_type):
+    has_content = False
+    has_thinking = False
+    content_parts = []
+    thinking_parts = []
+
+    if provider_type in ("openai", "gemini"):
+        if not line.startswith("data:"):
+            return False, False, [], []
+        line = line[5:].strip()
+        if line == "[DONE]":
+            return False, False, [], []
+
+    try:
+        data = json.loads(line)
+    except:
+        return False, False, [], []
+
+    if provider_type == "openai":
+        choices = data.get("choices", [])
+        if choices:
+            delta = choices[0].get("delta", {})
+            content = delta.get("content") or ""
+            reasoning = (delta.get("reasoning_content") or "") or (
+                delta.get("thinking") or ""
+            )
+            if content:
+                has_content = True
+                content_parts.append(content)
+            if reasoning:
+                has_thinking = True
+                thinking_parts.append(reasoning)
+
+    elif provider_type == "ollama":
+        msg = data.get("message", {})
+        content = msg.get("content") or ""
+        thinking = msg.get("thinking") or ""
+        if content:
+            has_content = True
+            content_parts.append(content)
+        if thinking:
+            has_thinking = True
+            thinking_parts.append(thinking)
+
+    elif provider_type == "gemini":
+        candidates = data.get("candidates", [])
+        for c in candidates:
+            parts = c.get("content", {}).get("parts", [])
+            for p in parts:
+                text = p.get("text") or ""
+                is_thought = bool(p.get("thought") or p.get("thoughtSignature"))
+                if is_thought:
+                    has_thinking = True
+                    if text:
+                        thinking_parts.append(text)
+                elif text:
+                    has_content = True
+                    content_parts.append(text)
+
+    return has_content, has_thinking, content_parts, thinking_parts
+
+
+async def parse_stream(response, provider_type, ttft_timeout=None):
     first_chunk_time = None
     has_content = False
     has_thinking = False
-    content_buf = []  # 拼接正文 token
-    thinking_buf = []  # 拼接思考 token
+    content_buf = []
+    thinking_buf = []
 
-    async for line in response.content:
-        line = line.decode("utf-8").strip()
+    async def _consume_line(raw_line):
+        nonlocal first_chunk_time, has_content, has_thinking
+        line = raw_line.decode("utf-8").strip()
         if not line:
-            continue
+            return False
 
-        if provider_type in ("openai", "gemini"):
-            if not line.startswith("data:"):
-                continue
-            line = line[5:].strip()
-            if line == "[DONE]":
-                continue
+        line_has_content, line_has_thinking, content_parts, thinking_parts = (
+            extract_stream_chunk(line, provider_type)
+        )
+        if not (line_has_content or line_has_thinking):
+            return False
 
-        try:
-            data = json.loads(line)
-        except:
-            continue
+        if first_chunk_time is None:
+            first_chunk_time = time.perf_counter()
+        if line_has_content:
+            has_content = True
+            content_buf.extend(content_parts)
+        if line_has_thinking:
+            has_thinking = True
+            thinking_buf.extend(thinking_parts)
+        return True
 
-        if provider_type == "openai":
-            choices = data.get("choices", [])
-            if choices:
-                delta = choices[0].get("delta", {})
-                # 任务 6：用 or "" 防御 content: null
-                content = delta.get("content") or ""
-                reasoning = (delta.get("reasoning_content") or "") or (
-                    delta.get("thinking") or ""
-                )
-                if content or reasoning:
-                    if first_chunk_time is None:
-                        first_chunk_time = time.perf_counter()
-                    if content:
-                        has_content = True
-                        content_buf.append(content)
-                    if reasoning:
-                        has_thinking = True
-                        thinking_buf.append(reasoning)
+    if ttft_timeout is not None:
+        deadline = time.perf_counter() + ttft_timeout
+        while first_chunk_time is None:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+            raw_line = await asyncio.wait_for(
+                response.content.readline(), timeout=remaining
+            )
+            if not raw_line:
+                break
+            await _consume_line(raw_line)
 
-        elif provider_type == "ollama":
-            msg = data.get("message", {})
-            content = msg.get("content") or ""
-            thinking = msg.get("thinking") or ""
-            if content or thinking:
-                if first_chunk_time is None:
-                    first_chunk_time = time.perf_counter()
-                if content:
-                    has_content = True
-                    content_buf.append(content)
-                if thinking:
-                    has_thinking = True
-                    thinking_buf.append(thinking)
-
-        elif provider_type == "gemini":
-            candidates = data.get("candidates", [])
-            for c in candidates:
-                parts = c.get("content", {}).get("parts", [])
-                for p in parts:
-                    text = p.get("text") or ""
-                    # 任务 5：思考 chunk 也更新 first_chunk_time
-                    is_thought = bool(p.get("thought") or p.get("thoughtSignature"))
-                    if text or is_thought:
-                        if first_chunk_time is None:
-                            first_chunk_time = time.perf_counter()
-                    if is_thought:
-                        has_thinking = True
-                        if text:
-                            thinking_buf.append(text)
-                    elif text:
-                        has_content = True
-                        content_buf.append(text)
-
+    async for raw_line in response.content:
+        await _consume_line(raw_line)
     sample_content = "".join(content_buf).strip()
     sample_thinking = "".join(thinking_buf).strip()
     return first_chunk_time, has_content, has_thinking, sample_content, sample_thinking
@@ -197,9 +230,7 @@ async def test_single_request(session, key, model, stream, provider_type, api_ba
         headers["Authorization"] = f"Bearer {key}"
 
     payload = build_payload(provider_type, model, stream)
-    timeout = aiohttp.ClientTimeout(
-        total=STREAM_TIMEOUT if stream else NON_STREAM_TIMEOUT
-    )
+    timeout = aiohttp.ClientTimeout(total=TOTAL_TIMEOUT)
 
     start_t = time.perf_counter()
     ttft = None
@@ -226,7 +257,7 @@ async def test_single_request(session, key, model, stream, provider_type, api_ba
                     has_thinking,
                     sample_content,
                     sample_thinking,
-                ) = await parse_stream(resp, provider_type)
+                ) = await parse_stream(resp, provider_type, ttft_timeout=TTFT_TIMEOUT)
                 if first_t:
                     ttft = first_t - start_t
             else:
@@ -308,7 +339,14 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
 
     # 闭包：内部绑定参数传给 test_single_request 拿 9 个返回值 元组
     async def _run(stream):
-        return await test_single_request(session, key, model, stream=stream, provider_type=provider_type, api_base=api_base)
+        return await test_single_request(
+            session,
+            key,
+            model,
+            stream=stream,
+            provider_type=provider_type,
+            api_base=api_base,
+        )
 
     # 1. 优先尝试流式 (第一次测试)
     (
@@ -328,7 +366,7 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
     # 2. 如果流式报错（非权限/限流/超时问题），降级非流式
     #    408/429 不在此处降级，留给触发式重试分支处理
     if not success and status not in (401, 403, 404, 400, 429, 408):
-        penalty_time += total_t if total_t else STREAM_TIMEOUT
+        penalty_time += total_t if total_t else TOTAL_TIMEOUT
         (
             success,
             status,
@@ -350,7 +388,7 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
 
     # 3. 仅当第一次测试遇到 429 或 408 时，才触发第二次跑测机制
     if first_status in (429, 408):
-        penalty_time += total_t if total_t else STREAM_TIMEOUT
+        penalty_time += total_t if total_t else TOTAL_TIMEOUT
         await asyncio.sleep(2)
         (
             success,
@@ -366,7 +404,7 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
         is_stream = True
 
         if not success and status not in (401, 403, 404, 400, 429, 408):
-            penalty_time += total_t if total_t else STREAM_TIMEOUT
+            penalty_time += total_t if total_t else TOTAL_TIMEOUT
             (
                 success,
                 status,
@@ -405,13 +443,12 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
         return False, status, err, None, None, False, False, "", ""
 
 
-
 async def run_provider(api_base, provider_type, keys, models):
     global_start_time = time.perf_counter()
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"▶ 开始测试服务商: {provider_type} | {api_base}")
     print(f"▶ 载入 {len(keys)} 个 Key，{len(models)} 个模型")
-    print(f"{'='*50}\n")
+    print(f"{'=' * 50}\n")
 
     dead_keys = set()
     model_timeout_stats = defaultdict(int)  # 各模型超时/限流次数
@@ -467,7 +504,10 @@ async def run_provider(api_base, provider_type, keys, models):
                 task_queue.task_done()
                 continue
 
-            print(f"[{processed_count}/{total_in_queue}] 测试 {masked} -> {model}", flush=True)
+            print(
+                f"[{processed_count}/{total_in_queue}] 测试 {masked} -> {model}",
+                flush=True,
+            )
 
             (
                 success,
@@ -479,7 +519,14 @@ async def run_provider(api_base, provider_type, keys, models):
                 has_content,
                 sample_content,
                 sample_thinking,
-            ) = await benchmark_model(session, key, model, provider_type=provider_type, api_base=api_base, dead_keys=dead_keys)
+            ) = await benchmark_model(
+                session,
+                key,
+                model,
+                provider_type=provider_type,
+                api_base=api_base,
+                dead_keys=dead_keys,
+            )
 
             # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
             if status == -1:
@@ -526,13 +573,15 @@ async def run_provider(api_base, provider_type, keys, models):
                     "total_tasks": total_in_queue,
                     "completed_tasks": processed_count,
                     "dead_keys": list(dead_keys),
-                    "results": results
+                    "results": results,
                 }
                 with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
                     json.dump(ckpt_data, f, ensure_ascii=False)
                 if PAGES_URL and ADMIN_TOKEN:
-                    try: _pages_request("POST", "/api/checkpoint", ckpt_data)
-                    except: pass
+                    try:
+                        _pages_request("POST", "/api/checkpoint", ckpt_data)
+                    except:
+                        pass
                 tasks_done_since_ckpt = 0
 
             task_queue.task_done()
@@ -549,13 +598,15 @@ async def run_provider(api_base, provider_type, keys, models):
         "total_tasks": total_in_queue,
         "completed_tasks": processed_count,
         "dead_keys": list(dead_keys),
-        "results": results
+        "results": results,
     }
     with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
         json.dump(ckpt_data, f, ensure_ascii=False)
     if PAGES_URL and ADMIN_TOKEN:
-        try: _pages_request("POST", "/api/checkpoint", ckpt_data)
-        except: pass
+        try:
+            _pages_request("POST", "/api/checkpoint", ckpt_data)
+        except:
+            pass
 
     print("\n--- 并发测试结束，开始交叉验证(Cross-Key Validation) ---")
 
@@ -722,8 +773,6 @@ async def run_provider(api_base, provider_type, keys, models):
             print(f"[警告] 无法删除临时存档档: {e}")
 
 
-
-
 async def main():
     providers_to_run = []
 
@@ -735,26 +784,28 @@ async def main():
             providers = settings.get("providers", [])
             if not providers:
                 return print("[错误] 远端设定中没有任何服务商 (Providers)。")
-            
+
             for p in providers:
                 # 严格检查 enabled 字段
                 if not p["enabled"]:
-                    print(f"\n[跳过] 服务商 {p['provider_type']} | {p['api_base']} (已设定为停用)")
+                    print(
+                        f"\n[跳过] 服务商 {p['provider_type']} | {p['api_base']} (已设定为停用)"
+                    )
                     continue
-                
+
                 ab = p["api_base"].strip().rstrip("/")
                 pt = p["provider_type"]
                 rk = p["keys"]
                 rm = p["models"]
                 k_list = [line.strip() for line in rk.splitlines() if line.strip()]
                 m_list = [m.strip() for m in rm.split(",") if m.strip()]
-                
+
                 if not k_list or not m_list:
                     print(f"\n[跳过] 服务商 {pt} | {ab} (缺少 Key 或 Model)")
                     continue
-                
+
                 providers_to_run.append((ab, pt, k_list, m_list))
-                
+
         except Exception as e:
             return print(f"[错误] 无法从 Pages 读取设定: {e}")
     else:
@@ -765,21 +816,22 @@ async def main():
             keys = [line.strip() for line in f if line.strip()]
         with open(MODELS_FILE_PATH, "r", encoding="utf-8") as f:
             models = [m.strip() for m in f.read().split(",") if m.strip()]
-            
+
         if not keys or not models:
             return print("[错误] 本地 fallback 缺少 Key 或 Model。")
-            
+
         providers_to_run.append((API_BASE, PROVIDER_TYPE, keys, models))
 
     if not providers_to_run:
         return print("\n[结束] 没有需要执行的服务商。")
 
     print(f"\n总共将执行 {len(providers_to_run)} 个服务商测试。")
-    
+
     for ab, pt, k_list, m_list in providers_to_run:
         await run_provider(ab, pt, k_list, m_list)
-        
-    print(f"\n{'='*50}\n全部服务商测试执行完毕！\n{'='*50}")
+
+    print(f"\n{'=' * 50}\n全部服务商测试执行完毕！\n{'=' * 50}")
+
 
 if __name__ == "__main__":
     if sys.platform == "win32":
