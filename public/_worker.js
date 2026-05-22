@@ -145,6 +145,14 @@ async function handlePostSettings(request, env) {
   };
 
   await kv.put(SETTINGS_KEY, JSON.stringify(next));
+  // Best-effort cleanup for stale per-provider checkpoints after settings edits.
+  const providers = next.providers || [];
+  await Promise.allSettled(providers.map(async (p) => {
+    if (!p || typeof p.provider_type !== "string" || typeof p.api_base !== "string") return;
+    if (!p.provider_type.trim() || !p.api_base.trim()) return;
+    const fp = await providerFingerprint(p.provider_type.trim(), p.api_base.trim());
+    await kv.delete(`checkpoint:${fp}`);
+  }));
   return json({ ok: true });
 }
 

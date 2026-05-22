@@ -500,16 +500,16 @@ async function loadResults() {
       return { provider: p, fp, host, resultData, checkpointData };
     }));
 
-    const hasAny = bundles.some((b) => b.resultData.exists || b.checkpointData.exists);
+    const hasAny = bundles.some((b) => b.resultData.exists || hasUsableCheckpoint(b.resultData, b.checkpointData));
     if (!hasAny) {
       dom.resultsEmpty.classList.remove("hidden");
       return;
     }
 
-    // Sort: executing (has checkpoint) first
+    // Sort: executing (has usable checkpoint) first
     bundles.sort((a, b) => {
-      const aExec = a.checkpointData.exists ? 1 : 0;
-      const bExec = b.checkpointData.exists ? 1 : 0;
+      const aExec = hasUsableCheckpoint(a.resultData, a.checkpointData) ? 1 : 0;
+      const bExec = hasUsableCheckpoint(b.resultData, b.checkpointData) ? 1 : 0;
       return bExec - aExec;
     });
 
@@ -556,15 +556,14 @@ async function loadResults() {
 
 function renderProviderResult({ provider, host, resultData, checkpointData }) {
   const hasResult     = resultData.exists;
-  const hasCheckpoint = checkpointData.exists;
+  const hasCheckpoint = hasUsableCheckpoint(resultData, checkpointData);
   const r = hasResult ? resultData.results : null;
 
   const uploadedAt = r?.uploaded_at
     ? `上次更新：${new Date(r.uploaded_at).toLocaleString()}`
     : "";
 
-  // Only show checkpoint bar when no results exist yet (defense against stale checkpoint)
-  const checkpointHtml = (hasCheckpoint && !hasResult)
+  const checkpointHtml = hasCheckpoint
     ? renderCheckpointBar(checkpointData.checkpoint || checkpointData)
     : "";
 
@@ -591,6 +590,21 @@ function renderProviderResult({ provider, host, resultData, checkpointData }) {
       </div>
     </div>
   `;
+}
+
+function hasUsableCheckpoint(resultData, checkpointData) {
+  if (!checkpointData.exists) return false;
+  if (!resultData.exists) return true;
+
+  const r = resultData.results;
+  if (!r?.uploaded_at) return true;
+
+  const ck = checkpointData.checkpoint || checkpointData;
+  const ckTime = ck?.saved_at ? new Date(ck.saved_at).getTime() : 0;
+  const resTime = new Date(r.uploaded_at).getTime();
+  if (!Number.isFinite(resTime)) return true;
+  if (!Number.isFinite(ckTime) || ckTime <= 0) return false;
+  return ckTime >= resTime;
 }
 
 function renderCheckpointBar(ck) {
