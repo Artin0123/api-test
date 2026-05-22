@@ -14,6 +14,7 @@ async function getMock() {
 const state = {
   token: "",
   settings: null,
+  fpCache: new Map(), // api_base + provider_type -> sha256 fingerprint
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -481,7 +482,12 @@ async function loadResults() {
 
     // Fetch results + checkpoints per provider in parallel
     const bundles = await Promise.all(providers.map(async (p) => {
-      const fp = await sha256(fingerprintPayload(p));
+      const payload = fingerprintPayload(p);
+      let fp = state.fpCache.get(payload);
+      if (!fp) {
+        fp = await sha256(payload);
+        state.fpCache.set(payload, fp);
+      }
       const host = extractHost(p.api_base);
 
       let resultData = { exists: false };
@@ -514,10 +520,9 @@ async function loadResults() {
     });
 
     dom.resultsBody.innerHTML = bundles.map(renderProviderResult).join("");
-    // Seed line numbers in result copy blocks & bind scroll for live syncing
+    // Seed line numbers in result copy blocks
     dom.resultsBody.querySelectorAll(".result-lined-editor textarea").forEach(function(textarea) {
       syncLineNums(textarea);
-      textarea.addEventListener("scroll", function() { syncLineNums(textarea); });
     });
     // Keyboard support for result-group-header (click handled by delegation)
     dom.resultsBody.querySelectorAll(".result-group-header").forEach((h) => {
@@ -527,24 +532,17 @@ async function loadResults() {
     });
     // Bind inv-group toggles
     dom.resultsBody.querySelectorAll(".inv-group-header").forEach((h) => {
-      const toggle = () => {
+      const toggle = (e) => {
+        if (e && e.target.closest("button")) return;
         const g = h.closest(".inv-group");
         const open = g.classList.toggle("open");
         h.setAttribute("aria-expanded", String(open));
       };
       h.addEventListener("click", toggle);
       h.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(e); }
       });
     });
-    // Bind sample buttons
-    dom.resultsBody.querySelectorAll("[data-sample]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const payload = JSON.parse(btn.dataset.sample);
-        openSample(payload.model, payload.sample);
-      });
-    });
-
     dom.resultsBody.classList.remove("hidden");
   } catch (err) {
     dom.resultsError.textContent = `读取失败：${err.message}`;
@@ -686,7 +684,7 @@ function renderPerfTable(modelPerf) {
   const models = Object.keys(modelPerf).sort();
   if (!models.length) return `<p class="muted">（无数据）</p>`;
 
-  const rows = models.map((model) => {
+    const rows = models.map((model) => {
     const p = modelPerf[model];
     const ttft  = p.avg_ttft  != null ? `${p.avg_ttft}s`  : "-";
     const total = p.avg_total != null ? `${p.avg_total}s` : "-";
@@ -701,12 +699,12 @@ function renderPerfTable(modelPerf) {
       : `<span class="na">-</span>`;
 
     return `<tr>
-      <td><code>${esc(model)}</code></td>
-      <td>${p.sample_count ?? 0}</td>
-      <td class="na">${esc(ttft)}</td>
-      <td class="na">${esc(total)}</td>
-      <td>${toRate}</td>
-      <td class="na">${esc(thinkRatio)}</td>
+      <td data-value="${esc(model)}"><code>${esc(model)}</code></td>
+      <td data-value="${p.sample_count ?? -1}">${p.sample_count ?? 0}</td>
+      <td data-value="${p.avg_ttft ?? -1}" class="na">${esc(ttft)}</td>
+      <td data-value="${p.avg_total ?? -1}" class="na">${esc(total)}</td>
+      <td data-value="${p.timeout_rate ?? -1}">${toRate}</td>
+      <td data-value="${p.has_thinking_ratio ?? -1}" class="na">${esc(thinkRatio)}</td>
       <td>${sampleBtn}</td>
     </tr>`;
   }).join("");
@@ -715,8 +713,13 @@ function renderPerfTable(modelPerf) {
     <div class="table-scroll">
       <table class="data-table">
         <thead><tr>
-          <th>模型</th><th>成功数</th><th>avg TTFT</th>
-          <th>avg 总耗时</th><th>超时率</th><th>有思考</th><th>Sample</th>
+          <th data-sort="model">模型 <span class="sort-indicator"></span></th>
+          <th data-sort="sample_count">成功数 <span class="sort-indicator"></span></th>
+          <th data-sort="avg_ttft">avg TTFT <span class="sort-indicator"></span></th>
+          <th data-sort="avg_total">avg 总耗时 <span class="sort-indicator"></span></th>
+          <th data-sort="timeout_rate">超时率 <span class="sort-indicator"></span></th>
+          <th data-sort="has_thinking_ratio">有思考 <span class="sort-indicator"></span></th>
+          <th>Sample</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -745,10 +748,12 @@ function renderInvalidGroups(records) {
       </div>`;
     }).join("");
 
+    const keysToCopy = recs.map((rec) => rec.api_key).join("\n");
     return `<div class="inv-group">
       <div class="inv-group-header" tabindex="0" role="button" aria-expanded="false">
         <span class="inv-group-title">${esc(reason)}</span>
         <span class="badge badge-fail">${recs.length}</span>
+        <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(keysToCopy)}" type="button">一键复制</button>
         <span class="inv-group-toggle">▼</span>
       </div>
       <div class="inv-group-body">${items}</div>
@@ -853,6 +858,13 @@ function bindEvents() {
   // Results
   dom.refreshBtn.addEventListener("click", loadResults);
 
+  // Result body delegated scroll (capture phase — scroll doesn't bubble from textarea)
+  dom.resultsBody.addEventListener("scroll", (e) => {
+    if (e.target.tagName === "TEXTAREA" && e.target.closest(".result-lined-editor")) {
+      syncLineNums(e.target);
+    }
+  }, true);
+
   // Result group open — delegated
   dom.resultsBody.addEventListener("click", (e) => {
     const header = e.target.closest(".result-group-header");
@@ -863,8 +875,56 @@ function bindEvents() {
       const arrow = header.querySelector(".rgh-arrow");
       if (arrow) arrow.style.transform = open ? "rotate(180deg)" : "";
     }
+
+    const sortTh = e.target.closest("th[data-sort]");
+    if (sortTh) {
+      e.stopPropagation();
+      const table = sortTh.closest("table");
+      const tbody = table.querySelector("tbody");
+      const col = sortTh.dataset.sort;
+      const currentDir = sortTh.dataset.sortDir || "";
+      const newDir = currentDir === "asc" ? "desc" : "asc";
+
+      table.querySelectorAll("th[data-sort]").forEach((th) => {
+        delete th.dataset.sortDir;
+        const indicator = th.querySelector(".sort-indicator");
+        if (indicator) indicator.textContent = "";
+      });
+
+      sortTh.dataset.sortDir = newDir;
+      const indicator = sortTh.querySelector(".sort-indicator");
+      if (indicator) indicator.textContent = newDir === "asc" ? "▲" : "▼";
+
+      const rowsArr = Array.from(tbody.querySelectorAll("tr"));
+      const colIndex = Array.from(table.querySelectorAll("thead th")).indexOf(sortTh);
+
+      const isModel = col === "model";
+      const pairs = rowsArr.map((row) => {
+        const cell = row.children[colIndex];
+        const raw = cell.dataset.value !== undefined ? cell.dataset.value : cell.textContent.trim();
+        const val = isModel ? raw : (parseFloat(raw) || -Infinity);
+        return { row, val };
+      });
+
+      pairs.sort((a, b) => {
+        if (a.val < b.val) return newDir === "asc" ? -1 : 1;
+        if (a.val > b.val) return newDir === "asc" ? 1 : -1;
+        return 0;
+      });
+
+      const frag = document.createDocumentFragment();
+      pairs.forEach((p) => frag.appendChild(p.row));
+      tbody.appendChild(frag);
+    }
+
     const copyBtn = e.target.closest(".copy-btn");
     if (copyBtn) copyText(copyBtn.dataset.copyVal || "", copyBtn);
+
+    const sampleBtn = e.target.closest("[data-sample]");
+    if (sampleBtn) {
+      const payload = JSON.parse(sampleBtn.dataset.sample);
+      openSample(payload.model, payload.sample);
+    }
   });
 
   // Settings modal
