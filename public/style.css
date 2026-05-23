@@ -1123,6 +1123,7 @@ code {
     }
     .result-lined-editor {
         width: 100%;
+        flex: none;
     }
 
     /* Data table: horizontal scroll, smaller text */
