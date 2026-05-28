@@ -102,19 +102,60 @@ async function api(path, { method = "GET", auth = false, body } = {}) {
 }
 
 // ── Line numbers ──────────────────────────────────────────────────────────
+// Shared canvas for measuring text width (monospace → ceil(width/avail) = visual lines)
+let _measCanvas;
+let _measCtx;
+function _measureVisualLines(textarea, logicalLines) {
+  if (!_measCanvas) {
+    _measCanvas = document.createElement("canvas");
+    _measCtx = _measCanvas.getContext("2d");
+  }
+  const cs = getComputedStyle(textarea);
+  _measCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const padL = parseFloat(cs.paddingLeft) || 0;
+  const padR = parseFloat(cs.paddingRight) || 0;
+  const avail = Math.max(1, textarea.clientWidth - padL - padR);
+  const out = [];
+  for (const line of logicalLines) {
+    if (!line) {
+      out.push(1);
+      continue;
+    }
+    const w = _measCtx.measureText(line).width;
+    out.push(Math.max(1, Math.ceil(w / avail)));
+  }
+  return out;
+}
+
 function syncLineNums(textarea) {
   const editor = textarea.closest(".lined-editor");
   if (!editor) return;
   const nums = editor.querySelector(".line-nums");
   if (!nums) return;
-  const lines = textarea.value.split("\n").length;
-  nums.innerHTML = Array.from(
-    { length: lines },
-    (_, i) => `<span>${i + 1}</span>`,
-  ).join("");
-  // Use RAF so the browser lays out the new innerHTML before syncing scroll
+
+  const logicalLines = textarea.value.split("\n");
+  const visualCounts = _measureVisualLines(textarea, logicalLines);
+
+  // Build spans: one per visual line; only the first of each logical group gets a number
+  const spans = [];
+  let num = 1;
+  for (const vc of visualCounts) {
+    spans.push(`<span>${num}</span>`);
+    for (let i = 1; i < vc; i++) spans.push(`<span></span>`);
+    num++;
+  }
+  nums.innerHTML = spans.join("");
+
+  // Proportional scroll sync after layout
   requestAnimationFrame(() => {
-    nums.scrollTop = textarea.scrollTop;
+    const taMax = textarea.scrollHeight - textarea.clientHeight;
+    if (taMax <= 0) {
+      nums.scrollTop = 0;
+      return;
+    }
+    const ratio = textarea.scrollTop / taMax;
+    const numsMax = nums.scrollHeight - nums.clientHeight;
+    nums.scrollTop = ratio * Math.max(0, numsMax);
   });
 }
 
