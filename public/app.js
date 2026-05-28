@@ -67,6 +67,8 @@ const dom = {
   edApiBase: $("ed-api-base"),
   edKeys: $("ed-keys"),
   edModels: $("ed-models"),
+  edExtraBody: $("ed-extra-body"),
+  edExtraBodyStatus: $("ed-extra-body-status"),
 
   // app settings modal
   settingsOverlay: $("settings-overlay"),
@@ -457,6 +459,7 @@ function openEditor(index = -1) {
     dom.edApiBase.value = p.api_base || "";
     dom.edKeys.value = p.keys || "";
     dom.edModels.value = p.models || "";
+    dom.edExtraBody.value = p.extra_body || "";
   } else {
     dom.editorTitle.textContent = "新增服务商";
     dom.edEnabled.checked = true;
@@ -464,12 +467,16 @@ function openEditor(index = -1) {
     dom.edApiBase.value = "";
     dom.edKeys.value = "";
     dom.edModels.value = "";
+    dom.edExtraBody.value = "";
   }
+  dom.edExtraBodyStatus.textContent = "";
+  dom.edExtraBodyStatus.className = "json-status";
   dom.editorOverlay.classList.remove("hidden");
   dom.edApiBase.focus();
   // Sync line numbers after values are populated
   syncLineNums(dom.edKeys);
   syncLineNums(dom.edModels);
+  syncLineNums(dom.edExtraBody);
 }
 
 function closeEditor() {
@@ -484,6 +491,7 @@ async function saveEditor() {
   const keys = normalizeKeys(dom.edKeys.value);
   const models = normalizeModels(dom.edModels.value);
   const pType = dom.edProviderType.value;
+  const extraBodyRaw = dom.edExtraBody.value.trim();
 
   // Update UI immediately so the user sees the cleaned up data if they reopen
   dom.edKeys.value = keys;
@@ -503,6 +511,14 @@ async function saveEditor() {
     dom.editorError.textContent = "请填写至少一个模型名";
     return;
   }
+  if (extraBodyRaw) {
+    try {
+      JSON.parse(extraBodyRaw);
+    } catch {
+      dom.editorError.textContent = "Extra Body 不是有效的 JSON";
+      return;
+    }
+  }
 
   const entry = {
     enabled,
@@ -510,6 +526,7 @@ async function saveEditor() {
     api_base: apiBase,
     keys,
     models,
+    extra_body: extraBodyRaw,
   };
   const settings = state.settings || {};
   const providers = [...(settings.providers || [])];
@@ -1027,6 +1044,25 @@ function bindEvents() {
   // Line numbers
   bindLineNums(dom.edKeys);
   bindLineNums(dom.edModels);
+  bindLineNums(dom.edExtraBody);
+
+  // Extra Body JSON live validation
+  dom.edExtraBody.addEventListener("input", () => {
+    const val = dom.edExtraBody.value.trim();
+    if (!val) {
+      dom.edExtraBodyStatus.textContent = "";
+      dom.edExtraBodyStatus.className = "json-status";
+      return;
+    }
+    try {
+      JSON.parse(val);
+      dom.edExtraBodyStatus.textContent = "✓ 有效";
+      dom.edExtraBodyStatus.className = "json-status json-ok";
+    } catch {
+      dom.edExtraBodyStatus.textContent = "✗ 格式错误";
+      dom.edExtraBodyStatus.className = "json-status json-err";
+    }
+  });
 
   // Config
   dom.addProviderBtn.addEventListener("click", () => openEditor());

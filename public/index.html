@@ -162,6 +162,18 @@
           </div>
         </label>
 
+        <label class="field">
+          <span class="field-label">
+            Extra Body
+            <small class="muted">选填，JSON，键直接覆盖请求体同名键</small>
+            <span id="ed-extra-body-status" class="json-status" aria-live="polite"></span>
+          </span>
+          <div class="lined-editor lined-editor--wrap modal-editor-box modal-editor-box--sm">
+            <div class="line-nums" aria-hidden="true"></div>
+            <textarea id="ed-extra-body" class="input-textarea lined-textarea" spellcheck="false" placeholder='{"temperature": 0.7, "enable_thinking": true}'></textarea>
+          </div>
+        </label>
+
         <p id="editor-error" class="form-error" role="alert"></p>
       </div>
       <div class="modal-footer">

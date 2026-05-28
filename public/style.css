@@ -680,6 +680,16 @@ a:hover {
 .modal-editor-box {
     height: 12rem;
 }
+.modal-editor-box--sm {
+    height: 7rem;
+}
+.json-status {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    margin-left: .1rem;
+}
+.json-ok  { color: var(--ok); }
+.json-err { color: var(--fail); }
 .result-editor-box {
     height: 8rem;
 }

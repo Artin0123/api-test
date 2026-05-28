@@ -23,6 +23,7 @@ OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
 API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini', 'anthropic'
+EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例：'{"temperature": 0.7}'
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
@@ -90,34 +91,38 @@ def get_full_endpoint(api_base, provider_type, model):
     return base
 
 
-def build_payload(provider_type, model, stream):
+def build_payload(provider_type, model, stream, extra_body=None):
     if provider_type == "openai":
-        return {
+        payload = {
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
             "max_tokens": 512,
             "stream": stream,
         }
     elif provider_type == "ollama":
-        return {
+        payload = {
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
             "options": {"num_predict": 512},
             "stream": stream,
         }
     elif provider_type == "gemini":
-        return {
+        payload = {
             "contents": [{"role": "user", "parts": [{"text": PROMPT}]}],
             "generationConfig": {"maxOutputTokens": 512},
         }
     elif provider_type == "anthropic":
-        return {
+        payload = {
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
             "max_tokens": 512,
             "stream": stream,
         }
-    return {}
+    else:
+        payload = {}
+    if extra_body:
+        payload.update(extra_body)
+    return payload
 
 
 def extract_stream_chunk(line, provider_type):
@@ -247,7 +252,9 @@ async def parse_stream(response, provider_type, ttft_timeout=None):
     return first_chunk_time, has_content, has_thinking, sample_content, sample_thinking
 
 
-async def test_single_request(session, key, model, stream, provider_type, api_base):
+async def test_single_request(
+    session, key, model, stream, provider_type, api_base, extra_body=None
+):
     headers = {"Content-Type": "application/json", "User-Agent": "claude-code/2.1.152"}
     if provider_type == "gemini":
         headers["x-goog-api-key"] = key
@@ -257,7 +264,7 @@ async def test_single_request(session, key, model, stream, provider_type, api_ba
     else:
         headers["Authorization"] = f"Bearer {key}"
 
-    payload = build_payload(provider_type, model, stream)
+    payload = build_payload(provider_type, model, stream, extra_body)
     timeout = aiohttp.ClientTimeout(total=TOTAL_TIMEOUT)
 
     start_t = time.perf_counter()
@@ -361,7 +368,9 @@ async def test_single_request(session, key, model, stream, provider_type, api_ba
         return False, 500, str(e), None, None, False, False, "", ""
 
 
-async def benchmark_model(session, key, model, provider_type, api_base, dead_keys=None):
+async def benchmark_model(
+    session, key, model, provider_type, api_base, dead_keys=None, extra_body=None
+):
     # 在发起请求前，再次检查当前 Key 是否已断状态
     # 应对并发情况：可能有 worker 已处理断点，此协程才刚被调度执行
     if dead_keys is not None and key in dead_keys:
@@ -385,6 +394,7 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
             stream=stream,
             provider_type=provider_type,
             api_base=api_base,
+            extra_body=extra_body,
         )
 
     # 1. 优先尝试流式 (第一次测试)
@@ -482,7 +492,7 @@ async def benchmark_model(session, key, model, provider_type, api_base, dead_key
         return False, status, err, None, None, False, False, "", ""
 
 
-async def run_provider(api_base, provider_type, keys, models):
+async def run_provider(api_base, provider_type, keys, models, extra_body=None):
     global_start_time = time.perf_counter()
     print(f"\n{'=' * 50}")
     print(f"▶ 开始测试服务商: {provider_type} | {api_base}")
@@ -565,6 +575,7 @@ async def run_provider(api_base, provider_type, keys, models):
                 provider_type=provider_type,
                 api_base=api_base,
                 dead_keys=dead_keys,
+                extra_body=extra_body,
             )
 
             # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
@@ -843,7 +854,16 @@ async def main():
                     print(f"\n[跳过] 服务商 {pt} | {ab} (缺少 Key 或 Model)")
                     continue
 
-                providers_to_run.append((ab, pt, k_list, m_list))
+                eb_raw = p.get("extra_body", "").strip()
+                extra_body = {}
+                if eb_raw:
+                    try:
+                        extra_body = json.loads(eb_raw)
+                    except json.JSONDecodeError:
+                        print(
+                            f"[警告] 服务商 {pt} | {ab} 的 extra_body 不是有效 JSON，已忽略"
+                        )
+                providers_to_run.append((ab, pt, k_list, m_list, extra_body))
 
         except Exception as e:
             return print(f"[错误] 无法从 Pages 读取设定: {e}")
@@ -859,15 +879,21 @@ async def main():
         if not keys or not models:
             return print("[错误] 本地 fallback 缺少 Key 或 Model。")
 
-        providers_to_run.append((API_BASE, PROVIDER_TYPE, keys, models))
+        local_extra = {}
+        if EXTRA_BODY_JSON.strip():
+            try:
+                local_extra = json.loads(EXTRA_BODY_JSON)
+            except json.JSONDecodeError:
+                return print("[错误] EXTRA_BODY_JSON 不是有效的 JSON，请检查配置")
+        providers_to_run.append((API_BASE, PROVIDER_TYPE, keys, models, local_extra))
 
     if not providers_to_run:
         return print("\n[结束] 没有需要执行的服务商。")
 
     print(f"\n总共将执行 {len(providers_to_run)} 个服务商测试。")
 
-    for ab, pt, k_list, m_list in providers_to_run:
-        await run_provider(ab, pt, k_list, m_list)
+    for ab, pt, k_list, m_list, extra_body in providers_to_run:
+        await run_provider(ab, pt, k_list, m_list, extra_body)
 
     print(f"\n{'=' * 50}\n全部服务商测试执行完毕！\n{'=' * 50}")
 
