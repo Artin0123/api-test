@@ -1,6 +1,6 @@
 # /// script
 # dependencies = [
-#   "httpx",
+#   "aiohttp",
 # ]
 # ///
 
@@ -9,26 +9,36 @@ import json
 import os
 import time
 
-import httpx
+import aiohttp
 
 # ==================== 【请在这里设置】 ====================
-MY_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+MY_BASE_URL = "https://api.minimax.io/v1"
 
 # Key 文件路径：每行可以是 "url,key" 或 "key"（使用默认 URL）
-KEYS_FILE = "keys.txt"
+KEYS_FILE = "valid_keys\\MiniMax (Int).txt"
 
 # 模型文件路径：包含逗号分隔的模型名，如 "qwen-plus,qwen-turbo"
-MODELS_FILE = "models.txt"
+MODELS_FILE = "local_test\\available_models.txt"
 
 # 额外参数（可选）：JSON 字符串，会合并到请求 body 顶层
-EXTRA_BODY_JSON = '{"enable_thinking": true}'
+EXTRA_BODY_JSON = ""
+
+# 输出：可用模型列表（逗号分隔）
+OUTPUT_MODELS_FILE = "available_models.txt"
 
 TIMEOUT_SECONDS = 30
-CONCURRENCY = 40           # 同时并发请求数
+CONCURRENCY = 40  # 同时并发请求数
 # ========================================================
 
 
-async def test_key(client: httpx.AsyncClient, base_url, api_key, model, extra_body=None, collect_content=True):
+async def test_key(
+    session: aiohttp.ClientSession,
+    base_url,
+    api_key,
+    model,
+    extra_body=None,
+    collect_content=True,
+):
     extra_body = extra_body or {}
 
     # 首次采集内容时给稍多 token，否则只做连通性检查
@@ -44,9 +54,15 @@ async def test_key(client: httpx.AsyncClient, base_url, api_key, model, extra_bo
     body.update(extra_body)
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "User-Agent": "claude-code/2.1.152",
     }
+    if "generativelanguage.googleapis.com" in base_url:
+        headers["x-goog-api-key"] = api_key
+    else:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    timeout = aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)
 
     start_time = time.perf_counter()
     ttft = None
@@ -54,18 +70,18 @@ async def test_key(client: httpx.AsyncClient, base_url, api_key, model, extra_bo
     answer_content = ""
 
     try:
-        async with client.stream(
-            "POST",
+        async with session.post(
             f"{base_url}/chat/completions",
             headers=headers,
             json=body,
-            timeout=TIMEOUT_SECONDS,
+            timeout=timeout,
         ) as response:
-            if response.status_code != 200:
-                text = await response.aread()
-                return False, f"HTTP {response.status_code}", "", ""
+            if response.status != 200:
+                text = await response.read()
+                return False, f"HTTP {response.status}", "", ""
 
-            async for line in response.aiter_lines():
+            async for line_bytes in response.content:
+                line = line_bytes.decode("utf-8").strip()
                 if not line.startswith("data: "):
                     continue
 
@@ -164,7 +180,11 @@ async def main():
 
         async with semaphore:
             success, msg, answer, reasoning = await test_key(
-                client, item["url"], item["key"], model, extra_body,
+                session,
+                item["url"],
+                item["key"],
+                model,
+                extra_body,
                 collect_content=not already_have,
             )
 
@@ -190,7 +210,7 @@ async def main():
         for model in models:
             tasks.append(run_one(item, model, i))
 
-    async with httpx.AsyncClient() as client:
+    async with aiohttp.ClientSession() as session:
         await asyncio.gather(*tasks)
 
     total_tests = len(tasks)
@@ -199,8 +219,14 @@ async def main():
     with open("model_outputs.json", "w", encoding="utf-8") as f:
         json.dump(model_outputs, f, ensure_ascii=False, indent=2)
 
+    # 保存可用模型列表（逗号分隔）
+    available_models = ",".join(model_outputs.keys())
+    with open(OUTPUT_MODELS_FILE, "w", encoding="utf-8") as f:
+        f.write(available_models)
+
     print(f"\n--- 完成 | 成功: {valid_count}/{total_tests} ---")
     print(f"📄 已保存: model_outputs.json (共 {len(model_outputs)} 个模型)")
+    print(f"📄 已保存: {OUTPUT_MODELS_FILE}")
 
 
 if __name__ == "__main__":

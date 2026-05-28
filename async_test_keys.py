@@ -56,7 +56,7 @@ def _pages_request(method: str, path: str, body=None):
     headers = {
         "Authorization": f"Bearer {ADMIN_TOKEN}",
         "Content-Type": "application/json",
-        "User-Agent": "async-test-keys/2.0",
+        "User-Agent": "claude-code/2.1.152",
     }
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
@@ -223,7 +223,7 @@ async def parse_stream(response, provider_type, ttft_timeout=None):
 
 
 async def test_single_request(session, key, model, stream, provider_type, api_base):
-    headers = {"Content-Type": "application/json", "User-Agent": "async-tester/1.0"}
+    headers = {"Content-Type": "application/json", "User-Agent": "claude-code/2.1.152"}
     if provider_type == "gemini":
         headers["x-goog-api-key"] = key
     else:

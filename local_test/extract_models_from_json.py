@@ -1,9 +1,13 @@
 import json
 import sys
 
-# 默认读取 model_outputs.json，也可通过命令行参数指定
-input_file = sys.argv[1] if len(sys.argv) > 1 else "model_outputs.json"
-output_file = sys.argv[2] if len(sys.argv) > 2 else "available_models.txt"
+# ========== 設定路徑 ==========
+INPUT_FILE = "local_test\\response.json"
+OUTPUT_FILE = "local_test\\available_models.txt"
+# =============================
+
+input_file = INPUT_FILE
+output_file = OUTPUT_FILE
 
 try:
     with open(input_file, "r", encoding="utf-8") as f:
@@ -16,7 +20,15 @@ except json.JSONDecodeError as e:
     sys.exit(1)
 
 # 提取所有模型名稱（保持原始順序）
-models = list(data.keys())
+if "data" not in data:
+    print("❌ JSON 中缺少 'data' 鍵")
+    sys.exit(1)
+
+models = [
+    item.get("id") for item in data["data"] if isinstance(item, dict) and "id" in item
+]
+# 過濾掉 None 值（如果有的話）
+models = [m for m in models if m is not None]
 
 if not models:
     print("⚠️ 文件中沒有模型")

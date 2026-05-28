@@ -647,8 +647,12 @@ a:hover {
     line-height: 1.7;
     color: var(--text-muted);
     user-select: none;
-    overflow: hidden;
+    overflow-y: auto;
+    scrollbar-width: none;
     min-height: 0;
+}
+.line-nums::-webkit-scrollbar {
+    display: none;
 }
 .line-nums span {
     display: block;
