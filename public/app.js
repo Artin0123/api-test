@@ -102,29 +102,44 @@ async function api(path, { method = "GET", auth = false, body } = {}) {
 }
 
 // ── Line numbers ──────────────────────────────────────────────────────────
-// Shared canvas for measuring text width (monospace → ceil(width/avail) = visual lines)
-let _measCanvas;
-let _measCtx;
+// Hidden mirror div used to measure how many visual lines each logical line
+// takes up. All text-rendering properties are copied from the source textarea
+// on each call so the mirror matches the actual wrapping behaviour exactly.
+let _mirror;
+function _ensureMirror() {
+  if (_mirror) return;
+  _mirror = document.createElement('div');
+  _mirror.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;top:0;left:0;' +
+    'box-sizing:content-box;padding:0;margin:0;border:none;';
+  document.body.appendChild(_mirror);
+}
 function _measureVisualLines(textarea, logicalLines) {
-  if (!_measCanvas) {
-    _measCanvas = document.createElement("canvas");
-    _measCtx = _measCanvas.getContext("2d");
-  }
+  _ensureMirror();
   const cs = getComputedStyle(textarea);
-  _measCtx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  // Copy all properties that affect line-wrapping from the source textarea.
+  // font shorthand covers font-family, font-size, etc.; set lineHeight after
+  // because the font shorthand resets it to 'normal' when omitted.
+  _mirror.style.font = cs.font;
+  _mirror.style.lineHeight = cs.lineHeight;
+  _mirror.style.letterSpacing = cs.letterSpacing;
+  _mirror.style.whiteSpace = cs.whiteSpace;
+  _mirror.style.overflowWrap = cs.overflowWrap;
+  _mirror.style.wordBreak = cs.wordBreak;
+  // Content width = textarea clientWidth minus its horizontal padding
   const padL = parseFloat(cs.paddingLeft) || 0;
   const padR = parseFloat(cs.paddingRight) || 0;
   const avail = Math.max(1, textarea.clientWidth - padL - padR);
-  const out = [];
-  for (const line of logicalLines) {
-    if (!line) {
-      out.push(1);
-      continue;
-    }
-    const w = _measCtx.measureText(line).width;
-    out.push(Math.max(1, Math.ceil(w / avail)));
-  }
-  return out;
+  _mirror.style.width = avail + 'px';
+  // Measure single-line height with a reference character
+  _mirror.textContent = 'X';
+  const oneLineH = _mirror.scrollHeight;
+  if (oneLineH <= 0) return logicalLines.map(() => 1);
+  // Measure visual lines per logical line
+  return logicalLines.map(line => {
+    _mirror.textContent = line || '\u00A0';
+    return Math.max(1, Math.round(_mirror.scrollHeight / oneLineH));
+  });
 }
 
 function syncLineNums(textarea) {

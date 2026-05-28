@@ -22,7 +22,7 @@ MODELS_FILE_PATH = r"models_list\models.txt"
 OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
 API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini'
+PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini', 'anthropic'
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
@@ -85,6 +85,8 @@ def get_full_endpoint(api_base, provider_type, model):
         return f"{base}/api/chat"
     elif provider_type == "gemini":
         return f"{base}/models/{model}:streamGenerateContent?alt=sse"
+    elif provider_type == "anthropic":
+        return f"{base}/messages"
     return base
 
 
@@ -108,6 +110,13 @@ def build_payload(provider_type, model, stream):
             "contents": [{"role": "user", "parts": [{"text": PROMPT}]}],
             "generationConfig": {"maxOutputTokens": 512},
         }
+    elif provider_type == "anthropic":
+        return {
+            "model": model,
+            "messages": [{"role": "user", "content": PROMPT}],
+            "max_tokens": 512,
+            "stream": stream,
+        }
     return {}
 
 
@@ -117,7 +126,7 @@ def extract_stream_chunk(line, provider_type):
     content_parts = []
     thinking_parts = []
 
-    if provider_type in ("openai", "gemini"):
+    if provider_type in ("openai", "gemini", "anthropic"):
         if not line.startswith("data:"):
             return False, False, [], []
         line = line[5:].strip()
@@ -169,6 +178,22 @@ def extract_stream_chunk(line, provider_type):
                 elif text:
                     has_content = True
                     content_parts.append(text)
+
+    elif provider_type == "anthropic":
+        # Anthropic SSE: data lines carry {"type": "content_block_delta", "delta": {...}}
+        if data.get("type") == "content_block_delta":
+            delta = data.get("delta", {})
+            dt = delta.get("type", "")
+            if dt == "text_delta":
+                text = delta.get("text") or ""
+                if text:
+                    has_content = True
+                    content_parts.append(text)
+            elif dt == "thinking_delta":
+                thinking = delta.get("thinking") or ""
+                if thinking:
+                    has_thinking = True
+                    thinking_parts.append(thinking)
 
     return has_content, has_thinking, content_parts, thinking_parts
 
@@ -226,6 +251,9 @@ async def test_single_request(session, key, model, stream, provider_type, api_ba
     headers = {"Content-Type": "application/json", "User-Agent": "claude-code/2.1.152"}
     if provider_type == "gemini":
         headers["x-goog-api-key"] = key
+    elif provider_type == "anthropic":
+        headers["x-api-key"] = key
+        headers["anthropic-version"] = "2023-06-01"
     else:
         headers["Authorization"] = f"Bearer {key}"
 
@@ -295,6 +323,17 @@ async def test_single_request(session, key, model, stream, provider_type, api_ba
                                 elif text:
                                     sample_content += text
                                     has_content = True
+                        sample_content = sample_content.strip()
+                        sample_thinking = sample_thinking.strip()
+                    elif provider_type == "anthropic":
+                        # Non-stream: {"content": [{"type": "text", "text": "..."}, ...]}
+                        for block in data.get("content", []):
+                            if block.get("type") == "text":
+                                sample_content += block.get("text") or ""
+                                has_content = True
+                            elif block.get("type") == "thinking":
+                                sample_thinking += block.get("thinking") or ""
+                                has_thinking = True
                         sample_content = sample_content.strip()
                         sample_thinking = sample_thinking.strip()
                 except:

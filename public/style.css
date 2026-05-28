@@ -658,6 +658,7 @@ a:hover {
     display: block;
     padding-right: 0.4rem;
     color: var(--line-num);
+    min-height: 1.7em; /* matches .line-nums line-height; ensures empty wrap spans take up space */
 }
 .lined-textarea {
     flex: 1;

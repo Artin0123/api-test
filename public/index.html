@@ -130,13 +130,14 @@
             Provider Type
             <span class="info-icon" tabindex="0">
               <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-              <span class="info-tooltip">系统会自动补全以下后缀：<br>OpenAI: <code>/chat/completions</code><br>Gemini: <code>/models/{model}:streamGenerateContent</code><br>Ollama: <code>/api/chat</code></span>
+              <span class="info-tooltip">系统会自动补全以下后缀：<br>OpenAI: <code>/chat/completions</code><br>Gemini: <code>/models/{model}:streamGenerateContent</code><br>Ollama: <code>/api/chat</code><br>Anthropic: <code>/messages</code></span>
             </span>
           </span>
           <select id="ed-provider-type" class="input-select">
             <option value="openai">openai</option>
             <option value="ollama">ollama</option>
             <option value="gemini">gemini</option>
+            <option value="anthropic">anthropic</option>
           </select>
         </label>
 
