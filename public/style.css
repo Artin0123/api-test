@@ -686,10 +686,14 @@ a:hover {
 .json-status {
     font-size: var(--text-xs);
     font-weight: 600;
-    margin-left: .1rem;
+    margin-left: 0.1rem;
 }
-.json-ok  { color: var(--ok); }
-.json-err { color: var(--fail); }
+.json-ok {
+    color: var(--ok);
+}
+.json-err {
+    color: var(--fail);
+}
 .result-editor-box {
     height: 8rem;
 }
@@ -755,6 +759,7 @@ a:hover {
     align-items: center;
     justify-content: center;
     padding: 1.25rem;
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
 }
 .modal-backdrop {
     position: absolute;
@@ -1150,24 +1155,27 @@ code {
         padding: 0.5rem 0.65rem;
     }
 
-    /* Modals: center with padding, max height */
+    /* Modals: generous padding to avoid keyboard & browser chrome occlusion */
     .modal-panel,
     .modal-panel--wide {
         width: 100%;
         border-radius: var(--radius);
         align-self: center;
-        max-height: 85vh;
+        max-height: calc(100dvh - 4rem);
+        max-height: calc(100vh - 4rem); /* fallback for browsers w/o dvh */
     }
     .modal-overlay {
         align-items: center;
         justify-content: center;
-        padding: 1rem;
+        padding: 2rem 1rem;
+        padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
     }
     .modal-body {
         padding: 1.25rem;
     }
     .modal-footer {
         padding: 0.85rem 1.25rem;
+        padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
     }
 
     /* Auth card */
