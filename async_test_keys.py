@@ -322,7 +322,7 @@ async def test_single_request(
                             or (msg.get("reasoning") or "")
                             or (msg.get("thinking") or "")
                         )
-                        _, xml_think = extract_think_xml(sample_content)
+                        sample_content, xml_think = extract_think_xml(sample_content)
                         sample_thinking = (reasoning or xml_think).strip()
                         has_thinking = bool(sample_thinking)
                         has_content = bool(sample_content)
@@ -688,7 +688,6 @@ async def run_provider(
             "ttft": [],
             "total": [],
             "thinking_count": 0,  # 有思考的成功请求数
-            "thinking_only": 0,  # 有思考但无正文的请求数
             "sample": None,  # 第一次成功时的样本（只存一次）
         }
     )
@@ -713,11 +712,6 @@ async def run_provider(
                         "thinking": r.get("sample_thinking", ""),
                         "content": r.get("sample_content", ""),
                     }
-            else:
-                # 有思考但无正文（HTTP 200 但 has_content=False）
-                # 注：旧 checkpoint 无 has_thinking/has_content 字段时，get() 返回 None，不会崩但会漏计
-                if r.get("has_thinking") and not r.get("has_content"):
-                    model_perf[m]["thinking_only"] += 1
 
     invalid_output = []
 
@@ -773,12 +767,10 @@ async def run_provider(
         total_list = perf["total"]
         sample_count = len(total_list)
         thinking_count = perf["thinking_count"]
-        thinking_only = perf["thinking_only"]
         timeouts = model_timeout_stats[m]
         total_tested = model_test_counts[m]
         model_stats[m] = {
             "sample_count": sample_count,
-            "thinking_only_count": thinking_only,
             "content_ever_seen": sample_count > 0,
             "has_thinking_ratio": round(thinking_count / sample_count, 3)
             if sample_count
@@ -851,7 +843,7 @@ async def main():
 
             for p in providers:
                 # 严格检查 enabled 字段
-                if not p["enabled"]:
+                if not p.get("enabled", True):
                     print(
                         f"\n[跳过] 服务商 {p['provider_type']} | {p['api_base']} (已设定为停用)"
                     )

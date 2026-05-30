@@ -162,13 +162,31 @@
                                 管理各 API 服务商的 Keys 和 Models。
                             </p>
                         </div>
-                        <button
-                            id="add-provider-btn"
-                            class="btn btn-primary"
-                            type="button"
-                        >
-                            新增服务商
-                        </button>
+                        <div class="panel-head-actions">
+                            <button
+                                id="bulk-enable-btn"
+                                class="btn btn-secondary"
+                                type="button"
+                                disabled
+                            >
+                                启用选中
+                            </button>
+                            <button
+                                id="bulk-disable-btn"
+                                class="btn btn-ghost"
+                                type="button"
+                                disabled
+                            >
+                                停用选中
+                            </button>
+                            <button
+                                id="add-provider-btn"
+                                class="btn btn-primary"
+                                type="button"
+                            >
+                                新增服务商
+                            </button>
+                        </div>
                     </div>
 
                     <div id="config-loading" class="state-card">
@@ -241,31 +259,6 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="editor-index" value="-1" />
-
-                    <label
-                        class="field"
-                        style="
-                            flex-direction: row;
-                            align-items: center;
-                            gap: 0.5rem;
-                        "
-                    >
-                        <input
-                            type="checkbox"
-                            id="ed-enabled"
-                            checked
-                            style="
-                                width: 1.1rem;
-                                height: 1.1rem;
-                                cursor: pointer;
-                            "
-                        />
-                        <span
-                            class="field-label"
-                            style="margin: 0; cursor: pointer"
-                            >启用此服务商</span
-                        >
-                    </label>
 
                     <label class="field">
                         <span class="field-label">

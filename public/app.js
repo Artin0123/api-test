@@ -15,6 +15,7 @@ const state = {
   token: "",
   settings: null,
   fpCache: new Map(), // api_base + provider_type -> sha256 fingerprint
+  selectedProviders: new Set(), // indices of currently selected provider cards
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -44,12 +45,13 @@ const dom = {
   providerGrid: $("provider-grid"),
   providerEmpty: $("provider-empty"),
   addProviderBtn: $("add-provider-btn"),
+  bulkEnableBtn: $("bulk-enable-btn"),
+  bulkDisableBtn: $("bulk-disable-btn"),
   configSaveError: $("config-save-error"),
   configSaveOk: $("config-save-ok"),
 
   // results tab
   refreshBtn: $("refresh-results-btn"),
-  resultsTs: $("results-timestamp"),
   resultsLoading: $("results-loading"),
   resultsError: $("results-error"),
   resultsEmpty: $("results-empty"),
@@ -59,7 +61,6 @@ const dom = {
   editorOverlay: $("editor-overlay"),
   editorTitle: $("editor-title"),
   editorIndex: $("editor-index"),
-  edEnabled: $("ed-enabled"),
   editorSave: $("editor-save-btn"),
   editorCancel: $("editor-cancel-btn"),
   editorError: $("editor-error"),
@@ -386,11 +387,18 @@ async function loadConfig() {
   }
 }
 
+function updateBulkBtnState() {
+  const has = state.selectedProviders.size > 0;
+  dom.bulkEnableBtn.disabled = !has;
+  dom.bulkDisableBtn.disabled = !has;
+}
+
 function renderProviderGrid() {
   const providers = (state.settings || {}).providers || [];
   if (!providers.length) {
     dom.providerEmpty.classList.remove("hidden");
     dom.providerGrid.classList.add("hidden");
+    updateBulkBtnState();
     return;
   }
   dom.providerGrid.innerHTML = providers
@@ -411,6 +419,14 @@ function renderProviderGrid() {
         deleteProvider(Number(btn.dataset.delete)),
       ),
     );
+  dom.providerGrid
+    .querySelectorAll("[data-select]")
+    .forEach((cb) =>
+      cb.addEventListener("change", () =>
+        toggleSelection(Number(cb.dataset.select)),
+      ),
+    );
+  updateBulkBtnState();
 }
 
 function renderProviderCard(p, index) {
@@ -418,27 +434,24 @@ function renderProviderCard(p, index) {
   const keyCount = (p.keys || "").split("\n").filter((l) => l.trim()).length;
   const modelCount = (p.models || "").split(",").filter((m) => m.trim()).length;
   const isEnabled = p.enabled !== false;
-  const opacityStyle = isEnabled
-    ? ""
-    : 'style="opacity: 0.5; filter: grayscale(1);"';
-  const badgeStyle = isEnabled ? "" : "badge-warn";
-  const badgeText = isEnabled ? esc(p.provider_type) : "已停用";
+  const isSelected = state.selectedProviders.has(index);
 
   return `
-    <div class="provider-card" ${opacityStyle}>
+    <div class="provider-card${isEnabled ? "" : " provider-card--disabled"}${isSelected ? " provider-card--selected" : ""}" data-card="${index}">
       <div class="provider-card-header">
+        <label class="provider-card-select" title="选中以批量操作">
+          <input type="checkbox" data-select="${index}"${isSelected ? " checked" : ""} />
+        </label>
         <div style="flex:1;min-width:0">
-          <div style="margin-bottom:.35rem">
-            <span class="badge ${badgeStyle}">${badgeText}</span>
-            ${!isEnabled ? `<span class="badge" style="margin-left:.2rem">${esc(p.provider_type)}</span>` : ""}
-          </div>
-          <div class="provider-card-host" title="${esc(p.api_base)}">${esc(host)}</div>
+          <span class="badge${isEnabled ? "" : " badge-warn"}">${isEnabled ? esc(p.provider_type) : "已停用"}</span>
+          ${!isEnabled ? `<span class="badge" style="margin-left:.25rem">${esc(p.provider_type)}</span>` : ""}
         </div>
         <div class="provider-card-actions">
           <button class="btn btn-secondary btn-sm" data-edit="${index}" type="button">编辑</button>
           <button class="btn btn-danger btn-sm" data-delete="${index}" type="button">删除</button>
         </div>
       </div>
+      <div class="provider-card-host" title="${escAttr(p.api_base)}">${esc(host)}</div>
       <div class="provider-card-meta">
         <span><strong>${keyCount}</strong> 个 Key</span>
         <span><strong>${modelCount}</strong> 个模型</span>
@@ -456,7 +469,6 @@ function openEditor(index = -1) {
   if (index >= 0) {
     const p = ((state.settings || {}).providers || [])[index] || {};
     dom.editorTitle.textContent = "编辑服务商";
-    dom.edEnabled.checked = p.enabled !== false; // default true
     dom.edProviderType.value = p.provider_type || "openai";
     dom.edApiBase.value = p.api_base || "";
     dom.edKeys.value = p.keys || "";
@@ -466,7 +478,6 @@ function openEditor(index = -1) {
       p.max_concurrency != null ? String(p.max_concurrency) : "";
   } else {
     dom.editorTitle.textContent = "新增服务商";
-    dom.edEnabled.checked = true;
     dom.edProviderType.value = "openai";
     dom.edApiBase.value = "";
     dom.edKeys.value = "";
@@ -491,7 +502,9 @@ function closeEditor() {
 async function saveEditor() {
   dom.editorError.textContent = "";
   const index = Number(dom.editorIndex.value);
-  const enabled = dom.edEnabled.checked;
+  const existingProviders = (state.settings || {}).providers || [];
+  const enabled =
+    index >= 0 ? existingProviders[index]?.enabled !== false : true;
   const apiBase = dom.edApiBase.value.trim().replace(/\/+$/, "");
   const keys = normalizeKeys(dom.edKeys.value);
   const models = normalizeModels(dom.edModels.value);
@@ -593,6 +606,45 @@ async function deleteProvider(index) {
       });
     }
     state.settings = { ...settings, providers };
+    state.selectedProviders.clear();
+    renderProviderGrid();
+  } catch (err) {
+    dom.configSaveError.textContent = err.message;
+  }
+}
+
+function toggleSelection(index) {
+  if (state.selectedProviders.has(index)) {
+    state.selectedProviders.delete(index);
+  } else {
+    state.selectedProviders.add(index);
+  }
+  // Update card class in-place to avoid full re-render
+  const card = dom.providerGrid.querySelector(`[data-card="${index}"]`);
+  if (card)
+    card.classList.toggle(
+      "provider-card--selected",
+      state.selectedProviders.has(index),
+    );
+  updateBulkBtnState();
+}
+
+async function bulkToggle(enable) {
+  if (state.selectedProviders.size === 0) return;
+  const settings = state.settings || {};
+  const providers = (settings.providers || []).map((p, i) =>
+    state.selectedProviders.has(i) ? { ...p, enabled: enable } : p,
+  );
+  try {
+    if (!MOCK) {
+      await api("/api/settings", {
+        method: "POST",
+        auth: true,
+        body: { ...settings, providers },
+      });
+    }
+    state.settings = { ...settings, providers };
+    state.selectedProviders.clear();
     renderProviderGrid();
   } catch (err) {
     dom.configSaveError.textContent = err.message;
@@ -871,11 +923,11 @@ function renderPerfTable(modelPerf) {
 
       return `<tr>
       <td data-value="${esc(model)}"><code>${esc(model)}</code></td>
-      <td data-value="${p.sample_count ?? -1}">${p.sample_count ?? 0}</td>
-      <td data-value="${p.avg_ttft ?? -1}" class="na">${esc(ttft)}</td>
-      <td data-value="${p.avg_total ?? -1}" class="na">${esc(total)}</td>
-      <td data-value="${p.timeout_rate ?? -1}">${toRate}</td>
-      <td data-value="${p.has_thinking_ratio ?? -1}" class="na">${esc(thinkRatio)}</td>
+      <td data-value="${p.sample_count ?? ""}">${p.sample_count ?? 0}</td>
+      <td data-value="${p.avg_ttft ?? ""}" class="na">${esc(ttft)}</td>
+      <td data-value="${p.avg_total ?? ""}" class="na">${esc(total)}</td>
+      <td data-value="${p.timeout_rate ?? ""}">${toRate}</td>
+      <td data-value="${p.has_thinking_ratio ?? ""}" class="na">${esc(thinkRatio)}</td>
       <td>${sampleBtn}</td>
     </tr>`;
     })
@@ -1083,6 +1135,8 @@ function bindEvents() {
 
   // Config
   dom.addProviderBtn.addEventListener("click", () => openEditor());
+  dom.bulkEnableBtn.addEventListener("click", () => bulkToggle(true));
+  dom.bulkDisableBtn.addEventListener("click", () => bulkToggle(false));
   dom.editorSave.addEventListener("click", saveEditor);
   dom.editorCancel.addEventListener("click", closeEditor);
   dom.editorOverlay.addEventListener("click", (e) => {
@@ -1148,7 +1202,8 @@ function bindEvents() {
           cell.dataset.value !== undefined
             ? cell.dataset.value
             : cell.textContent.trim();
-        const val = isModel ? raw : parseFloat(raw) || -Infinity;
+        const parsed = parseFloat(raw);
+        const val = isModel ? raw : isNaN(parsed) ? -Infinity : parsed;
         return { row, val };
       });
 
