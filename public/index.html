@@ -1,232 +1,519 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-TW" data-theme="dark">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>API Key Tester</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E">
-  <script>
-    (() => {
-      // Apply saved theme before paint to avoid flash
-      try {
-        const saved = localStorage.getItem('atk_theme');
-        const theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-        document.documentElement.setAttribute('data-theme', theme);
-        if (localStorage.getItem('atk_token')) {
-          document.documentElement.classList.add('has-token');
-        }
-      } catch {}
-    })();
-  </script>
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-
-  <!-- Auth overlay -->
-  <div id="auth-overlay" class="auth-overlay active">
-    <section class="auth-card">
-      <div>
-        <h1>API Key Tester</h1>
-        <p class="muted">输入管理密码以继续。</p>
-      </div>
-      <div class="auth-row">
-        <input type="password" id="auth-input" class="input-text" placeholder="ADMIN_PASSWORD" autocomplete="current-password">
-        <button id="auth-btn" class="btn btn-primary" type="button">登入</button>
-      </div>
-      <p id="auth-error" class="form-error" role="alert"></p>
-    </section>
-  </div>
-
-  <!-- Main app -->
-  <div id="app" class="app">
-
-    <!-- Topbar -->
-    <header class="topbar">
-      <div class="topbar-left">
-        <h1>API Key Tester</h1>
-      </div>
-      <button id="mobile-menu-btn" class="mobile-menu-btn" type="button" aria-label="Menu" aria-expanded="false">
-        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-      </button>
-      <div id="topbar-menu-backdrop" class="topbar-menu-backdrop hidden-desktop"></div>
-      <div id="topbar-menu" class="topbar-menu">
-        <div class="topbar-menu-header hidden-desktop">
-          <span style="font-weight:600">选单</span>
-          <button id="mobile-menu-close" class="btn-ghost btn-sm" style="border:none;padding:.2rem;" type="button">关闭</button>
-        </div>
-        <nav class="tabs">
-          <button class="tab-btn active" data-tab="config" type="button">来源设定</button>
-          <button class="tab-btn" data-tab="results" type="button">测试结果</button>
-        </nav>
-        <div class="topbar-actions">
-          <a id="run-now-btn" class="btn btn-primary" href="#" target="_blank" rel="noreferrer">立即执行</a>
-          <button id="settings-btn" class="btn btn-secondary" type="button">设定</button>
-          <button id="theme-toggle" class="theme-toggle" type="button" title="切换深浅色" aria-label="切换深浅色模式">🌙</button>
-          <button id="logout-btn" class="btn btn-ghost" type="button">登出</button>
-        </div>
-      </div>
-    </header>
-
-    <main class="workspace">
-
-      <!-- ── Config tab (default) ── -->
-      <section id="tab-config" class="tab-panel active">
-        <div class="panel-head">
-          <div>
-            <h2>来源设定</h2>
-            <p class="muted">管理各 API 服务商的 Keys 和 Models。</p>
-          </div>
-          <button id="add-provider-btn" class="btn btn-primary" type="button">新增服务商</button>
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+        />
+        <title>API Key Tester</title>
+        <link
+            rel="icon"
+            type="image/svg+xml"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E"
+        />
+        <script>
+            (() => {
+                // Apply saved theme before paint to avoid flash
+                try {
+                    const saved = localStorage.getItem("atk_theme");
+                    const theme =
+                        saved ||
+                        (matchMedia("(prefers-color-scheme: light)").matches
+                            ? "light"
+                            : "dark");
+                    document.documentElement.setAttribute("data-theme", theme);
+                    if (localStorage.getItem("atk_token")) {
+                        document.documentElement.classList.add("has-token");
+                    }
+                } catch {}
+            })();
+        </script>
+        <link rel="stylesheet" href="/style.css" />
+    </head>
+    <body>
+        <!-- Auth overlay -->
+        <div id="auth-overlay" class="auth-overlay active">
+            <section class="auth-card">
+                <div>
+                    <h1>API Key Tester</h1>
+                    <p class="muted">输入管理密码以继续。</p>
+                </div>
+                <div class="auth-row">
+                    <input
+                        type="password"
+                        id="auth-input"
+                        class="input-text"
+                        placeholder="ADMIN_PASSWORD"
+                        autocomplete="current-password"
+                    />
+                    <button id="auth-btn" class="btn btn-primary" type="button">
+                        登入
+                    </button>
+                </div>
+                <p id="auth-error" class="form-error" role="alert"></p>
+            </section>
         </div>
 
-        <div id="config-loading" class="state-card">读取设定中...</div>
-        <div id="config-error" class="alert alert-error hidden"></div>
+        <!-- Main app -->
+        <div id="app" class="app">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h1>API Key Tester</h1>
+                </div>
+                <button
+                    id="mobile-menu-btn"
+                    class="mobile-menu-btn"
+                    type="button"
+                    aria-label="Menu"
+                    aria-expanded="false"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="24"
+                        height="24"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        fill="none"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <div
+                    id="topbar-menu-backdrop"
+                    class="topbar-menu-backdrop hidden-desktop"
+                ></div>
+                <div id="topbar-menu" class="topbar-menu">
+                    <div class="topbar-menu-header hidden-desktop">
+                        <span style="font-weight: 600">选单</span>
+                        <button
+                            id="mobile-menu-close"
+                            class="btn-ghost btn-sm"
+                            style="border: none; padding: 0.2rem"
+                            type="button"
+                        >
+                            关闭
+                        </button>
+                    </div>
+                    <nav class="tabs">
+                        <button
+                            class="tab-btn active"
+                            data-tab="config"
+                            type="button"
+                        >
+                            来源设定
+                        </button>
+                        <button
+                            class="tab-btn"
+                            data-tab="results"
+                            type="button"
+                        >
+                            测试结果
+                        </button>
+                    </nav>
+                    <div class="topbar-actions">
+                        <a
+                            id="run-now-btn"
+                            class="btn btn-primary"
+                            href="#"
+                            target="_blank"
+                            rel="noreferrer"
+                            >立即执行</a
+                        >
+                        <button
+                            id="settings-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            设定
+                        </button>
+                        <button
+                            id="theme-toggle"
+                            class="theme-toggle"
+                            type="button"
+                            title="切换深浅色"
+                            aria-label="切换深浅色模式"
+                        >
+                            🌙
+                        </button>
+                        <button
+                            id="logout-btn"
+                            class="btn btn-ghost"
+                            type="button"
+                        >
+                            登出
+                        </button>
+                    </div>
+                </div>
+            </header>
 
-        <div id="provider-grid" class="provider-grid hidden"></div>
-        <div id="provider-empty" class="state-card hidden">尚未添加任何服务商，点击「新增服务商」开始。</div>
+            <main class="workspace">
+                <!-- ── Config tab (default) ── -->
+                <section id="tab-config" class="tab-panel active">
+                    <div class="panel-head">
+                        <div>
+                            <h2>来源设定</h2>
+                            <p class="muted">
+                                管理各 API 服务商的 Keys 和 Models。
+                            </p>
+                        </div>
+                        <button
+                            id="add-provider-btn"
+                            class="btn btn-primary"
+                            type="button"
+                        >
+                            新增服务商
+                        </button>
+                    </div>
 
-        <p id="config-save-error" class="form-error" role="alert"></p>
-        <p id="config-save-ok" class="form-ok hidden" role="status">设定已储存。</p>
-      </section>
+                    <div id="config-loading" class="state-card">
+                        读取设定中...
+                    </div>
+                    <div
+                        id="config-error"
+                        class="alert alert-error hidden"
+                    ></div>
 
-      <!-- ── Results tab ── -->
-      <section id="tab-results" class="tab-panel hidden">
-        <div class="panel-head">
-          <div>
-            <h2>测试结果</h2>
-            <p class="muted" id="results-timestamp"></p>
-          </div>
-          <button id="refresh-results-btn" class="btn btn-secondary" type="button">重新读取</button>
+                    <div id="provider-grid" class="provider-grid hidden"></div>
+                    <div id="provider-empty" class="state-card hidden">
+                        尚未添加任何服务商，点击「新增服务商」开始。
+                    </div>
+
+                    <p
+                        id="config-save-error"
+                        class="form-error"
+                        role="alert"
+                    ></p>
+                    <p id="config-save-ok" class="form-ok hidden" role="status">
+                        设定已储存。
+                    </p>
+                </section>
+
+                <!-- ── Results tab ── -->
+                <section id="tab-results" class="tab-panel hidden">
+                    <div class="panel-head">
+                        <div>
+                            <h2>测试结果</h2>
+                            <p class="muted" id="results-timestamp"></p>
+                        </div>
+                        <button
+                            id="refresh-results-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            重新读取
+                        </button>
+                    </div>
+
+                    <div id="results-loading" class="state-card">
+                        读取结果中...
+                    </div>
+                    <div
+                        id="results-error"
+                        class="alert alert-error hidden"
+                    ></div>
+                    <div id="results-empty" class="state-card hidden">
+                        尚无测试结果，请先执行一次测试。
+                    </div>
+                    <div id="results-body" class="hidden"></div>
+                </section>
+            </main>
         </div>
 
-        <div id="results-loading" class="state-card">读取结果中...</div>
-        <div id="results-error" class="alert alert-error hidden"></div>
-        <div id="results-empty" class="state-card hidden">尚无测试结果，请先执行一次测试。</div>
-        <div id="results-body" class="hidden"></div>
-      </section>
+        <!-- Provider editor modal -->
+        <div id="editor-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="editor"></div>
+            <section
+                class="modal-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="editor-title"
+            >
+                <div class="modal-header">
+                    <div>
+                        <h3 id="editor-title">新增服务商</h3>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="editor-index" value="-1" />
 
-    </main>
-  </div>
+                    <label
+                        class="field"
+                        style="
+                            flex-direction: row;
+                            align-items: center;
+                            gap: 0.5rem;
+                        "
+                    >
+                        <input
+                            type="checkbox"
+                            id="ed-enabled"
+                            checked
+                            style="
+                                width: 1.1rem;
+                                height: 1.1rem;
+                                cursor: pointer;
+                            "
+                        />
+                        <span
+                            class="field-label"
+                            style="margin: 0; cursor: pointer"
+                            >启用此服务商</span
+                        >
+                    </label>
 
-  <!-- Provider editor modal -->
-  <div id="editor-overlay" class="modal-overlay hidden">
-    <div class="modal-backdrop" data-close-modal="editor"></div>
-    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="editor-title">
-      <div class="modal-header">
-        <div>
-          <h3 id="editor-title">新增服务商</h3>
+                    <label class="field">
+                        <span class="field-label">
+                            Provider Type
+                            <span class="info-icon" tabindex="0">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    width="14"
+                                    height="14"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    fill="none"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line
+                                        x1="12"
+                                        y1="16"
+                                        x2="12"
+                                        y2="12"
+                                    ></line>
+                                    <line
+                                        x1="12"
+                                        y1="8"
+                                        x2="12.01"
+                                        y2="8"
+                                    ></line>
+                                </svg>
+                                <span class="info-tooltip"
+                                    >系统会自动补全以下后缀：<br />OpenAI:
+                                    <code>/chat/completions</code><br />Gemini:
+                                    <code
+                                        >/models/{model}:streamGenerateContent</code
+                                    ><br />Ollama: <code>/api/chat</code
+                                    ><br />Anthropic:
+                                    <code>/messages</code></span
+                                >
+                            </span>
+                        </span>
+                        <select id="ed-provider-type" class="input-select">
+                            <option value="openai">openai</option>
+                            <option value="ollama">ollama</option>
+                            <option value="gemini">gemini</option>
+                            <option value="anthropic">anthropic</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span class="field-label">API Base URL</span>
+                        <input
+                            type="url"
+                            id="ed-api-base"
+                            class="input-text"
+                            placeholder="https://api.openai.com/v1"
+                        />
+                    </label>
+
+                    <label class="field">
+                        <span class="field-label"
+                            >API Keys
+                            <small class="muted">一行一个</small></span
+                        >
+                        <div class="lined-editor modal-editor-box">
+                            <div class="line-nums" aria-hidden="true"></div>
+                            <textarea
+                                id="ed-keys"
+                                class="input-textarea lined-textarea"
+                                spellcheck="false"
+                                placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"
+                            ></textarea>
+                        </div>
+                    </label>
+
+                    <label class="field">
+                        <span class="field-label"
+                            >Models
+                            <small class="muted">逗号分隔（一行）</small></span
+                        >
+                        <div
+                            class="lined-editor lined-editor--wrap modal-editor-box"
+                        >
+                            <div class="line-nums" aria-hidden="true"></div>
+                            <textarea
+                                id="ed-models"
+                                class="input-textarea lined-textarea"
+                                spellcheck="false"
+                                placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini"
+                            ></textarea>
+                        </div>
+                    </label>
+
+                    <label class="field">
+                        <span class="field-label">
+                            Extra Body
+                            <small class="muted"
+                                >选填，JSON，键直接覆盖请求体同名键</small
+                            >
+                            <span
+                                id="ed-extra-body-status"
+                                class="json-status"
+                                aria-live="polite"
+                            ></span>
+                        </span>
+                        <div
+                            class="lined-editor lined-editor--wrap modal-editor-box modal-editor-box--sm"
+                        >
+                            <div class="line-nums" aria-hidden="true"></div>
+                            <textarea
+                                id="ed-extra-body"
+                                class="input-textarea lined-textarea"
+                                spellcheck="false"
+                                placeholder='{"temperature": 0.7, "enable_thinking": true}'
+                            ></textarea>
+                        </div>
+                    </label>
+
+                    <label class="field">
+                        <span class="field-label">
+                            Max Concurrency
+                            <small class="muted"
+                                >选填，正整数，覆盖全局预设值（脚本默认:
+                                2）</small
+                            >
+                        </span>
+                        <input
+                            type="number"
+                            id="ed-max-concurrency"
+                            class="input-text"
+                            placeholder="2"
+                            min="1"
+                            max="200"
+                            style="width: 7rem"
+                        />
+                    </label>
+
+                    <p id="editor-error" class="form-error" role="alert"></p>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        class="btn btn-primary"
+                        id="editor-save-btn"
+                        type="button"
+                    >
+                        储存
+                    </button>
+                    <button
+                        class="btn btn-ghost"
+                        id="editor-cancel-btn"
+                        type="button"
+                    >
+                        取消
+                    </button>
+                </div>
+            </section>
         </div>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="editor-index" value="-1">
 
-        <label class="field" style="flex-direction:row; align-items:center; gap:.5rem;">
-          <input type="checkbox" id="ed-enabled" checked style="width:1.1rem; height:1.1rem; cursor:pointer;">
-          <span class="field-label" style="margin:0; cursor:pointer;">启用此服务商</span>
-        </label>
-
-        <label class="field">
-          <span class="field-label">
-            Provider Type
-            <span class="info-icon" tabindex="0">
-              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-              <span class="info-tooltip">系统会自动补全以下后缀：<br>OpenAI: <code>/chat/completions</code><br>Gemini: <code>/models/{model}:streamGenerateContent</code><br>Ollama: <code>/api/chat</code><br>Anthropic: <code>/messages</code></span>
-            </span>
-          </span>
-          <select id="ed-provider-type" class="input-select">
-            <option value="openai">openai</option>
-            <option value="ollama">ollama</option>
-            <option value="gemini">gemini</option>
-            <option value="anthropic">anthropic</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span class="field-label">API Base URL</span>
-          <input type="url" id="ed-api-base" class="input-text" placeholder="https://api.openai.com/v1">
-        </label>
-
-        <label class="field">
-          <span class="field-label">API Keys <small class="muted">一行一个</small></span>
-          <div class="lined-editor modal-editor-box">
-            <div class="line-nums" aria-hidden="true"></div>
-            <textarea id="ed-keys" class="input-textarea lined-textarea" spellcheck="false" placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"></textarea>
-          </div>
-        </label>
-
-        <label class="field">
-          <span class="field-label">Models <small class="muted">逗号分隔（一行）</small></span>
-          <div class="lined-editor lined-editor--wrap modal-editor-box">
-            <div class="line-nums" aria-hidden="true"></div>
-            <textarea id="ed-models" class="input-textarea lined-textarea" spellcheck="false" placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini"></textarea>
-          </div>
-        </label>
-
-        <label class="field">
-          <span class="field-label">
-            Extra Body
-            <small class="muted">选填，JSON，键直接覆盖请求体同名键</small>
-            <span id="ed-extra-body-status" class="json-status" aria-live="polite"></span>
-          </span>
-          <div class="lined-editor lined-editor--wrap modal-editor-box modal-editor-box--sm">
-            <div class="line-nums" aria-hidden="true"></div>
-            <textarea id="ed-extra-body" class="input-textarea lined-textarea" spellcheck="false" placeholder='{"temperature": 0.7, "enable_thinking": true}'></textarea>
-          </div>
-        </label>
-
-        <p id="editor-error" class="form-error" role="alert"></p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-primary" id="editor-save-btn" type="button">储存</button>
-        <button class="btn btn-ghost" id="editor-cancel-btn" type="button">取消</button>
-      </div>
-    </section>
-  </div>
-
-  <!-- App settings modal -->
-  <div id="settings-overlay" class="modal-overlay hidden">
-    <div class="modal-backdrop" data-close-modal="settings"></div>
-    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <div class="modal-header">
-        <h3 id="settings-title">应用设定</h3>
-      </div>
-      <div class="modal-body">
-        <label class="field">
-          <span class="field-label">GitHub Actions URL</span>
-          <input type="url" id="set-github-url" class="input-text" placeholder="https://github.com/owner/repo/actions/workflows/main.yml">
-        </label>
-        <label class="field">
-          <span class="field-label">Discord Webhook URL</span>
-          <div style="display:flex;gap:.5rem;">
-            <input type="url" id="set-discord-url" class="input-text" placeholder="https://discord.com/api/webhooks/...">
-            <button id="test-discord-btn" class="btn btn-secondary" type="button" style="flex-shrink:0;">测试</button>
-          </div>
-        </label>
-        <p id="settings-error" class="form-error" role="alert"></p>
-        <p id="settings-ok" class="form-ok hidden" role="status">设定已储存。</p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-primary" id="settings-save-btn" type="button">储存</button>
-        <button class="btn btn-ghost" id="settings-cancel-btn" type="button">取消</button>
-      </div>
-    </section>
-  </div>
-
-  <!-- Sample modal -->
-  <div id="sample-overlay" class="modal-overlay hidden">
-    <div class="modal-backdrop" data-close-modal="sample"></div>
-    <section class="modal-panel modal-panel--wide" role="dialog" aria-modal="true" aria-labelledby="sample-title">
-      <div class="modal-header">
-        <div>
-          <h3 id="sample-title">Sample</h3>
-          <p id="sample-subtitle" class="muted"></p>
+        <!-- App settings modal -->
+        <div id="settings-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="settings"></div>
+            <section
+                class="modal-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-title"
+            >
+                <div class="modal-header">
+                    <h3 id="settings-title">应用设定</h3>
+                </div>
+                <div class="modal-body">
+                    <label class="field">
+                        <span class="field-label">GitHub Actions URL</span>
+                        <input
+                            type="url"
+                            id="set-github-url"
+                            class="input-text"
+                            placeholder="https://github.com/owner/repo/actions/workflows/main.yml"
+                        />
+                    </label>
+                    <label class="field">
+                        <span class="field-label">Discord Webhook URL</span>
+                        <div style="display: flex; gap: 0.5rem">
+                            <input
+                                type="url"
+                                id="set-discord-url"
+                                class="input-text"
+                                placeholder="https://discord.com/api/webhooks/..."
+                            />
+                            <button
+                                id="test-discord-btn"
+                                class="btn btn-secondary"
+                                type="button"
+                                style="flex-shrink: 0"
+                            >
+                                测试
+                            </button>
+                        </div>
+                    </label>
+                    <p id="settings-error" class="form-error" role="alert"></p>
+                    <p id="settings-ok" class="form-ok hidden" role="status">
+                        设定已储存。
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        class="btn btn-primary"
+                        id="settings-save-btn"
+                        type="button"
+                    >
+                        储存
+                    </button>
+                    <button
+                        class="btn btn-ghost"
+                        id="settings-cancel-btn"
+                        type="button"
+                    >
+                        取消
+                    </button>
+                </div>
+            </section>
         </div>
-        <button class="btn btn-ghost btn-sm" id="sample-close-btn" type="button">关闭</button>
-      </div>
-      <div class="modal-body" id="sample-content"></div>
-    </section>
-  </div>
 
-  <script src="/app.js"></script>
-</body>
+        <!-- Sample modal -->
+        <div id="sample-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="sample"></div>
+            <section
+                class="modal-panel modal-panel--wide"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="sample-title"
+            >
+                <div class="modal-header">
+                    <div>
+                        <h3 id="sample-title">Sample</h3>
+                        <p id="sample-subtitle" class="muted"></p>
+                    </div>
+                    <button
+                        class="btn btn-ghost btn-sm"
+                        id="sample-close-btn"
+                        type="button"
+                    >
+                        关闭
+                    </button>
+                </div>
+                <div class="modal-body" id="sample-content"></div>
+            </section>
+        </div>
+
+        <script src="/app.js"></script>
+    </body>
 </html>

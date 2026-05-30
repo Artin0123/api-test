@@ -69,6 +69,7 @@ const dom = {
   edModels: $("ed-models"),
   edExtraBody: $("ed-extra-body"),
   edExtraBodyStatus: $("ed-extra-body-status"),
+  edMaxConcurrency: $("ed-max-concurrency"),
 
   // app settings modal
   settingsOverlay: $("settings-overlay"),
@@ -110,10 +111,10 @@ async function api(path, { method = "GET", auth = false, body } = {}) {
 let _mirror;
 function _ensureMirror() {
   if (_mirror) return;
-  _mirror = document.createElement('div');
+  _mirror = document.createElement("div");
   _mirror.style.cssText =
-    'position:fixed;visibility:hidden;pointer-events:none;top:0;left:0;' +
-    'box-sizing:content-box;padding:0;margin:0;border:none;';
+    "position:fixed;visibility:hidden;pointer-events:none;top:0;left:0;" +
+    "box-sizing:content-box;padding:0;margin:0;border:none;";
   document.body.appendChild(_mirror);
 }
 function _measureVisualLines(textarea, logicalLines) {
@@ -132,14 +133,14 @@ function _measureVisualLines(textarea, logicalLines) {
   const padL = parseFloat(cs.paddingLeft) || 0;
   const padR = parseFloat(cs.paddingRight) || 0;
   const avail = Math.max(1, textarea.clientWidth - padL - padR);
-  _mirror.style.width = avail + 'px';
+  _mirror.style.width = avail + "px";
   // Measure single-line height with a reference character
-  _mirror.textContent = 'X';
+  _mirror.textContent = "X";
   const oneLineH = _mirror.scrollHeight;
   if (oneLineH <= 0) return logicalLines.map(() => 1);
   // Measure visual lines per logical line
-  return logicalLines.map(line => {
-    _mirror.textContent = line || '\u00A0';
+  return logicalLines.map((line) => {
+    _mirror.textContent = line || "\u00A0";
     return Math.max(1, Math.round(_mirror.scrollHeight / oneLineH));
   });
 }
@@ -441,6 +442,7 @@ function renderProviderCard(p, index) {
       <div class="provider-card-meta">
         <span><strong>${keyCount}</strong> 个 Key</span>
         <span><strong>${modelCount}</strong> 个模型</span>
+        ${p.max_concurrency != null ? `<span>并发: <strong>${p.max_concurrency}</strong></span>` : ""}
       </div>
     </div>
   `;
@@ -460,6 +462,8 @@ function openEditor(index = -1) {
     dom.edKeys.value = p.keys || "";
     dom.edModels.value = p.models || "";
     dom.edExtraBody.value = p.extra_body || "";
+    dom.edMaxConcurrency.value =
+      p.max_concurrency != null ? String(p.max_concurrency) : "";
   } else {
     dom.editorTitle.textContent = "新增服务商";
     dom.edEnabled.checked = true;
@@ -468,6 +472,7 @@ function openEditor(index = -1) {
     dom.edKeys.value = "";
     dom.edModels.value = "";
     dom.edExtraBody.value = "";
+    dom.edMaxConcurrency.value = "";
   }
   dom.edExtraBodyStatus.textContent = "";
   dom.edExtraBodyStatus.className = "json-status";
@@ -492,6 +497,7 @@ async function saveEditor() {
   const models = normalizeModels(dom.edModels.value);
   const pType = dom.edProviderType.value;
   const extraBodyRaw = dom.edExtraBody.value.trim();
+  const maxConcurrencyRaw = dom.edMaxConcurrency.value.trim();
 
   // Update UI immediately so the user sees the cleaned up data if they reopen
   dom.edKeys.value = keys;
@@ -520,6 +526,16 @@ async function saveEditor() {
     }
   }
 
+  let maxConcurrency = null;
+  if (maxConcurrencyRaw !== "") {
+    const n = parseInt(maxConcurrencyRaw, 10);
+    if (!Number.isInteger(n) || n < 1) {
+      dom.editorError.textContent = "Max Concurrency 必须是正整数";
+      return;
+    }
+    maxConcurrency = n;
+  }
+
   const entry = {
     enabled,
     provider_type: pType,
@@ -527,6 +543,7 @@ async function saveEditor() {
     keys,
     models,
     extra_body: extraBodyRaw,
+    max_concurrency: maxConcurrency,
   };
   const settings = state.settings || {};
   const providers = [...(settings.providers || [])];

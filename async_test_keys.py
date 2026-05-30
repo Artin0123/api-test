@@ -27,7 +27,7 @@ EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
-MAX_CONCURRENCY = 40
+MAX_CONCURRENCY = 2
 TTFT_TIMEOUT = 5.0
 TOTAL_TIMEOUT = 20.0
 CHECKPOINT_EVERY_N_TASKS = 200
@@ -148,8 +148,10 @@ def extract_stream_chunk(line, provider_type):
         if choices:
             delta = choices[0].get("delta", {})
             content = delta.get("content") or ""
-            reasoning = (delta.get("reasoning_content") or "") or (
-                delta.get("thinking") or ""
+            reasoning = (
+                (delta.get("reasoning_content") or "")
+                or (delta.get("reasoning") or "")
+                or (delta.get("thinking") or "")
             )
             if content:
                 has_content = True
@@ -249,6 +251,12 @@ async def parse_stream(response, provider_type, ttft_timeout=None):
         await _consume_line(raw_line)
     sample_content = "".join(content_buf).strip()
     sample_thinking = "".join(thinking_buf).strip()
+    # Stream 模式：如果未偵測到獨立 thinking 欄位，嘗試從正文中提取 <think> XML
+    if not has_thinking:
+        sample_content, xml_think = extract_think_xml(sample_content)
+        if xml_think:
+            has_thinking = True
+            sample_thinking = xml_think
     return first_chunk_time, has_content, has_thinking, sample_content, sample_thinking
 
 
@@ -302,8 +310,10 @@ async def test_single_request(
                     if provider_type == "openai":
                         msg = data.get("choices", [{}])[0].get("message", {})
                         sample_content = (msg.get("content") or "").strip()
-                        reasoning = (msg.get("reasoning_content") or "") or (
-                            msg.get("thinking") or ""
+                        reasoning = (
+                            (msg.get("reasoning_content") or "")
+                            or (msg.get("reasoning") or "")
+                            or (msg.get("thinking") or "")
                         )
                         _, xml_think = extract_think_xml(sample_content)
                         sample_thinking = (reasoning or xml_think).strip()
@@ -492,11 +502,14 @@ async def benchmark_model(
         return False, status, err, None, None, False, False, "", ""
 
 
-async def run_provider(api_base, provider_type, keys, models, extra_body=None):
+async def run_provider(
+    api_base, provider_type, keys, models, extra_body=None, max_concurrency=None
+):
+    concurrency = max_concurrency if max_concurrency is not None else MAX_CONCURRENCY
     global_start_time = time.perf_counter()
     print(f"\n{'=' * 50}")
     print(f"▶ 开始测试服务商: {provider_type} | {api_base}")
-    print(f"▶ 载入 {len(keys)} 个 Key，{len(models)} 个模型")
+    print(f"▶ 载入 {len(keys)} 个 Key，{len(models)} 个模型，并发: {concurrency}")
     print(f"{'=' * 50}\n")
 
     dead_keys = set()
@@ -638,7 +651,7 @@ async def run_provider(api_base, provider_type, keys, models, extra_body=None):
 
     # Run Event Loop
     async with aiohttp.ClientSession() as session:
-        workers = [asyncio.create_task(worker(session)) for _ in range(MAX_CONCURRENCY)]
+        workers = [asyncio.create_task(worker(session)) for _ in range(concurrency)]
         await asyncio.gather(*workers)
 
     # Final Checkpoint Save
@@ -863,7 +876,15 @@ async def main():
                         print(
                             f"[警告] 服务商 {pt} | {ab} 的 extra_body 不是有效 JSON，已忽略"
                         )
-                providers_to_run.append((ab, pt, k_list, m_list, extra_body))
+                mc = p.get("max_concurrency")
+                if mc is not None:
+                    try:
+                        mc = int(mc)
+                        if mc < 1:
+                            mc = None
+                    except (TypeError, ValueError):
+                        mc = None
+                providers_to_run.append((ab, pt, k_list, m_list, extra_body, mc))
 
         except Exception as e:
             return print(f"[错误] 无法从 Pages 读取设定: {e}")
@@ -885,15 +906,17 @@ async def main():
                 local_extra = json.loads(EXTRA_BODY_JSON)
             except json.JSONDecodeError:
                 return print("[错误] EXTRA_BODY_JSON 不是有效的 JSON，请检查配置")
-        providers_to_run.append((API_BASE, PROVIDER_TYPE, keys, models, local_extra))
+        providers_to_run.append(
+            (API_BASE, PROVIDER_TYPE, keys, models, local_extra, None)
+        )
 
     if not providers_to_run:
         return print("\n[结束] 没有需要执行的服务商。")
 
     print(f"\n总共将执行 {len(providers_to_run)} 个服务商测试。")
 
-    for ab, pt, k_list, m_list, extra_body in providers_to_run:
-        await run_provider(ab, pt, k_list, m_list, extra_body)
+    for ab, pt, k_list, m_list, extra_body, mc in providers_to_run:
+        await run_provider(ab, pt, k_list, m_list, extra_body, max_concurrency=mc)
 
     print(f"\n{'=' * 50}\n全部服务商测试执行完毕！\n{'=' * 50}")
 

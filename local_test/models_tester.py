@@ -12,10 +12,10 @@ import time
 import aiohttp
 
 # ==================== 【请在这里设置】 ====================
-MY_BASE_URL = "https://api.minimax.io/v1"
+MY_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 # Key 文件路径：每行可以是 "url,key" 或 "key"（使用默认 URL）
-KEYS_FILE = "valid_keys\\MiniMax (Int).txt"
+KEYS_FILE = "valid_keys\\Nvidia NIM.txt"
 
 # 模型文件路径：包含逗号分隔的模型名，如 "qwen-plus,qwen-turbo"
 MODELS_FILE = "local_test\\available_models.txt"
