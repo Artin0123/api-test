@@ -71,10 +71,17 @@ def _pages_request(method: str, path: str, body=None):
 
 def extract_think_xml(text):
     think = ""
+    # Complete tag: <think>...</think>
     m = re.search(r"<think>(.*?)</think>", text, flags=re.DOTALL)
     if m:
         think = m.group(1).strip()
         text = re.sub(r"<think>.*?</think>\n?", "", text, flags=re.DOTALL).strip()
+    else:
+        # Truncated: <think> opened but token limit hit before </think>
+        m = re.search(r"<think>(.*)", text, flags=re.DOTALL)
+        if m:
+            think = m.group(1).strip()
+            text = re.sub(r"<think>.*", "", text, flags=re.DOTALL).strip()
     return text, think
 
 
@@ -358,8 +365,8 @@ async def test_single_request(
                 ttft = None  # Non-stream doesn't count TTFT
 
             total_t = time.perf_counter() - start_t
-            # 任务 7：成功判定改为「正文不为空」
-            success = has_content
+            # 有正文 或 有思考（含截斷）皆視為成功；純截斷思考的模型仍算 API 可用
+            success = has_content or has_thinking
             return (
                 success,
                 status,
@@ -819,13 +826,7 @@ async def run_provider(
         except Exception as e:
             print(f"[Pages] 上传失败（本地文件仍保留）: {e}")
 
-        # 删除 KV 中的 checkpoint，否则前端会一直显示"执行中"进度条
-        try:
-            fp = compute_fingerprint(api_base, provider_type)
-            _pages_request("DELETE", f"/api/checkpoint?fp={fp}", None)
-            print(f"[Pages] 已删除 KV checkpoint（fp={fp[:8]}...）。")
-        except Exception as e:
-            print(f"[Pages] 删除 KV checkpoint 失败: {e}")
+        # checkpoint 已由 handlePostResults 在接收结果时自动删除，无需再次显式 DELETE
 
     # 清理: 成功产出最终报表后，自动删除本地存档，避免下次执行时被当成恢复进度而全部跳过
     if os.path.exists(CHECKPOINT_PATH):
