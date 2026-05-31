@@ -1,0 +1,3 @@
+qwen/qwen3-32b,groq/compound,meta-llama/llama-4-scout-17b-16e-instruct,openai/gpt-oss-120b,openai/gpt-oss-20b,canopylabs/orpheus-v1-english,whisper-large-v3-turbo,llama-3.3-70b-versatile,openai/gpt-oss-safeguard-20b,meta-llama/llama-prompt-guard-2-22m,allam-2-7b,groq/compound-mini,llama-3.1-8b-instant,whisper-large-v3,canopylabs/orpheus-arabic-saudi,meta-llama/llama-prompt-guard-2-86m
+
+llama-3.3-70b-versatile,llama-3.1-8b-instant,meta-llama/llama-4-scout-17b-16e-instruct,groq/compound-mini,openai/gpt-oss-120b,openai/gpt-oss-safeguard-20b

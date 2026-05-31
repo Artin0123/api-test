@@ -1,0 +1,1506 @@
+{
+  "meta": {
+    "base_url": "https://ollama.com",
+    "tags_url": "https://ollama.com/api/tags",
+    "chat_url": "https://ollama.com/v1/chat/completions",
+    "collected_at": "2026-05-30T07:44:30.979005+00:00",
+    "prompt": "Hello! Reply with a short answer.",
+    "system": "",
+    "max_tokens": 256,
+    "temperature": 0.6,
+    "concurrency": 2,
+    "timeout_secs": 30,
+    "stats": {
+      "total_models_in_tags": 39,
+      "selected_models": 39,
+      "results": 39,
+      "ok": 24,
+      "fail": 15,
+      "http_status_counts": {
+        "403": 14,
+        "200": 24,
+        "500": 1
+      },
+      "family_counts": {
+        "qwen": {
+          "count": 6,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "qwen3.5:397b"
+          ],
+          "subscription_models_count": 1
+        },
+        "nemotron": {
+          "count": 2,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "gemma": {
+          "count": 4,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "kimi": {
+          "count": 4,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "kimi-k2-thinking",
+            "kimi-k2.5",
+            "kimi-k2.6",
+            "kimi-k2:1t"
+          ],
+          "subscription_models_count": 4
+        },
+        "minimax": {
+          "count": 4,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "minimax-m2.7"
+          ],
+          "subscription_models_count": 1
+        },
+        "devstral": {
+          "count": 2,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "mistral": {
+          "count": 1,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "mistral-large-3:675b"
+          ],
+          "subscription_models_count": 1
+        },
+        "glm": {
+          "count": 4,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "glm-5",
+            "glm-5.1"
+          ],
+          "subscription_models_count": 2
+        },
+        "ministral": {
+          "count": 3,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "gemini": {
+          "count": 1,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "gemini-3-flash-preview"
+          ],
+          "subscription_models_count": 1
+        },
+        "cogito": {
+          "count": 1,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "deepseek": {
+          "count": 4,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "deepseek-v3.1:671b",
+            "deepseek-v3.2",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro"
+          ],
+          "subscription_models_count": 4
+        },
+        "gpt": {
+          "count": 2,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "rnj": {
+          "count": 1,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        }
+      },
+      "subscription_required_families": [
+        "deepseek",
+        "gemini",
+        "glm",
+        "kimi",
+        "minimax",
+        "mistral",
+        "qwen"
+      ]
+    }
+  },
+  "results": [
+    {
+      "model": "qwen3.5:397b",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "b909ca2f1b7f",
+        "modified_at": "2026-02-16T00:00:00Z",
+        "size": 397000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:30.979121+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 89db64e2-5ec7-4a9f-a6ee-ac2c4d74e33a)"
+      }
+    },
+    {
+      "model": "nemotron-3-nano:30b",
+      "model_family": "nemotron",
+      "tag": {
+        "digest": "a4b4f1851393",
+        "modified_at": "2025-12-15T00:00:00Z",
+        "size": 32645090390,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:30.979530+00:00",
+      "response_json": {
+        "id": "chatcmpl-334",
+        "object": "chat.completion",
+        "created": 1780127070,
+        "model": "nemotron-3-nano:30b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi!",
+              "reasoning": "User says: \"Hello! Reply with a short answer.\" So they want a short answer. Probably just \"Hi!\" or something. They said \"Hello! Reply with a short answer.\" So respond with a short answer. Probably \"Hi there!\" That's short. Or \"Hello!\" But they said \"Reply with a short answer.\" So maybe \"Hi!\" That's short. I'll respond with a short answer."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 25,
+          "completion_tokens": 90,
+          "total_tokens": 115
+        }
+      }
+    },
+    {
+      "model": "gemma3:27b",
+      "model_family": "gemma",
+      "tag": {
+        "digest": "c1d2e3f40004",
+        "modified_at": "2025-03-12T00:00:00Z",
+        "size": 55000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:31.338576+00:00",
+      "response_json": {
+        "id": "chatcmpl-292",
+        "object": "chat.completion",
+        "created": 1780127070,
+        "model": "gemma3:27b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! 👋 \n\nHow can I help you?\n"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 17,
+          "completion_tokens": 13,
+          "total_tokens": 30
+        }
+      }
+    },
+    {
+      "model": "kimi-k2.6",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "4764ecb21f85",
+        "modified_at": "2026-03-31T00:00:00Z",
+        "size": 595148192736,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:32.108749+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 9452e917-5984-4e22-b530-9ba715610665)"
+      }
+    },
+    {
+      "model": "qwen3-next:80b",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "aada434099ae",
+        "modified_at": "2025-09-10T00:00:00Z",
+        "size": 81800000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:32.380585+00:00",
+      "response_json": {
+        "id": "chatcmpl-580",
+        "object": "chat.completion",
+        "created": 1780127073,
+        "model": "qwen3-next:80b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "Okay, the user said Hello! and asked for a short answer. Let me think. They just want a simple response. I need to keep it brief. Maybe just \" Hello! \" but they already said Hello. Wait, the instruction is to reply with a short answer. So perhaps \" Hello! \" is enough. But maybe they expect something else. Let me check the query again. \" Hello!Reply with a short answer.\" So the user's message is \" Hello! \" and then \"Reply with a short answer.\" So I should just say something short. like \" Hi! \" or \" Hello! \" but maybe \" Hello \" is sufficient. Or \" Hey! \" but the user started with Hello. Maybe just \" Hello \" to match. But the user said \"Reply with a short answer\" so the response should be short. Let's see. The shortest would be \" Hi \" but maybe \" Hello \" is better. Alternatively, \" Hello \" followed by exclamation. But the user's example is \" Hello! \" so perhaps \" Hello! \" is the reply. But the user's message is \" Hello!Reply with a short answer.\" So the actual input is \" Hello!Reply with a short answer.\" which might be a typo. Maybe"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 18,
+          "completion_tokens": 256,
+          "total_tokens": 274
+        }
+      }
+    },
+    {
+      "model": "qwen3-coder-next",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "d8f3c2a16e5b",
+        "modified_at": "2025-02-04T00:00:00Z",
+        "size": 81800000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:32.518613+00:00",
+      "response_json": {
+        "id": "chatcmpl-226",
+        "object": "chat.completion",
+        "created": 1780127072,
+        "model": "qwen3-coder-next",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! 😊 How can I help you today?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 16,
+          "completion_tokens": 12,
+          "total_tokens": 28
+        }
+      }
+    },
+    {
+      "model": "minimax-m2",
+      "model_family": "minimax",
+      "tag": {
+        "digest": "d46b950f79ba",
+        "modified_at": "2025-10-27T00:00:00Z",
+        "size": 230000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:33.927031+00:00",
+      "response_json": {
+        "id": "chatcmpl-96",
+        "object": "chat.completion",
+        "created": 1780127075,
+        "model": "minimax-m2",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi!",
+              "reasoning": "The user says \"Hello! Reply with a short answer.\" The user likely expects a greeting or something short. There's no policy violation. Just respond with a short answer. For example \"Hi there!\" Or \"Hello!\" The user says \"Hello! Reply with a short answer.\" They may want a short answer to something? There's no question. The simplest is to respond \"Hello!\" or \"Hi!\" That's short. But perhaps they want a short answer to \"Hello!\"? Typically we respond \"Hello!\" or \"Hi there!\" That's short. I'll respond with a short greeting: \"Hi!\""
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 47,
+          "completion_tokens": 126,
+          "total_tokens": 173
+        }
+      }
+    },
+    {
+      "model": "minimax-m2.7",
+      "model_family": "minimax",
+      "tag": {
+        "digest": "d1008bea3761",
+        "modified_at": "2026-03-18T00:00:00Z",
+        "size": 480836588544,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:34.835606+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: c4f70c57-bb25-4c3d-bdf4-422df3cd19d8)"
+      }
+    },
+    {
+      "model": "devstral-2:123b",
+      "model_family": "devstral",
+      "tag": {
+        "digest": "de057a012512",
+        "modified_at": "2025-12-08T00:00:00Z",
+        "size": 128249391520,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:35.207454+00:00",
+      "response_json": {
+        "id": "chatcmpl-76",
+        "object": "chat.completion",
+        "created": 1780127075,
+        "model": "devstral-2:123b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi! How can I help?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 8,
+          "total_tokens": 19
+        }
+      }
+    },
+    {
+      "model": "kimi-k2:1t",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "9665a13eb6f1",
+        "modified_at": "2025-09-05T00:00:00Z",
+        "size": 1118481408000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:36.646882+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 4015ac0f-e384-4241-9c20-b0a80ec1133c)"
+      }
+    },
+    {
+      "model": "qwen3-vl:235b-instruct",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "a5020f0cea71",
+        "modified_at": "2025-09-22T00:00:00Z",
+        "size": 470000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:37.016780+00:00",
+      "response_json": {
+        "id": "chatcmpl-836",
+        "object": "chat.completion",
+        "created": 1780127076,
+        "model": "qwen3-vl:235b-instruct",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi!"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 16,
+          "completion_tokens": 3,
+          "total_tokens": 19
+        }
+      }
+    },
+    {
+      "model": "minimax-m2.5",
+      "model_family": "minimax",
+      "tag": {
+        "digest": "1361fbbdd94e",
+        "modified_at": "2026-02-12T00:00:00Z",
+        "size": 230000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:37.363794+00:00",
+      "response_json": {
+        "id": "chatcmpl-182",
+        "object": "chat.completion",
+        "created": 1780127079,
+        "model": "minimax-m2.5",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello!",
+              "reasoning": "The user says: \"Hello! Reply with a short answer.\"\n\nWe need to respond with a short answer. Likely \"Hello!\" or something short. The user wants a short answer. There's no request for disallowed content. So we can respond with a short greeting: \"Hello! How can I help you?\" But they asked \"Hello! Reply with a short answer.\" So we could respond simply: \"Hello!\" That is short. Or \"Hi there!\" Let's respond with a short answer. Probably \"Hello!\" is fine. The user just said \"Hello! Reply with a short answer.\" So we can respond with \"Hello!\" That's it."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 46,
+          "completion_tokens": 135,
+          "total_tokens": 181
+        }
+      }
+    },
+    {
+      "model": "mistral-large-3:675b",
+      "model_family": "mistral",
+      "tag": {
+        "digest": "f7e3b2a16d5c",
+        "modified_at": "2025-12-02T00:00:00Z",
+        "size": 682000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:38.028372+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 398f74b3-8512-449d-be42-585414b1e1a4)"
+      }
+    },
+    {
+      "model": "devstral-small-2:24b",
+      "model_family": "devstral",
+      "tag": {
+        "digest": "de057a012512",
+        "modified_at": "2025-12-09T00:00:00Z",
+        "size": 51600000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:38.407965+00:00",
+      "response_json": {
+        "id": "chatcmpl-217",
+        "object": "chat.completion",
+        "created": 1780127077,
+        "model": "devstral-small-2:24b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi! What's up?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 7,
+          "total_tokens": 18
+        }
+      }
+    },
+    {
+      "model": "gemma3:12b",
+      "model_family": "gemma",
+      "tag": {
+        "digest": "c1d2e3f40003",
+        "modified_at": "2025-03-12T00:00:00Z",
+        "size": 24000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:39.298837+00:00",
+      "response_json": {
+        "id": "chatcmpl-396",
+        "object": "chat.completion",
+        "created": 1780127078,
+        "model": "gemma3:12b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi there!"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 17,
+          "completion_tokens": 4,
+          "total_tokens": 21
+        }
+      }
+    },
+    {
+      "model": "glm-5",
+      "model_family": "glm",
+      "tag": {
+        "digest": "3f40c24f825c",
+        "modified_at": "2026-02-11T00:00:00Z",
+        "size": 756162687872,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:40.159321+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: ad3874fa-d11e-4488-87ec-e95e3d6de73e)"
+      }
+    },
+    {
+      "model": "glm-5.1",
+      "model_family": "glm",
+      "tag": {
+        "digest": "882e35812821",
+        "modified_at": "2026-04-07T08:00:00-08:00",
+        "size": 1507728316928,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:40.562654+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 7748e2e4-8d2d-4711-834c-64d913f78111)"
+      }
+    },
+    {
+      "model": "qwen3-vl:235b",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "d8afd22a6506",
+        "modified_at": "2025-09-22T00:00:00Z",
+        "size": 470000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 500,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:40.943638+00:00",
+      "response_json": {
+        "error": "Internal Server Error (ref: 7937d126-0891-49b0-ad51-afd45b53d2ec)"
+      }
+    },
+    {
+      "model": "ministral-3:3b",
+      "model_family": "ministral",
+      "tag": {
+        "digest": "a1b2c3d40001",
+        "modified_at": "2025-12-02T00:00:00Z",
+        "size": 4670000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:41.090616+00:00",
+      "response_json": {
+        "id": "chatcmpl-173",
+        "object": "chat.completion",
+        "created": 1780127080,
+        "model": "ministral-3:3b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 8,
+          "total_tokens": 19
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash-preview",
+      "model_family": "gemini",
+      "tag": {
+        "digest": "f1e2c3f40001",
+        "modified_at": "2025-12-17T00:00:00Z",
+        "size": 0,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:42.454650+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 12353c9b-e786-470c-a28b-42aaa3efe253)"
+      }
+    },
+    {
+      "model": "cogito-2.1:671b",
+      "model_family": "cogito",
+      "tag": {
+        "digest": "5c1168f3a867",
+        "modified_at": "2025-11-19T00:00:00Z",
+        "size": 688586727753,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:42.821985+00:00",
+      "response_json": {
+        "id": "chatcmpl-612",
+        "object": "chat.completion",
+        "created": 1780127082,
+        "model": "cogito-2.1:671b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi! What can I help you with today?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 37,
+          "completion_tokens": 11,
+          "total_tokens": 48
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "ac252c581d64",
+        "modified_at": "2026-04-24T00:00:00Z",
+        "size": 140000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:43.568456+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 7320ddc3-1774-429d-99a3-f85d01c1845a)"
+      }
+    },
+    {
+      "model": "gpt-oss:20b",
+      "model_family": "gpt",
+      "tag": {
+        "digest": "05afbac4bad6",
+        "modified_at": "2025-08-05T00:00:00Z",
+        "size": 13780162412,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:44.014979+00:00",
+      "response_json": {
+        "id": "chatcmpl-121",
+        "object": "chat.completion",
+        "created": 1780127083,
+        "model": "gpt-oss:20b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi!",
+              "reasoning": "The user says: \"Hello! Reply with a short answer.\" They want a short answer. Probably just greet back. So respond with a short answer. They didn't ask a question. So a short answer: \"Hi!\""
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 75,
+          "completion_tokens": 57,
+          "total_tokens": 132
+        }
+      }
+    },
+    {
+      "model": "ministral-3:14b",
+      "model_family": "ministral",
+      "tag": {
+        "digest": "a1b2c3d40005",
+        "modified_at": "2025-12-02T00:00:00Z",
+        "size": 15700000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:44.923328+00:00",
+      "response_json": {
+        "id": "chatcmpl-224",
+        "object": "chat.completion",
+        "created": 1780127084,
+        "model": "ministral-3:14b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi there! 😊 How can I help?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 12,
+          "total_tokens": 23
+        }
+      }
+    },
+    {
+      "model": "rnj-1:8b",
+      "model_family": "rnj",
+      "tag": {
+        "digest": "385d8e8f6803",
+        "modified_at": "2025-12-09T00:00:00Z",
+        "size": 16000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:45.695496+00:00",
+      "response_json": {
+        "id": "chatcmpl-223",
+        "object": "chat.completion",
+        "created": 1780127084,
+        "model": "rnj-1:8b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! Here's a short answer: I'm ready to help you with any questions or tasks you need assistance with."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 44,
+          "completion_tokens": 25,
+          "total_tokens": 69
+        }
+      }
+    },
+    {
+      "model": "kimi-k2-thinking",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "7bb8dfabfd9c",
+        "modified_at": "2025-11-06T00:00:00Z",
+        "size": 1118481408000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:46.464511+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 922a6113-783c-42bf-8618-c42bcdfe0219)"
+      }
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "079ba36ea28c",
+        "modified_at": "2026-04-24T00:00:00Z",
+        "size": 1600000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:46.882112+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 32cedf28-9e48-4d97-905e-0bf6c16f37a0)"
+      }
+    },
+    {
+      "model": "deepseek-v3.1:671b",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "e1c8a9725f49",
+        "modified_at": "2025-11-20T00:00:00Z",
+        "size": 688586727753,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:47.256899+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: e0c65c08-c79d-4477-a45a-0a25cecb54a6)"
+      }
+    },
+    {
+      "model": "gemma3:4b",
+      "model_family": "gemma",
+      "tag": {
+        "digest": "c1d2e3f40002",
+        "modified_at": "2025-03-12T00:00:00Z",
+        "size": 8600000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:47.621042+00:00",
+      "response_json": {
+        "id": "chatcmpl-337",
+        "object": "chat.completion",
+        "created": 1780127087,
+        "model": "gemma3:4b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Okay! 😊"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 17,
+          "completion_tokens": 4,
+          "total_tokens": 21
+        }
+      }
+    },
+    {
+      "model": "gemma4:31b",
+      "model_family": "gemma",
+      "tag": {
+        "digest": "221b330d11a8",
+        "modified_at": "2026-04-02T09:00:00-08:00",
+        "size": 62546177752,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:48.621272+00:00",
+      "response_json": {
+        "id": "chatcmpl-938",
+        "object": "chat.completion",
+        "created": 1780127087,
+        "model": "gemma4:31b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 21,
+          "completion_tokens": 9,
+          "total_tokens": 30
+        }
+      }
+    },
+    {
+      "model": "glm-4.7",
+      "model_family": "glm",
+      "tag": {
+        "digest": "8c95dad96c75",
+        "modified_at": "2025-12-22T00:00:00Z",
+        "size": 696060000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:49.279893+00:00",
+      "response_json": {
+        "id": "chatcmpl-729",
+        "object": "chat.completion",
+        "created": 1780127090,
+        "model": "glm-4.7",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you today?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 13,
+          "completion_tokens": 9,
+          "total_tokens": 22
+        }
+      }
+    },
+    {
+      "model": "deepseek-v3.2",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "a403a93c7b13",
+        "modified_at": "2025-12-02T00:00:00Z",
+        "size": 688586727753,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:44:51.554735+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: c86b6931-fc42-4bda-ae58-8b246fabf566)"
+      }
+    },
+    {
+      "model": "gpt-oss:120b",
+      "model_family": "gpt",
+      "tag": {
+        "digest": "d98fe6ba01e6",
+        "modified_at": "2025-08-05T00:00:00Z",
+        "size": 65290180781,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:51.916473+00:00",
+      "response_json": {
+        "id": "chatcmpl-441",
+        "object": "chat.completion",
+        "created": 1780127091,
+        "model": "gpt-oss:120b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hi there!",
+              "reasoning": "User says: \"Hello! Reply with a short answer.\" They want a short answer. Probably greet back briefly. So respond: \"Hi there!\" That's short."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 75,
+          "completion_tokens": 46,
+          "total_tokens": 121
+        }
+      }
+    },
+    {
+      "model": "minimax-m2.1",
+      "model_family": "minimax",
+      "tag": {
+        "digest": "a7c3e1f98b2d",
+        "modified_at": "2025-12-20T00:00:00Z",
+        "size": 230000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:52.888655+00:00",
+      "response_json": {
+        "id": "chatcmpl-782",
+        "object": "chat.completion",
+        "created": 1780127093,
+        "model": "minimax-m2.1",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you today?",
+              "reasoning": "The user wants a short answer. I should greet thembriefly and offer to help."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 46,
+          "completion_tokens": 29,
+          "total_tokens": 75
+        }
+      }
+    },
+    {
+      "model": "nemotron-3-super",
+      "model_family": "nemotron",
+      "tag": {
+        "digest": "da11955bb451",
+        "modified_at": "2026-03-11T00:00:00Z",
+        "size": 230500000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:55.391611+00:00",
+      "response_json": {
+        "id": "chatcmpl-935",
+        "object": "chat.completion",
+        "created": 1780127095,
+        "model": "nemotron-3-super",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello!",
+              "reasoning": "Okay, the user said \"Hello! Reply with a short answer.\" So they just want a brief response. I should keep it simple and friendly. Since they said \"short,\" I'll avoid any extra fluff. Maybe just \"Hello!\" or \"Hi there!\" to match their greeting. Let me make sure it's concise—just a couple of words. Yeah, \"Hello!\" should do it. No need for anything longer. Alright, that's it."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 25,
+          "completion_tokens": 100,
+          "total_tokens": 125
+        }
+      }
+    },
+    {
+      "model": "glm-4.6",
+      "model_family": "glm",
+      "tag": {
+        "digest": "ee0873722cc3",
+        "modified_at": "2025-09-29T00:00:00Z",
+        "size": 696060000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:44:56.750750+00:00",
+      "response_json": {
+        "id": "chatcmpl-831",
+        "object": "chat.completion",
+        "created": 1780127103,
+        "model": "glm-4.6",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "reasoning": "1.  **Analyze the user's request:** The user wants a \"short answer\" in response to the greeting \"Hello!\".\n\n2.  **Define \"short answer\":**\n    *   What does \"short\" mean in this context? It's subjective, but generally implies brevity. One or two words, maybe a very short phrase. Definitely not a paragraph.\n    *   What does \"answer\" mean? The user said \"Hello!\". This is a greeting. The appropriate \"answer\" to a greeting is a reciprocal greeting.\n\n3.  **Brainstorm possible responses:**\n    *   \"Hello!\" - This is the most direct and common response. It's short and answers the greeting.\n    *   \"Hi!\" - A slightly more informal version of \"Hello!\". Also very short and appropriate.\n    *   \"Hey!\" - Even more informal. Still a valid, short response.\n    *   \"Greetings!\" - A bit more formal, but still short.\n    *   \"Hello there!\" - A little longer, but still fits the \"short\" criteria.\n    *   \"Good morning/afternoon/evening!\" - This is time-dependent and might be slightly longer than what the user wants, but it"
+            },
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 13,
+          "completion_tokens": 256,
+          "total_tokens": 269
+        }
+      }
+    },
+    {
+      "model": "kimi-k2.5",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "89c148d8ace8",
+        "modified_at": "2026-01-26T00:00:00Z",
+        "size": 1118481408000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-05-30T07:45:04.992424+00:00",
+      "response_json": {
+        "error": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 801cf36d-0b2d-43fd-a582-c4772103c922)"
+      }
+    },
+    {
+      "model": "qwen3-coder:480b",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "653ca2ec1d71",
+        "modified_at": "2025-07-22T00:00:00Z",
+        "size": 510492157952,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:45:05.373912+00:00",
+      "response_json": {
+        "id": "chatcmpl-255",
+        "object": "chat.completion",
+        "created": 1780127105,
+        "model": "qwen3-coder:480b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you today?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 16,
+          "completion_tokens": 10,
+          "total_tokens": 26
+        }
+      }
+    },
+    {
+      "model": "ministral-3:8b",
+      "model_family": "ministral",
+      "tag": {
+        "digest": "a1b2c3d40003",
+        "modified_at": "2025-12-02T00:00:00Z",
+        "size": 10400000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-05-30T07:45:05.474942+00:00",
+      "response_json": {
+        "id": "chatcmpl-953",
+        "object": "chat.completion",
+        "created": 1780127104,
+        "model": "ministral-3:8b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Got it! 😊"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 7,
+          "total_tokens": 18
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+LoRA/Qwen/Qwen2.5-14B-Instruct,LoRA/Qwen/Qwen2.5-32B-Instruct,LoRA/Qwen/Qwen2.5-72B-Instruct,LoRA/Qwen/Qwen2.5-7B-Instruct,MiniMaxAI/MiniMax-M2.5,Pro/MiniMaxAI/MiniMax-M2.5,Pro/Qwen/Qwen2.5-7B-Instruct,Pro/zai-org/GLM-5.1,Qwen/Qwen2.5-14B-Instruct,Qwen/Qwen2.5-32B-Instruct,Qwen/Qwen2.5-72B-Instruct,Qwen/Qwen2.5-72B-Instruct-128K,Qwen/Qwen2.5-7B-Instruct,Qwen/Qwen3-VL-30B-A3B-Thinking,Qwen/Qwen3-VL-32B-Instruct,Qwen/Qwen3.5-4B,deepseek-ai/DeepSeek-OCR,deepseek-ai/DeepSeek-V3.2,deepseek-ai/DeepSeek-V4-Pro,zai-org/GLM-4.5V
+
+deepseek-ai/DeepSeek-OCR,Qwen/Qwen2.5-14B-Instruct,deepseek-ai/DeepSeek-V4-Pro,Pro/zai-org/GLM-5.1
