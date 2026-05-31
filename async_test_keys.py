@@ -715,6 +715,7 @@ async def run_provider(
                 # 每个模型只存第一次成功的 sample
                 if model_perf[m]["sample"] is None:
                     model_perf[m]["sample"] = {
+                        "has_thinking": bool(r.get("has_thinking")),
                         "thinking": r.get("sample_thinking", ""),
                         "content": r.get("sample_content", ""),
                     }

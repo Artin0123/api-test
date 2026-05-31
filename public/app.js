@@ -915,7 +915,9 @@ function renderPerfTable(modelPerf) {
         p.has_thinking_ratio != null
           ? `${(p.has_thinking_ratio * 100).toFixed(0)}%`
           : "-";
-      const hasSample = p.sample && (p.sample.content || p.sample.thinking);
+      const hasSample =
+        p.sample &&
+        (p.sample.content || p.sample.thinking || p.sample.has_thinking);
       const sampleBtn = hasSample
         ? `<button class="btn btn-ghost btn-xs" type="button"
            data-sample="${escAttr(JSON.stringify({ model, sample: p.sample }))}">查看</button>`
@@ -1000,13 +1002,14 @@ function openSample(model, sample) {
   dom.sampleTitle.textContent = model;
   dom.sampleSubtitle.textContent = "";
   const thinking = sample?.thinking || "";
+  const hasThinking = !!sample?.has_thinking;
   const content = sample?.content || "";
   dom.sampleContent.innerHTML = `
     ${
-      thinking
+      thinking || hasThinking
         ? `<div class="sample-block">
       <div class="sample-block-label">Thinking</div>
-      <pre class="sample-pre">${esc(thinking)}</pre>
+      <pre class="sample-pre">${thinking ? esc(thinking) : `<span class="na">（思考已發生，但內容未公開）</span>`}</pre>
     </div>`
         : ""
     }
