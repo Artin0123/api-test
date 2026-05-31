@@ -26,11 +26,7 @@
         "provider_type": "openai",
         "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "uploaded_at": "2026-05-20T02:15:00Z",
-        "elapsed_seconds": 183.4,
-        "valid_keys": [
-          "sk-aaaaaaaaaaaaaaaa",
-          "sk-bbbbbbbbbbbbbbbb"
-        ],
+        "valid_keys": ["sk-aaaaaaaaaaaaaaaa", "sk-bbbbbbbbbbbbbbbb"],
         "invalid_records": [
           {
             "api_key": "sk-cccccccccccccccc",
@@ -43,7 +39,6 @@
         "model_performance": {
           "qwen-max": {
             "sample_count": 2,
-            "thinking_only_count": 0,
             "content_ever_seen": true,
             "has_thinking_ratio": 1.0,
             "avg_ttft": 1.234,
@@ -51,14 +46,15 @@
             "timeout_count": 0,
             "total_tested": 2,
             "timeout_rate": 0.0,
+            "answer_verified": true,
             "sample": {
-              "thinking": "Let me think step by step.\n17 × 19 = 17 × (20 - 1) = 340 - 17 = 323",
+              "has_thinking": true,
+              "thinking": "Let me think step by step.\n17 \u00d7 19 = 17 \u00d7 (20 - 1) = 340 - 17 = 323",
               "content": "The answer is **323**."
             }
           },
           "qwen-plus": {
             "sample_count": 2,
-            "thinking_only_count": 0,
             "content_ever_seen": true,
             "has_thinking_ratio": 0.5,
             "avg_ttft": 0.891,
@@ -66,9 +62,11 @@
             "timeout_count": 0,
             "total_tested": 2,
             "timeout_rate": 0.0,
+            "answer_verified": true,
             "sample": {
+              "has_thinking": false,
               "thinking": "",
-              "content": "17 × 19 = 323"
+              "content": "17 \u00d7 19 = 323"
             }
           }
         }

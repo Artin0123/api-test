@@ -61,10 +61,11 @@ SHA-256( JSON.stringify({ api_base: normalized, provider_type }) )
 ## Quirks and Gotchas
 
 - **`wrangler.toml` is intentionally absent.** All Cloudflare config is done via the dashboard only (per SPEC.md §13).
-- **`DELETE /api/checkpoint`** exists in `_worker.js` but is not in SPEC.md — called by Python after successful results upload to clear the KV checkpoint and prevent the frontend from showing "执行中" after a completed run.
+- **`DELETE /api/checkpoint`** exists in `_worker.js` but is not called by Python — the checkpoint is auto-deleted by `handlePostResults` when results are uploaded. Python only deletes the local `checkpoint.json` file. The DELETE endpoint exists for manual cleanup if needed.
 - **Local fallback file paths are hardcoded** as `valid_keys/keys.txt` and `models_list/models.txt`. The per-provider named `.txt` files in those dirs are not used by the Python script.
+- **Local checkpoint path is hardcoded** as `checkpoint.json` (not `checkpoint_{fingerprint}.json`). Only one checkpoint file exists at a time in local mode.
 - **`async_test_results.json`** is gitignored but currently committed with real key data — treat as accidental; do not reference or expand it.
 - **`has_thinking_ratio` can be `null`** (not `0.0`) when `sample_count == 0` — frontend must handle null explicitly.
-- **Circuit breaker:** HTTP 401/403 → key added to `dead_keys`, all remaining models for that key skipped. HTTP 429/408 → one retry after 2s.
-- **Success criterion:** `has_content == True` — response must return non-empty content text, not just thinking tokens.
+- **Circuit breaker:** HTTP 401/403, or error message containing `balance` / `quota` → key added to `dead_keys`, all remaining models for that key skipped. HTTP 429/408 → one retry after 2s.
+- **Success criterion:** `has_content or has_thinking` — either non-empty content text or non-empty thinking tokens counts as success.
 - **Windows:** `asyncio.WindowsSelectorEventLoopPolicy()` is set automatically when running on win32.

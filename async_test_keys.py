@@ -623,6 +623,7 @@ async def run_provider(
                 "has_content": has_content,
                 "sample_content": sample_content,
                 "sample_thinking": sample_thinking,
+                "answer_verified": "323" in (sample_content + sample_thinking),
             }
             results[key].append(record)
 
@@ -694,6 +695,7 @@ async def run_provider(
             "ttft": [],
             "total": [],
             "thinking_count": 0,  # 有思考的成功请求数
+            "answer_verified": False,  # 任意一次成功回应中含有 323
             "sample": None,  # 第一次成功时的样本（只存一次）
         }
     )
@@ -712,6 +714,8 @@ async def run_provider(
                     "has_thinking"
                 ):  # 旧 checkpoint 无此字段时安全返回 None（等价 False）
                     model_perf[m]["thinking_count"] += 1
+                if r.get("answer_verified"):  # 任意一次成功含 323 即标记 True
+                    model_perf[m]["answer_verified"] = True
                 # 每个模型只存第一次成功的 sample
                 if model_perf[m]["sample"] is None:
                     model_perf[m]["sample"] = {
@@ -791,6 +795,7 @@ async def run_provider(
             "timeout_count": timeouts,
             "total_tested": total_tested,
             "timeout_rate": round(timeouts / total_tested, 3) if total_tested else None,
+            "answer_verified": perf["answer_verified"],
             "sample": perf["sample"],
         }
 

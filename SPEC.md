@@ -17,10 +17,12 @@
 [Cloudflare Pages]  (_worker.js)
   ├─ GET  /api/settings                   ← 读 KV app_settings，需认证
   ├─ POST /api/settings                   ← 写 KV app_settings，需认证
-  ├─ GET  /api/results?fp={fingerprint}   ← 读 results:{fp}，公开
-  ├─ POST /api/results                    ← 写 results:{fp}，需认证
-  ├─ GET  /api/checkpoint?fp={fp}         ← 读 checkpoint:{fp}，需认证
-  └─ /*                                   ← 静态前端
+  ├─ GET    /api/results?fp={fingerprint}   ← 读 results:{fp}，公开
+  ├─ POST   /api/results                    ← 写 results:{fp}，需认证；同时自动删除对应 checkpoint
+  ├─ GET    /api/checkpoint?fp={fp}         ← 读 checkpoint:{fp}，需认证
+  ├─ POST   /api/checkpoint                 ← 写 checkpoint:{fp}，需认证
+  ├─ DELETE /api/checkpoint?fp={fp}         ← 删 checkpoint:{fp}，需认证
+  └─ /*                                     ← 静态前端
 
 [前端]  (index.html / app.js)
   ├─ 来源设定 Tab（首页）
@@ -43,7 +45,7 @@
 
 一个 Provider 代表**一个 API 服务商节点**，由以下两个字段唯一确定：
 
-- `provider_type`：`openai` | `ollama` | `gemini`
+- `provider_type`：`openai` | `ollama` | `gemini` | `anthropic`
 - `api_base`：API 根地址（如 `https://api.openai.com/v1`）
 
 > 旧系统的 `mode`（thinking / vision）字段已移除，视觉模式不再支援。
@@ -56,17 +58,21 @@
   "provider_type": "openai",
   "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "keys": "sk-aaa\nsk-bbb\nsk-ccc",
-  "models": "qwen-max,qwen-plus,qwen-turbo"
+  "models": "qwen-max,qwen-plus,qwen-turbo",
+  "extra_body": "{\"enable_thinking\": true}",
+  "max_concurrency": null
 }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `enabled` | boolean | 是否启用测试（`true` 或 `false`），设为 `false` 时脚本直接跳过 |
-| `provider_type` | string | `openai` / `ollama` / `gemini` |
+| `provider_type` | string | `openai` / `ollama` / `gemini` / `anthropic` |
 | `api_base` | string | API 根地址，trailing slash 会被 trim。测试脚本会自动根据类型补齐后缀路由（如 `/chat/completions` 等）。 |
 | `keys` | string | 多个 API Key，**换行分隔**，原始字符串存储，由脚本 `splitlines()` 拆分 |
 | `models` | string | 多个模型名，**逗号分隔**，原始字符串存储，由脚本 `split(",")` 拆分 |
+| `extra_body` | string | 选填，JSON 字符串（原样存储）。测试时 `json.loads` 后合并覆盖请求体同名键，用于传递特定参数（如 `{"enable_thinking": true}`）。留空字符串代表不注入。 |
+| `max_concurrency` | int \| null | 选填，正整数，覆盖全局 `MAX_CONCURRENCY` 默认值（`2`）。为 `null` 时使用全局值。 |
 
 `keys` 和 `models` 均以字符串原样存储。前端按下保存时会执行 `normalize`（移除 API Key 的多余空行与前后空白、合并或移除 Models 间多余的逗号与空白），再存入后端，解析核心逻辑由脚本处理。
 
@@ -102,16 +108,22 @@ Fingerprint 是系统内部路由用的标识符，**不在任何 JSON 内容中
 {
   "providers": [
     {
+      "enabled": true,
       "provider_type": "openai",
       "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "keys": "sk-aaa\nsk-bbb",
-      "models": "qwen-max,qwen-plus"
+      "models": "qwen-max,qwen-plus",
+      "extra_body": "",
+      "max_concurrency": null
     },
     {
+      "enabled": true,
       "provider_type": "gemini",
       "api_base": "https://generativelanguage.googleapis.com/v1beta",
       "keys": "AIza-xxx",
-      "models": "gemini-2.5-pro,gemini-2.0-flash"
+      "models": "gemini-2.5-pro,gemini-2.0-flash",
+      "extra_body": "",
+      "max_concurrency": 8
     }
   ],
   "github_url": "https://github.com/owner/repo/actions/workflows/main.yml",
@@ -132,7 +144,6 @@ Fingerprint 是系统内部路由用的标识符，**不在任何 JSON 内容中
   "provider_type": "openai",
   "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "uploaded_at": "2026-05-20T02:15:00Z",
-  "elapsed_seconds": 183.4,
   "valid_keys": ["sk-aaa", "sk-bbb"],
   "invalid_records": [
     {
@@ -146,7 +157,6 @@ Fingerprint 是系统内部路由用的标识符，**不在任何 JSON 内容中
   "model_performance": {
     "qwen-max": {
       "sample_count": 2,
-      "thinking_only_count": 0,
       "content_ever_seen": true,
       "has_thinking_ratio": 1.0,
       "avg_ttft": 1.234,
@@ -154,7 +164,8 @@ Fingerprint 是系统内部路由用的标识符，**不在任何 JSON 内容中
       "timeout_count": 0,
       "total_tested": 2,
       "timeout_rate": 0.0,
-      "sample": { "thinking": "...", "content": "..." }
+      "answer_verified": true,
+      "sample": { "has_thinking": true, "thinking": "...", "content": "..." }
     }
   }
 }
@@ -163,6 +174,8 @@ Fingerprint 是系统内部路由用的标识符，**不在任何 JSON 内容中
 注意：
 - JSON 内容中**不存储 fingerprint**，fingerprint 已体现在 KV key 名称中
 - `provider_type` 和 `api_base` 必须保留，前端展示时需要用来匹配对应 provider
+- `uploaded_at` 由 `_worker.js` 在写入时附加，Python 脚本本身不生成此字段
+- `model_performance.sample` 含 `has_thinking`（布尔值）、`thinking`、`content` 三个字段
 - 每次上传**覆盖**旧值，始终只保留最新一次结果
 
 ---
@@ -234,13 +247,20 @@ dashscope.aliyuncs.com  [openai]  ⏳ 执行中
 | Method | Path | 说明 |
 |---|---|---|
 | `GET` | `/api/settings` | 读取完整 app_settings（含明文 keys） |
-| `POST` | `/api/settings` | 全量写入 app_settings |
+| `POST` | `/api/settings` | 全量写入 app_settings；同时清理不再存在的 provider 的 checkpoint |
 | `POST` | `/api/results` | GHA 上传单 provider 结果，body 须含 `provider_type` + `api_base` 以计算 fingerprint |
 | `GET` | `/api/checkpoint?fp={fingerprint}` | 读取单 provider checkpoint 摘要（前端用） |
+| `POST` | `/api/checkpoint` | 写入单 provider checkpoint（body 须含 `provider_type` + `api_base`） |
+| `DELETE` | `/api/checkpoint?fp={fingerprint}` | 删除单 provider checkpoint |
 
 `POST /api/results` 处理逻辑：
 1. 从 body 的 `provider_type` + `api_base` 计算 fingerprint
-2. 写入 `results:{fingerprint}`
+2. 写入 `results:{fingerprint}`，附加 `uploaded_at` 时间戳
+3. 自动删除 `checkpoint:{fingerprint}`（防止前端继续显示「执行中」）
+
+`POST /api/settings` 附加副作用：
+- 比对新旧 `providers[]`，对 identity（`api_base` / `provider_type`）已变更或被删除的旧 provider 自动执行 `kv.delete("checkpoint:{fp}")`
+- 仍存在的 provider 的 checkpoint 保持不变
 
 ---
 
@@ -248,8 +268,10 @@ dashscope.aliyuncs.com  [openai]  ⏳ 执行中
 
 ### 8.1 本地模式（不设 `PAGES_URL` 环境变量）
 
+- 只测试代码顶部配置区固定的单一 provider（`API_BASE` / `PROVIDER_TYPE`）
 - 从本地文件读 keys / models（配置区 `INPUT_FILE_PATH` / `MODELS_FILE_PATH`）
-- Checkpoint 写本地 `checkpoint_{fingerprint}.json`
+- 支持 `EXTRA_BODY_JSON` 配置项（JSON 字符串，留空则不注入）
+- Checkpoint 写本地 `checkpoint.json`（固定路径，非 fingerprint 命名）
 - 结果写本地 `async_test_results.json`，不上传
 
 ### 8.2 GHA 模式（设有 `PAGES_URL` + `ADMIN_PASSWORD`）
@@ -262,8 +284,8 @@ dashscope.aliyuncs.com  [openai]  ⏳ 执行中
    c. 执行多 Key × 多 Model 矩阵测试
       - 测试时根据 `provider_type` 自动拼接端点后缀。
       - Checkpoint 每 N 任务写一次（`POST /api/checkpoint` 推送给 KV，同时可存本地）。
-   d. 完成后 POST /api/results
-   e. 删除 checkpoint（DEL /api/checkpoint?fp=...，或删本地文件）
+   d. 完成后 POST /api/results（worker 接收时自动删除 KV checkpoint）
+   e. 删除本地 checkpoint 文件（`checkpoint.json`）
 3. 所有 provider 跑完后通知 Discord（由 GHA workflow YAML 负责）
 ```
 
@@ -271,10 +293,12 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 
 ### 8.3 核心测试逻辑摘要（不因多 provider 改变）
 
-- 多 Key × 多 Model → asyncio 并发队列（`MAX_CONCURRENCY = 32`）
-- 流式优先 10s → 失败回退非流式 15s
+- 多 Key × 多 Model → asyncio 并发队列（全局默认 `MAX_CONCURRENCY = 2`，可被 provider 的 `max_concurrency` 字段覆盖）
+- 单次请求超时 `TOTAL_TIMEOUT = 20s`；流式模式额外测量 TTFT（首 Token 时间），软限 `TTFT_TIMEOUT = 5s`
+- 流式优先 → 非权限/限流/超时类错误时降级非流式重试
 - 429 / 408 触发一次重试（+2s 等待，惩罚时间叠加）
-- 401 / 403 → Key 熔断，跳过剩余模型
+- 401 / 403，或错误信息含 `balance` / `quota` 字符串 → Key 熔断，加入 `dead_keys`，跳过剩余模型
+- 成功判定：`has_content or has_thinking`（有正文或有思考内容均视为成功）
 - 交叉验证：`proven_working_models` 决定软失效判断
 
 ---
@@ -284,15 +308,19 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 ### 9.1 来源设定 Tab（首页，默认 Tab）
 
 - 展示所有 provider 卡片，每张卡片显示：
-  - `provider_type` badge
+  - 左上角**勾选框**，用于批量操作
+  - `provider_type` badge；若 `enabled: false` 则 badge 显示「已停用」（警告色）并附加原始 provider_type badge，卡片加 `provider-card--disabled` 样式
   - `api_base` 主域名（截取，过长加省略号）
   - Key 数量（行数统计）、Model 数量（逗号分隔计数）
-- **新增 / 编辑**弹出 modal：
-  - `enabled`：是否启用的 Checkbox 开关
-  - `provider_type`：带箭头下拉选择（附加后缀 Tooltip 提示）
+  - 若 `max_concurrency` 不为 `null`，额外显示「并发: N」
+- 卡片区上方有**批量操作按钮**「批次启用」/「批次停用」：选中任意卡片后激活，点击后对所有已选 provider 批量更新 `enabled` 状态并清空选取
+- **新增 / 编辑**弹出 modal（`enabled` 状态**不在**此 modal 中修改，通过卡片勾选框 + 批量操作完成）：
+  - `provider_type`：带箭头下拉选择（选项：`openai` / `ollama` / `gemini` / `anthropic`，附加各自端点后缀的 Tooltip 提示）
   - `api_base`：文字输入
   - `API Keys`：多行 lined-editor（带行号），定高带内部滚动
   - `Models`：多行 lined-editor（带行号），定高带内部滚动（保存时自动清理多余逗号）
+  - `Extra Body`：多行 lined-editor（带行号），选填 JSON，带实时格式验证状态提示
+  - `Max Concurrency`：数字输入，选填，留空则使用全局默认值
 - **删除**：卡片删除按钮
 - 所有变动 → `POST /api/settings`（全量提交整个 `providers[]`）
 - 登录后展示完整明文 key（无需掩码，因为已认证）
@@ -303,6 +331,7 @@ GHA log 中所有涉及 API Key 的输出均使用 `masked = f"{key[:6]}...{key[
 - 对每个 provider 计算 fingerprint，并发调用：
   - `GET /api/results?fp=...`
   - `GET /api/checkpoint?fp=...`
+- 区块按「执行中」优先排序：有 usable checkpoint（checkpoint 比结果更新或无结果）的 provider 排最前
 - 每个 provider 显示一个**可折叠区块**，header 显示主域名 + `provider_type`
 - 若 checkpoint 存在，在区块顶部显示进度摘要（`completed/total`、死 key 数、最后存档时间）
 - 区块展开内容（来自 results）：

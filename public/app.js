@@ -922,6 +922,12 @@ function renderPerfTable(modelPerf) {
         ? `<button class="btn btn-ghost btn-xs" type="button"
            data-sample="${escAttr(JSON.stringify({ model, sample: p.sample }))}">查看</button>`
         : `<span class="na">-</span>`;
+      const answerVerified =
+        p.answer_verified === true
+          ? `<span class="ok" title="至少一次成功回应中包含 323">✓</span>`
+          : p.answer_verified === false
+            ? `<span class="na" title="所有成功回应均未包含 323（可能被截断）">✗</span>`
+            : `<span class="na">-</span>`;
 
       return `<tr>
       <td data-value="${esc(model)}"><code>${esc(model)}</code></td>
@@ -930,6 +936,7 @@ function renderPerfTable(modelPerf) {
       <td data-value="${p.avg_total ?? ""}" class="na">${esc(total)}</td>
       <td data-value="${p.timeout_rate ?? ""}">${toRate}</td>
       <td data-value="${p.has_thinking_ratio ?? ""}" class="na">${esc(thinkRatio)}</td>
+      <td data-value="${p.answer_verified === true ? 1 : 0}">${answerVerified}</td>
       <td>${sampleBtn}</td>
     </tr>`;
     })
@@ -945,6 +952,7 @@ function renderPerfTable(modelPerf) {
           <th data-sort="avg_total">avg 总耗时 <span class="sort-indicator"></span></th>
           <th data-sort="timeout_rate">超时率 <span class="sort-indicator"></span></th>
           <th data-sort="has_thinking_ratio">有思考 <span class="sort-indicator"></span></th>
+          <th data-sort="answer_verified">答案验证 <span class="sort-indicator"></span></th>
           <th>Sample</th>
         </tr></thead>
         <tbody>${rows}</tbody>
