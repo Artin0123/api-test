@@ -184,7 +184,11 @@ def extract_stream_chunk(line, provider_type):
             parts = c.get("content", {}).get("parts", [])
             for p in parts:
                 text = p.get("text") or ""
-                is_thought = bool(p.get("thought") or p.get("thoughtSignature"))
+                # `thought: true` 才代表此 part 是思考文字；
+                # `thoughtSignature` 只是「有思考過」的憑證，text 仍是正文
+                is_thought = bool(p.get("thought"))
+                if p.get("thoughtSignature"):
+                    has_thinking = True
                 if is_thought:
                     has_thinking = True
                     if text:
@@ -338,9 +342,11 @@ async def test_single_request(
                             parts = c.get("content", {}).get("parts", [])
                             for p in parts:
                                 text = p.get("text") or ""
-                                is_thought = bool(
-                                    p.get("thought") or p.get("thoughtSignature")
-                                )
+                                # `thought: true` 才代表此 part 是思考文字；
+                                # `thoughtSignature` 只是「有思考過」的憑證，text 仍是正文
+                                is_thought = bool(p.get("thought"))
+                                if p.get("thoughtSignature"):
+                                    has_thinking = True
                                 if is_thought:
                                     sample_thinking += text
                                     has_thinking = True
