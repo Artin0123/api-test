@@ -94,7 +94,7 @@ def get_full_endpoint(api_base, provider_type, model):
     elif provider_type == "gemini":
         return f"{base}/models/{model}:streamGenerateContent?alt=sse"
     elif provider_type == "anthropic":
-        return f"{base}/messages"
+        return f"{base}/v1/messages"
     return base
 
 
