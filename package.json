@@ -7,6 +7,6 @@
     "check": "node --check public/_worker.js && node --check public/app.js"
   },
   "devDependencies": {
-    "wrangler": "^4.103.0"
+    "wrangler": "^4.114.0"
   }
 }
