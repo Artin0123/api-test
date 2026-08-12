@@ -815,7 +815,7 @@ function renderProviderResult({ provider, host, resultData, checkpointData }) {
   const r = hasResult ? resultData.results : null;
 
   const uploadedAt = r?.uploaded_at
-    ? `上次更新：${new Date(r.uploaded_at).toLocaleString()}`
+    ? `上次更新：${fmtDateTime(r.uploaded_at)}`
     : "";
 
   const checkpointHtml = hasCheckpoint
@@ -866,9 +866,7 @@ function renderCheckpointBar(ck) {
   const completed = ck.completed_tasks ?? 0;
   const total = ck.total_tasks ?? 0;
   const deadCount = Array.isArray(ck.dead_keys) ? ck.dead_keys.length : 0;
-  const savedAt = ck.saved_at
-    ? new Date(ck.saved_at).toLocaleTimeString()
-    : "-";
+  const savedAt = ck.saved_at ? fmtTime(ck.saved_at) : "-";
   return `
     <div class="checkpoint-bar">
       <span class="checkpoint-bar-label">⏳ 进行中</span>
@@ -1088,19 +1086,24 @@ function closeErrorDetail() {
 }
 
 // ── Dead keys tab ─────────────────────────────────────────────────────────
+/** Hosts in the order the providers appear in 来源设定 — not alphabetical, so the
+ *  dropdowns and the table read in the same order as the config and results tabs. */
 function providerHosts() {
-  const hosts = ((state.settings || {}).providers || [])
-    .map((p) => extractHost(p.api_base))
-    .filter(Boolean);
-  return Array.from(new Set(hosts)).sort();
+  const hosts = [];
+  for (const p of ((state.settings || {}).providers || [])) {
+    const host = extractHost(p.api_base);
+    if (host && !hosts.includes(host)) hosts.push(host);
+  }
+  return hosts;
 }
 
 /** Host dropdowns always mirror state.settings.providers, plus any host already
  *  recorded in dead_keys (a provider may have been deleted after the fact). */
 function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
-  const hosts = new Set(providerHosts());
-  for (const r of state.deadKeys) if (r?.provider_host) hosts.add(r.provider_host);
-  const list = Array.from(hosts).sort();
+  const list = providerHosts();
+  for (const r of state.deadKeys) {
+    if (r?.provider_host && !list.includes(r.provider_host)) list.push(r.provider_host);
+  }
 
   const opts = [];
   if (includeAll) opts.push(`<option value="">全部域名</option>`);
@@ -1141,6 +1144,11 @@ function detailMessage(detail) {
 async function loadDeadKeys(force = false) {
   dom.dkError.classList.add("hidden");
   dom.dkFormError.textContent = "";
+  // Default to today so the native picker shows a real date instead of the
+  // browser's own locale placeholder. Only on (re)load — doing it in
+  // renderDeadKeys would refill the field on every filter keystroke, undoing a
+  // date the user just cleared to type a different one.
+  if (!dom.dkExpired.value) dom.dkExpired.value = todayISO();
 
   if (state.deadKeysLoaded && !force) {
     renderDeadKeys();
@@ -1203,6 +1211,20 @@ function filteredDeadKeys() {
   });
 }
 
+/** Order rows by provider order (hosts whose provider is gone go last), keeping
+ *  the stored order within each host so the newest entries stay at the bottom. */
+function sortByProviderOrder(rows) {
+  const order = providerHosts();
+  const rank = (host) => {
+    const i = order.indexOf(host);
+    return i === -1 ? order.length : i;
+  };
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => rank(a.r.provider_host) - rank(b.r.provider_host) || a.i - b.i)
+    .map((x) => x.r);
+}
+
 function activeFilterCount() {
   return [
     dom.dkFHost.value,
@@ -1220,7 +1242,7 @@ function renderDeadKeys() {
   dom.dkFilterCount.textContent = String(n);
   dom.dkFilterCount.classList.toggle("hidden", n === 0);
 
-  const rows = filteredDeadKeys();
+  const rows = sortByProviderOrder(filteredDeadKeys());
   if (!rows.length) {
     dom.dkEmpty.textContent = state.deadKeys.length
       ? "没有符合筛选条件的记录。"
@@ -1321,7 +1343,7 @@ async function addDeadKey() {
       if (d.record) state.deadKeys.push(d.record);
     }
     dom.dkKey.value = "";
-    dom.dkExpired.value = "";
+    dom.dkExpired.value = todayISO();
     renderDeadKeys();
   } catch (err) {
     dom.dkFormError.textContent =
@@ -1340,7 +1362,9 @@ function openDkEdit(id) {
   dom.dkEditError.textContent = "";
   fillHostSelect(dom.dkeHost, { selected: rec.provider_host || "" });
   dom.dkeKey.value = rec.api_key || "";
-  dom.dkeExpired.value = dkDateOf(rec);
+  // Records auto-created before expired_at existed have no date; default to today
+  // so the field shows a real value instead of the browser's locale placeholder.
+  dom.dkeExpired.value = dkDateOf(rec) || todayISO();
   dom.dkeCode.value = rec.error_code != null ? String(rec.error_code) : "";
   dom.dkEditOverlay.classList.remove("hidden");
   dom.dkeKey.focus();
@@ -1511,6 +1535,30 @@ function normalizeMessage(v) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 200);
+}
+
+// Fixed YYYY-MM-DD HH:mm(:ss) in local time. toLocaleString() follows the browser
+// locale, which mixes formats across machines (2026/8/12 下午10:15 vs 8/12/2026
+// 10:15 PM); the dead keys table already shows plain ISO dates, so match it.
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function fmtDateTime(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function fmtTime(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 function extractHost(url) {

@@ -8,6 +8,11 @@
 }
 
 :root {
+    /* Tells the browser to render native controls (date picker icon and popup,
+       scrollbars, autofill) in dark — without this they stay light regardless of
+       our own colours, which is why the calendar icon looked black. */
+    color-scheme: dark;
+
     /* colours — dark (default) */
     --bg: #0f1117;
     --bg-2: #181c27;
@@ -36,6 +41,7 @@
 
 /* Light theme overrides */
 [data-theme="light"] {
+    color-scheme: light;
     --bg: #f4f6fb;
     --bg-2: #ffffff;
     --bg-3: #eef0f7;

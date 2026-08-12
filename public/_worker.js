@@ -253,7 +253,21 @@ async function handlePostResults(request, env) {
   await kv.put(`results:${fp}`, JSON.stringify(payload));
   // Auto-clean checkpoint so frontend won't show stale "执行中"
   await kv.delete(`checkpoint:${fp}`);
-  return json({ ok: true, fingerprint: fp });
+
+  // Best-effort: the results are already stored, so a failure here must not make
+  // the uploader think the whole run was lost and retry it.
+  let recorded = 0;
+  try {
+    recorded = await recordDeadKeysFromResults(
+      kv,
+      api_base.trim(),
+      body.invalid_records,
+      payload.uploaded_at,
+    );
+  } catch (err) {
+    console.error("dead key auto-record failed", err);
+  }
+  return json({ ok: true, fingerprint: fp, dead_keys_added: recorded });
 }
 
 // ─── /api/checkpoint ─────────────────────────────────────────────────────────
@@ -338,6 +352,76 @@ function normalizeErrorDetail(value) {
     out[k] = typeof v === "object" ? JSON.stringify(v) : String(v);
   }
   return Object.keys(out).length ? out : null;
+}
+
+/** Only HTTP 401 is auto-recorded. Anything else (403, 402, quota wording, 429…)
+ *  stays manual on purpose: api_key dedup keeps the earliest record forever, so a
+ *  key parked here by mistake never leaves on its own. */
+const AUTO_RECORD_CODE = 401;
+
+function isDeadKeyRecord(rec) {
+  if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) return false;
+  return normalizeErrorCode(rec.error_code) === AUTO_RECORD_CODE;
+}
+
+/** Append keys that a test run proved dead, applying the same dedup rules as a
+ *  manual POST. Returns how many records were added. */
+async function recordDeadKeysFromResults(kv, api_base, invalidRecords, uploadedAt) {
+  if (!Array.isArray(invalidRecords) || !invalidRecords.length) return 0;
+
+  let provider_host;
+  try {
+    provider_host = new URL(api_base).hostname;
+  } catch {
+    return 0;
+  }
+  if (!provider_host) return 0;
+
+  // Store the calendar day at midnight UTC — the exact shape manual entries use
+  // (toIsoDay in app.js). expired_at is read as a date (dkDateOf slices 10 chars,
+  // the range filter compares strings), so mixing a full instant in here would make
+  // auto and manual rows for the same day sort and filter as different days.
+  // The precise moment is still kept in created_at.
+  const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
+
+  const list = await readDeadKeys(kv);
+  const known = new Set(list.map((r) => r && r.api_key));
+  let added = 0;
+
+  for (const rec of invalidRecords) {
+    if (!isDeadKeyRecord(rec)) continue;
+    const api_key = rec.api_key.trim();
+    if (known.has(api_key)) continue;
+
+    const error_code = normalizeErrorCode(rec.error_code);
+    let error_detail = normalizeErrorDetail(rec.error_detail);
+    if (!error_detail && rec.error_reason) {
+      error_detail = { message: String(rec.error_reason) };
+    }
+    if (
+      error_detail &&
+      list.some(
+        (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
+      )
+    ) {
+      error_detail = null;
+    }
+
+    list.push({
+      id: crypto.randomUUID(),
+      provider_host,
+      api_key,
+      expired_at,
+      error_code,
+      error_detail,
+      created_at: uploadedAt,
+    });
+    known.add(api_key);
+    added++;
+  }
+
+  if (added) await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
+  return added;
 }
 
 async function handleGetDeadKeys(request, env) {
