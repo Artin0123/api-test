@@ -32,6 +32,9 @@ TTFT_TIMEOUT = 5.0
 TOTAL_TIMEOUT = 20.0
 CHECKPOINT_EVERY_N_TASKS = 200
 PROMPT = "What is 17 multiplied by 19? Think step by step."
+# 服务商只有一支 Key 时，同一个 (Key, Model) 会连跑两轮；两轮之间的间隔秒数，
+# 用来避免连续打同一支 Key 被判成限流。
+SINGLE_KEY_RERUN_DELAY = 2.0
 
 # ─── 3. 云端集成 (由 GitHub Actions 通过环境变量注入，本地开发请留空) ───
 PAGES_URL = os.environ.get("PAGES_URL", "").strip().rstrip("/")
@@ -67,6 +70,52 @@ def _pages_request(method: str, path: str, body=None):
         raise RuntimeError(
             f"Pages API {method} {path} -> HTTP {e.code}: {e.read().decode()[:300]}"
         ) from e
+
+
+ERROR_BODY_MAX_LEN = 512
+REASON_MAX_LEN = 200
+
+
+def parse_error_body(body):
+    """解析供应商回传的错误 response body，提取结构化字段。
+
+    覆盖 OpenAI / Gemini / Anthropic / 各类代理商格式；非 JSON（如 HTML 错误页）
+    时 fallback 存原始文字，确保永远能显示供应商的真实说法。
+    """
+    if not body:
+        return {}
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return {"raw": body[:ERROR_BODY_MAX_LEN]}
+
+    if not isinstance(data, dict):
+        return {"raw": body[:ERROR_BODY_MAX_LEN]}
+
+    detail = {}
+    # OpenAI/Anthropic 包在 error 里，其他供应商可能直接摊在顶层
+    error_obj = data.get("error")
+    if not isinstance(error_obj, dict):
+        error_obj = data
+    for key in ("message", "msg", "type", "code", "param", "status"):
+        val = error_obj.get(key)
+        if val is not None and not isinstance(val, (dict, list)):
+            # 逐栏截断：body 本身不设限，但单一栏位不让它无限膨胀 KV
+            detail[key] = str(val)[:ERROR_BODY_MAX_LEN]
+
+    return detail if detail else {"raw": body[:ERROR_BODY_MAX_LEN]}
+
+
+def pick_error_message(detail):
+    """从 parse_error_body 的结果取一句可读讯息；取不到回 None。"""
+    if not detail:
+        return None
+    for key in ("message", "msg", "raw"):
+        val = detail.get(key)
+        if val and str(val).strip():
+            # 压平换行/多空白，避免分组标题破版
+            return " ".join(str(val).split())[:REASON_MAX_LEN]
+    return None
 
 
 def extract_think_xml(text):
@@ -525,6 +574,15 @@ async def run_provider(
     print(f"▶ 载入 {len(keys)} 个 Key，{len(models)} 个模型，并发: {concurrency}")
     print(f"{'=' * 50}\n")
 
+    # 只有一支 Key 时没有交叉验证的余地（没有别的 Key 能证明模型健康），
+    # 所以同一个 (Key, Model) 连跑两轮，用第二轮的样本区分「模型真的不通」与「单次抖动」。
+    runs_per_pair = 2 if len(keys) == 1 else 1
+    if runs_per_pair > 1:
+        print(
+            f"▶ 仅有 1 支 Key，每个模型将连跑 {runs_per_pair} 轮"
+            f"（每轮之间间隔 {SINGLE_KEY_RERUN_DELAY} 秒）\n"
+        )
+
     dead_keys = set()
     model_timeout_stats = defaultdict(int)  # 各模型超时/限流次数
     model_test_counts = defaultdict(int)  # 各模型实际发出请求次数（用于计算超时率）
@@ -538,17 +596,28 @@ async def run_provider(
             with open(CHECKPOINT_PATH, "r", encoding="utf-8") as f:
                 ckpt = json.load(f)
                 results = ckpt.get("results", {})
+                success_counts = defaultdict(int)
                 for k, v in results.items():
                     for item in v:
                         # 只跳过成功的 pair；失败的（429/超时/供应商错误）重新跑
                         # 例外：403/401 是 Key 级硬伤，直接把该 Key 加入 dead_keys，全部跳过
                         if item.get("success"):
-                            completed_pairs.add(f"{k}::{item['model']}")
+                            success_counts[f"{k}::{item['model']}"] += 1
                         elif item.get("status") in (401, 403):
                             dead_keys.add(k)
-                # 清理 results 中的失败记录，避免重跑后出现重复条目
+                # 单 Key 模式要满额（两轮都成功）才算做完，否则中断续跑会悄悄退化成只跑一轮
+                completed_pairs = {
+                    pair for pair, n in success_counts.items() if n >= runs_per_pair
+                }
+                # 清理 results：只留下「已满额」pair 的成功记录。要重跑的 pair 连旧的
+                # 成功记录一起丢掉，否则旧样本会和新的两轮叠成 3 笔
                 for k in results:
-                    results[k] = [item for item in results[k] if item.get("success")]
+                    results[k] = [
+                        item
+                        for item in results[k]
+                        if item.get("success")
+                        and f"{k}::{item['model']}" in completed_pairs
+                    ]
             print(
                 f"已恢复进度: {len(completed_pairs)} 个成功测试项，{len(dead_keys)} 个死 Key"
             )
@@ -579,87 +648,99 @@ async def run_provider(
                 task_queue.task_done()
                 continue
 
-            print(
-                f"[{processed_count}/{total_in_queue}] 测试 {masked} -> {model}",
-                flush=True,
-            )
+            for run_idx in range(1, runs_per_pair + 1):
+                if run_idx > 1:
+                    # 第一轮可能已经把这支 Key 判死，别再浪费一轮与等待时间
+                    if key in dead_keys:
+                        break
+                    await asyncio.sleep(SINGLE_KEY_RERUN_DELAY)
 
-            (
-                success,
-                status,
-                err,
-                ttft,
-                total,
-                has_thinking,
-                has_content,
-                sample_content,
-                sample_thinking,
-            ) = await benchmark_model(
-                session,
-                key,
-                model,
-                provider_type=provider_type,
-                api_base=api_base,
-                dead_keys=dead_keys,
-                extra_body=extra_body,
-            )
+                round_note = f" (第 {run_idx}/{runs_per_pair} 轮)" if runs_per_pair > 1 else ""
+                print(
+                    f"[{processed_count}/{total_in_queue}] 测试 {masked} -> {model}{round_note}",
+                    flush=True,
+                )
 
-            # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
-            if status == -1:
-                task_queue.task_done()
-                continue
+                (
+                    success,
+                    status,
+                    err,
+                    ttft,
+                    total,
+                    has_thinking,
+                    has_content,
+                    sample_content,
+                    sample_thinking,
+                ) = await benchmark_model(
+                    session,
+                    key,
+                    model,
+                    provider_type=provider_type,
+                    api_base=api_base,
+                    dead_keys=dead_keys,
+                    extra_body=extra_body,
+                )
 
-            if key not in results:
-                results[key] = []
+                # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
+                if status == -1:
+                    break
 
-            record = {
-                "model": model,
-                "success": success,
-                "status": status,
-                "error": err[:100],
-                "avg_ttft": ttft,
-                "avg_total": total,
-                "has_thinking": has_thinking,
-                "has_content": has_content,
-                "sample_content": sample_content,
-                "sample_thinking": sample_thinking,
-                "answer_verified": "323" in (sample_content + sample_thinking),
-            }
-            results[key].append(record)
+                if key not in results:
+                    results[key] = []
 
-            # Circuit Breaker：只有明确的 Key 权限错误 (401/403) 或余额/配额提示才判死
-            if (
-                status in (401, 403)
-                or "balance" in err.lower()
-                or "quota" in err.lower()
-            ):
-                reason = f"HTTP {status}" if status not in (401, 403) else str(status)
-                print(f"[熔断] {masked} 触发 {reason}，判定为死 Key。")
-                dead_keys.add(key)
-
-            # 记录模型测试次数与超时统计（供报表参考，不触发熔断）
-            model_test_counts[model] += 1
-            if status in (429, 408):
-                model_timeout_stats[model] += 1
-
-            tasks_done_since_ckpt += 1
-            if tasks_done_since_ckpt >= CHECKPOINT_EVERY_N_TASKS:
-                ckpt_data = {
-                    "provider_type": provider_type,
-                    "api_base": api_base,
-                    "total_tasks": total_in_queue,
-                    "completed_tasks": processed_count,
-                    "dead_keys": list(dead_keys),
-                    "results": results,
+                record = {
+                    "model": model,
+                    "success": success,
+                    "status": status,
+                    "error": err[:100],
+                    # 在这里解析而非事后解析截断字串：大于 512 字元的 JSON body 一旦被切断
+                    # 就不再是合法 JSON，只能退回 raw，反而拿不到供应商的 message
+                    "error_detail": parse_error_body(err) if err else None,
+                    "avg_ttft": ttft,
+                    "avg_total": total,
+                    "has_thinking": has_thinking,
+                    "has_content": has_content,
+                    "sample_content": sample_content,
+                    "sample_thinking": sample_thinking,
+                    "answer_verified": "323" in (sample_content + sample_thinking),
                 }
-                with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
-                    json.dump(ckpt_data, f, ensure_ascii=False)
-                if PAGES_URL and ADMIN_TOKEN:
-                    try:
-                        _pages_request("POST", "/api/checkpoint", ckpt_data)
-                    except:
-                        pass
-                tasks_done_since_ckpt = 0
+                results[key].append(record)
+
+                # Circuit Breaker：只有明确的 Key 权限错误 (401/403) 或余额/配额提示才判死
+                if (
+                    status in (401, 403)
+                    or "balance" in err.lower()
+                    or "quota" in err.lower()
+                ):
+                    reason = (
+                        f"HTTP {status}" if status not in (401, 403) else str(status)
+                    )
+                    print(f"[熔断] {masked} 触发 {reason}，判定为死 Key。")
+                    dead_keys.add(key)
+
+                # 记录模型测试次数与超时统计（供报表参考，不触发熔断）
+                model_test_counts[model] += 1
+                if status in (429, 408):
+                    model_timeout_stats[model] += 1
+
+                tasks_done_since_ckpt += 1
+                if tasks_done_since_ckpt >= CHECKPOINT_EVERY_N_TASKS:
+                    ckpt_data = {
+                        "provider_type": provider_type,
+                        "api_base": api_base,
+                        "total_tasks": total_in_queue,
+                        "completed_tasks": processed_count,
+                        "dead_keys": list(dead_keys),
+                        "results": results,
+                    }
+                    with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+                        json.dump(ckpt_data, f, ensure_ascii=False)
+                    if PAGES_URL and ADMIN_TOKEN:
+                        try:
+                            _pages_request("POST", "/api/checkpoint", ckpt_data)
+                        except:
+                            pass
+                    tasks_done_since_ckpt = 0
 
             task_queue.task_done()
 
@@ -725,47 +806,68 @@ async def run_provider(
                     }
 
     invalid_output = []
+    # error_reason -> 只有该组第一笔保留 error_detail，其余存 null，避免同样的 body 重复塞进 KV
+    seen_detail_reasons = set()
 
     for k, records in results.items():
         key_all_failed = True
         hard_failure_reason = None
-        key_errors = []
+        hard_failure_status = None
+        first_error_status = None
+        first_error_detail = None
 
         for r in records:
-            model = r["model"]
             if r["success"]:
                 key_all_failed = False
             else:
                 status = r["status"]
-                reason = "Unknown Error"
+                if first_error_status is None:
+                    first_error_status = status
+                    # 旧 checkpoint 没有 error_detail，退回解析当时留下的字串
+                    first_error_detail = r.get("error_detail")
+                    if first_error_detail is None:
+                        first_error_detail = parse_error_body(
+                            r.get("error_body") or r.get("error") or ""
+                        )
                 if status in (401, 403):
                     hard_failure_reason = f"Key 专属硬伤 (Hard Failure - {status})"
-                    reason = hard_failure_reason
-                elif status in (400, 404):
-                    reason = f"模型不支持或不存在 ({status})"
-                elif status in (429, 408):
-                    reason = f"频控限流或响应超时 (Rate Limit / Timeout - {status})"
-                elif model in proven_working_models:
-                    reason = f"该 Key 调不通，但其他 Key 证明模型健康 (Key Specific Error - {status})"
-                key_errors.append(f"{model}: {reason}")
+                    hard_failure_status = status
 
         # 结算这把 Key
         if key_all_failed:
-            tested_models = [r["model"] for r in records]
-            if hard_failure_reason:
+            detail = first_error_detail or {}
+            message = pick_error_message(detail)
+            error_code = first_error_status
+
+            # 优先显示供应商的原话；只有连 body 都拿不到时才退回人工归类的说明
+            if message:
+                final_reason = message
+            elif hard_failure_reason:
                 final_reason = hard_failure_reason
-            elif any(m in proven_working_models for m in tested_models):
+                # 说明文字讲的是 401/403，error_code 就得跟着它，不能停在首个失败的状态码
+                error_code = hard_failure_status
+            elif any(r["model"] in proven_working_models for r in records):
                 final_reason = (
                     "全盘软失效 (测试的所有模型均失败，但部分模型被其他Key证实健康)"
                 )
             else:
                 final_reason = "全部模型皆无响应 (无法断定是Key的问题，因全网皆败)"
 
-            entry = {"api_key": k, "error_reason": final_reason}
-            # 401/403 硬伤死因已自明，不需要重复列模型详情
-            if not hard_failure_reason:
-                entry["failed_models_details"] = key_errors
-            invalid_output.append(entry)
+            if final_reason in seen_detail_reasons:
+                detail = None
+            elif detail:
+                seen_detail_reasons.add(final_reason)
+            else:
+                detail = None
+
+            invalid_output.append(
+                {
+                    "api_key": k,
+                    "error_reason": final_reason,
+                    "error_code": error_code,
+                    "error_detail": detail,
+                }
+            )
         else:
             valid_keys.append(k)
 

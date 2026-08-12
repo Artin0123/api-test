@@ -6,6 +6,7 @@
  *     app_settings               { providers[], github_url, discord_webhook_url }
  *     results:{fingerprint}      per-provider latest test results
  *     checkpoint:{fingerprint}   per-provider in-progress checkpoint
+ *     dead_keys                  manually curated dead key records (array)
  *
  * Secrets required:
  *   ADMIN_PASSWORD
@@ -22,6 +23,10 @@ const ROUTES = {
   "GET /api/checkpoint": handleGetCheckpoint,
   "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
+  "GET /api/dead-keys": handleGetDeadKeys,
+  "POST /api/dead-keys": handlePostDeadKey,
+  "PUT /api/dead-keys": handlePutDeadKey,
+  "DELETE /api/dead-keys": handleDeleteDeadKey,
 };
 
 export default {
@@ -297,5 +302,200 @@ async function handleDeleteCheckpoint(request, env, url) {
 
   const kv = kvStore(env);
   await kv.delete(`checkpoint:${fp}`);
+  return json({ ok: true });
+}
+
+// ─── /api/dead-keys ──────────────────────────────────────────────────────────
+
+const DEAD_KEYS_KEY = "dead_keys";
+
+async function readDeadKeys(kv) {
+  const parsed = parseJsonOrNull(await kv.get(DEAD_KEYS_KEY));
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function normalizeErrorCode(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** error_detail is deduped per provider_host + error_code — same host, same
+ *  status code means the same provider message, so it is stored only once. */
+function sameDedupGroup(a, b) {
+  return (
+    a.provider_host === b.provider_host &&
+    normalizeErrorCode(a.error_code) === normalizeErrorCode(b.error_code)
+  );
+}
+
+/** error_detail must be a flat-ish key-value object; anything else is dropped. */
+function normalizeErrorDetail(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (v === null || v === undefined) continue;
+    out[k] = typeof v === "object" ? JSON.stringify(v) : String(v);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+async function handleGetDeadKeys(request, env) {
+  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  const kv = kvStore(env);
+  return json({ ok: true, dead_keys: await readDeadKeys(kv) });
+}
+
+async function handlePostDeadKey(request, env) {
+  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+
+  const api_key = typeof body.api_key === "string" ? body.api_key.trim() : "";
+  if (!api_key) return json({ error: "api_key required" }, 400);
+
+  const provider_host =
+    typeof body.provider_host === "string" ? body.provider_host.trim() : "";
+  if (!provider_host) return json({ error: "provider_host required" }, 400);
+
+  const kv = kvStore(env);
+  const list = await readDeadKeys(kv);
+
+  // Key dedup is global (not per host): the earliest record wins, nothing is overwritten.
+  if (list.some((r) => r && r.api_key === api_key)) {
+    return json({ error: "api_key already recorded", duplicated: true }, 409);
+  }
+
+  const error_code = normalizeErrorCode(body.error_code);
+  let error_detail = normalizeErrorDetail(body.error_detail);
+
+  if (
+    error_detail &&
+    list.some(
+      (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
+    )
+  ) {
+    error_detail = null;
+  }
+
+  const record = {
+    id: crypto.randomUUID(),
+    provider_host,
+    api_key,
+    expired_at:
+      typeof body.expired_at === "string" && body.expired_at.trim()
+        ? body.expired_at.trim()
+        : null,
+    error_code,
+    error_detail,
+    created_at: new Date().toISOString(),
+  };
+
+  list.push(record);
+  await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
+  return json({ ok: true, record });
+}
+
+async function handlePutDeadKey(request, env, url) {
+  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+
+  const id = getNonEmptyString(url, "id");
+  if (!id) return json({ error: "id required" }, 400);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+
+  const kv = kvStore(env);
+  const list = await readDeadKeys(kv);
+  const idx = list.findIndex((r) => r && r.id === id);
+  if (idx === -1) return json({ error: "Not Found" }, 404);
+
+  const prev = list[idx];
+  const next = { ...prev };
+
+  if (typeof body.api_key === "string") {
+    const api_key = body.api_key.trim();
+    if (!api_key) return json({ error: "api_key must not be empty" }, 400);
+    if (list.some((r, i) => i !== idx && r && r.api_key === api_key)) {
+      return json({ error: "api_key already recorded", duplicated: true }, 409);
+    }
+    next.api_key = api_key;
+  }
+  if (typeof body.provider_host === "string") {
+    const provider_host = body.provider_host.trim();
+    if (!provider_host)
+      return json({ error: "provider_host must not be empty" }, 400);
+    next.provider_host = provider_host;
+  }
+  if (body.expired_at !== undefined) {
+    next.expired_at =
+      typeof body.expired_at === "string" && body.expired_at.trim()
+        ? body.expired_at.trim()
+        : null;
+  }
+  if (body.error_code !== undefined) {
+    next.error_code = normalizeErrorCode(body.error_code);
+  }
+  if (body.error_detail !== undefined) {
+    next.error_detail = normalizeErrorDetail(body.error_detail);
+  }
+
+  list[idx] = next;
+
+  // Editing host or error_code moves the record between dedup groups. Without
+  // rebalancing, the old group loses its only stored detail and the new group
+  // can end up holding two copies.
+  if (!sameDedupGroup(prev, next)) {
+    if (prev.error_detail) {
+      const heir = list.find(
+        (r, i) => i !== idx && r && !r.error_detail && sameDedupGroup(r, prev),
+      );
+      if (heir) heir.error_detail = prev.error_detail;
+    }
+    if (
+      next.error_detail &&
+      list.some(
+        (r, i) => i !== idx && r && r.error_detail && sameDedupGroup(r, next),
+      )
+    ) {
+      next.error_detail = null;
+    }
+  }
+
+  await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
+  return json({ ok: true, record: next });
+}
+
+async function handleDeleteDeadKey(request, env, url) {
+  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+
+  const id = getNonEmptyString(url, "id");
+  if (!id) return json({ error: "id required" }, 400);
+
+  const kv = kvStore(env);
+  const list = await readDeadKeys(kv);
+  const removed = list.find((r) => r && r.id === id);
+  if (!removed) return json({ error: "Not Found" }, 404);
+  const next = list.filter((r) => !r || r.id !== id);
+
+  // The deleted record may have been the only holder of its group's error_detail
+  // (the rest were nulled by dedup) — hand it over so the group keeps its message.
+  if (removed.error_detail) {
+    const heir = next.find(
+      (r) => r && !r.error_detail && sameDedupGroup(r, removed),
+    );
+    if (heir) heir.error_detail = removed.error_detail;
+  }
+
+  await kv.put(DEAD_KEYS_KEY, JSON.stringify(next));
   return json({ ok: true });
 }

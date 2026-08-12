@@ -31,6 +31,7 @@ No linter, formatter, or type checker exists. `node --check` is parse-only.
 - `app_settings` — full settings JSON
 - `results:{fingerprint}` — per-provider test results
 - `checkpoint:{fingerprint}` — in-progress checkpoint
+- `dead_keys` — array of manually curated dead key records (`GET/POST/PUT/DELETE /api/dead-keys`, `id` via `crypto.randomUUID()`)
 
 KV binding name is exactly `KV_STORE` (must match dashboard and `--kv=KV_STORE` flag).
 
@@ -53,7 +54,7 @@ SHA-256( JSON.stringify({ api_base: normalized, provider_type }) )
 
 - Workflow: `.github/workflows/main.yml` — runs daily at UTC 02:00 and on `workflow_dispatch`.
 - Concurrency: `cancel-in-progress: false` — never cancels running jobs.
-- Python version: 3.14 (pre-release); script has no 3.14-specific features.
+- Python version: 3.14; script has no 3.14-specific features.
 - CI installs only `pip install aiohttp`, not `-r requirements.txt`.
 - Required secrets: `PAGES_URL`, `ADMIN_PASSWORD`.
 - Post-run: Discord notification via webhook URL fetched from KV `app_settings`.
@@ -67,5 +68,7 @@ SHA-256( JSON.stringify({ api_base: normalized, provider_type }) )
 - **`async_test_results.json`** is gitignored but currently committed with real key data — treat as accidental; do not reference or expand it.
 - **`has_thinking_ratio` can be `null`** (not `0.0`) when `sample_count == 0` — frontend must handle null explicitly.
 - **Circuit breaker:** HTTP 401/403, or error message containing `balance` / `quota` → key added to `dead_keys`, all remaining models for that key skipped. HTTP 429/408 → one retry after 2s.
+- **Single-key providers run every model twice.** With only one key there is no cross-key validation, so `runs_per_pair = 2` and each `(key, model)` runs two rounds separated by `SINGLE_KEY_RERUN_DELAY` (2s) to avoid tripping rate limits. Both rounds are recorded, so a model counts as failed only if both fail. The second round is skipped if round 1 tripped the circuit breaker. Resume requires `runs_per_pair` successes before a pair is treated as done, and a partially-done pair discards its stale record so the fresh rounds do not stack.
 - **Success criterion:** `has_content or has_thinking` — either non-empty content text or non-empty thinking tokens counts as success.
+- **`error_reason` is the provider's own message**, parsed from the first failed record's `error_body` by `parse_error_body` / `pick_error_message` (capped at 200 chars). The old canned text (`Key 专属硬伤 ...`) is only a fallback when no message can be parsed. Within one run, only the first record of each `error_reason` keeps `error_detail`; the rest store `null`. Frontend truncates display at 120 chars with a `...` suffix.
 - **Windows:** `asyncio.WindowsSelectorEventLoopPolicy()` is set automatically when running on win32.

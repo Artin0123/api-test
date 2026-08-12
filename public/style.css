@@ -1073,6 +1073,130 @@ code {
     color: var(--text-muted);
 }
 
+/* ── Dead keys tab ─────────────────────────────────────────────────────── */
+.dk-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.85rem;
+}
+.dk-add-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+.dk-add-row .input-select {
+    width: auto;
+    min-width: 12rem;
+}
+.dk-add-row .input-text[type="text"] {
+    flex: 1;
+    min-width: 14rem;
+}
+.dk-add-row .input-text[type="date"] {
+    width: auto;
+}
+.dk-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+.dk-filter-panel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    align-items: end;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+.dk-filter-panel .btn {
+    justify-self: start;
+}
+
+.dk-host-cell {
+    display: block;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dk-key-cell {
+    display: block;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dk-date-cell {
+    white-space: nowrap;
+}
+/* max-width on a <td> is ignored under auto table layout, so cap the inner box */
+.dk-msg-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    max-width: 16rem;
+}
+.dk-msg {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dk-actions {
+    display: flex;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+
+/* ── Error detail modal ────────────────────────────────────────────────── */
+.errdetail-code {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    padding-bottom: 0.85rem;
+    margin-bottom: 0.85rem;
+    border-bottom: 1px solid var(--border);
+}
+.errdetail-row {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+    gap: 0.85rem;
+    padding: 0.5rem 0;
+    align-items: start;
+}
+.errdetail-row + .errdetail-row {
+    border-top: 1px solid var(--border);
+}
+.errdetail-key {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    word-break: break-all;
+}
+.errdetail-val {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* ── RWD ───────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
     :root {
@@ -1203,6 +1327,39 @@ code {
     .result-lined-editor {
         width: 100%;
         flex: none;
+    }
+
+    /* Dead keys: stack the add form and let the filter panel go single column */
+    .dk-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .dk-filter-btn {
+        align-self: flex-start;
+    }
+    .dk-add-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .dk-add-row .input-select,
+    .dk-add-row .input-text[type="text"],
+    .dk-add-row .input-text[type="date"] {
+        width: 100%;
+        min-width: 0;
+    }
+    .dk-filter-panel {
+        grid-template-columns: 1fr;
+    }
+    .dk-host-cell,
+    .dk-key-cell {
+        max-width: 9rem;
+    }
+    .dk-msg-line {
+        max-width: 12rem;
+    }
+    .errdetail-row {
+        grid-template-columns: 1fr;
+        gap: 0.3rem;
     }
 
     /* Data table: horizontal scroll, smaller text */

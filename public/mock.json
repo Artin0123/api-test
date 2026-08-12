@@ -30,8 +30,29 @@
         "invalid_records": [
           {
             "api_key": "sk-cccccccccccccccc",
-            "error_reason": "Key 专属硬伤 (Hard Failure - 401)",
-            "failed_models_details": null
+            "error_reason": "Incorrect API key provided: sk-cc**cccc. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-9f8e7d6c5b4a)",
+            "error_code": 401,
+            "error_detail": {
+              "message": "Incorrect API key provided: sk-cc**cccc. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-9f8e7d6c5b4a)",
+              "type": "invalid_request_error",
+              "code": "invalid_api_key"
+            }
+          },
+          {
+            "api_key": "sk-dddddddddddddddd",
+            "error_reason": "Incorrect API key provided: sk-cc**cccc. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-9f8e7d6c5b4a)",
+            "error_code": 401,
+            "error_detail": null
+          },
+          {
+            "api_key": "sk-eeeeeeeeeeeeeeee",
+            "error_reason": "余额不足，请充值后重试",
+            "error_code": 402,
+            "error_detail": {
+              "message": "余额不足，请充值后重试",
+              "type": "insufficient_quota",
+              "code": "402"
+            }
           }
         ],
         "proven_working_models": ["qwen-max", "qwen-plus"],
@@ -76,6 +97,42 @@
       "exists": false
     }
   },
+  "dead_keys": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "provider_host": "dashscope.aliyuncs.com",
+      "api_key": "sk-cccccccccccccccc",
+      "expired_at": "2026-05-20T00:00:00.000Z",
+      "error_code": 401,
+      "error_detail": {
+        "message": "Incorrect API key provided: sk-cc**cccc. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-9f8e7d6c5b4a)",
+        "type": "invalid_request_error",
+        "code": "invalid_api_key"
+      },
+      "created_at": "2026-05-20T03:00:00.000Z"
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "provider_host": "dashscope.aliyuncs.com",
+      "api_key": "sk-dddddddddddddddd",
+      "expired_at": "2026-05-21T00:00:00.000Z",
+      "error_code": 401,
+      "error_detail": null,
+      "created_at": "2026-05-21T03:00:00.000Z"
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "provider_host": "generativelanguage.googleapis.com",
+      "api_key": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expired_at": "2026-04-02T00:00:00.000Z",
+      "error_code": 429,
+      "error_detail": {
+        "message": "Quota exceeded for quota metric 'Generate Content API requests per minute'.",
+        "status": "RESOURCE_EXHAUSTED"
+      },
+      "created_at": "2026-04-02T09:12:00.000Z"
+    }
+  ],
   "checkpoints": {
     "generativelanguage.googleapis.com": {
       "exists": true,

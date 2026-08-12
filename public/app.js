@@ -16,6 +16,8 @@ const state = {
   settings: null,
   fpCache: new Map(), // api_base + provider_type -> sha256 fingerprint
   selectedProviders: new Set(), // indices of currently selected provider cards
+  deadKeys: [], // dead key records loaded from /api/dead-keys
+  deadKeysLoaded: false,
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -88,6 +90,44 @@ const dom = {
   sampleTitle: $("sample-title"),
   sampleSubtitle: $("sample-subtitle"),
   sampleContent: $("sample-content"),
+
+  // dead keys tab
+  dkRefreshBtn: $("dk-refresh-btn"),
+  dkHost: $("dk-host"),
+  dkKey: $("dk-key"),
+  dkExpired: $("dk-expired"),
+  dkAddBtn: $("dk-add-btn"),
+  dkFilterToggle: $("dk-filter-toggle"),
+  dkFilterCount: $("dk-filter-count"),
+  dkFilterPanel: $("dk-filter-panel"),
+  dkFHost: $("dk-f-host"),
+  dkFKey: $("dk-f-key"),
+  dkFFrom: $("dk-f-from"),
+  dkFTo: $("dk-f-to"),
+  dkFReset: $("dk-f-reset"),
+  dkFormError: $("dk-form-error"),
+  dkLoading: $("dk-loading"),
+  dkError: $("dk-error"),
+  dkEmpty: $("dk-empty"),
+  dkTableWrap: $("dk-table-wrap"),
+
+  // dead key editor modal
+  dkEditOverlay: $("dkedit-overlay"),
+  dkEditId: $("dkedit-id"),
+  dkEditSave: $("dkedit-save-btn"),
+  dkEditCancel: $("dkedit-cancel-btn"),
+  dkEditError: $("dkedit-error"),
+  dkeHost: $("dke-host"),
+  dkeKey: $("dke-key"),
+  dkeExpired: $("dke-expired"),
+  dkeCode: $("dke-code"),
+
+  // error detail modal
+  errDetailOverlay: $("errdetail-overlay"),
+  errDetailClose: $("errdetail-close-btn"),
+  errDetailTitle: $("errdetail-title"),
+  errDetailSubtitle: $("errdetail-subtitle"),
+  errDetailContent: $("errdetail-content"),
 };
 
 // ── API ──────────────────────────────────────────────────────────────────
@@ -277,6 +317,7 @@ function switchTab(name) {
   });
   if (name === "results") loadResults();
   if (name === "config") loadConfig();
+  if (name === "deadkeys") loadDeadKeys();
 
   // Close mobile menu if open
   toggleMobileMenu(false);
@@ -965,6 +1006,8 @@ function renderPerfTable(modelPerf) {
 function renderInvalidGroups(records) {
   if (!records.length) return `<p class="muted">（无）</p>`;
 
+  // error_reason is already the provider's own message (Python side), so grouping
+  // by it collapses identical failures without any extra dedup logic.
   const groups = new Map();
   for (const rec of records) {
     const reason = rec.error_reason || "未知原因";
@@ -975,24 +1018,29 @@ function renderInvalidGroups(records) {
   return Array.from(groups.entries())
     .map(([reason, recs]) => {
       const items = recs
-        .map((rec) => {
-          const details =
-            Array.isArray(rec.failed_models_details) &&
-            rec.failed_models_details.length
-              ? `<div class="inv-models-details">${rec.failed_models_details.map(esc).join("<br>")}</div>`
-              : "";
-          return `<div class="inv-key-item">
+        .map(
+          (rec) => `<div class="inv-key-item">
         <span class="inv-key-mono">${esc(rec.api_key || "")}</span>
-        ${details ? `<div>${details}</div>` : ""}
-      </div>`;
-        })
+      </div>`,
+        )
         .join("");
+
+      // Only the first record of a group carries error_detail (the rest are nulled by dedup).
+      const withDetail = recs.find((rec) => rec.error_detail);
+      const errorCode = (withDetail || recs[0] || {}).error_code;
+      const title =
+        errorCode != null ? `${errorCode} · ${truncate(reason)}` : truncate(reason);
+      const detailBtn = withDetail
+        ? `<button class="btn btn-ghost btn-sm" type="button" title="查看错误详情" aria-label="查看错误详情"
+             data-errdetail="${escAttr(JSON.stringify({ error_code: withDetail.error_code ?? null, error_detail: withDetail.error_detail }))}">📋</button>`
+        : "";
 
       const keysToCopy = recs.map((rec) => rec.api_key).join("\n");
       return `<div class="inv-group">
       <div class="inv-group-header" tabindex="0" role="button" aria-expanded="false">
-        <span class="inv-group-title">${esc(reason)}</span>
+        <span class="inv-group-title" title="${escAttr(reason)}">${esc(title)}</span>
         <span class="badge badge-fail">${recs.length}</span>
+        ${detailBtn}
         <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(keysToCopy)}" type="button">一键复制</button>
         <span class="inv-group-toggle">▼</span>
       </div>
@@ -1000,6 +1048,362 @@ function renderInvalidGroups(records) {
     </div>`;
     })
     .join("");
+}
+
+// ── Error detail modal (shared by results tab and dead keys tab) ─────────
+function openErrorDetail(errorCode, detail, subtitle = "") {
+  dom.errDetailSubtitle.textContent = subtitle;
+  const entries = detail && typeof detail === "object" ? Object.entries(detail) : [];
+  const rows = entries.length
+    ? entries
+        .map(
+          ([k, v]) => `<div class="errdetail-row">
+        <div class="errdetail-key">${esc(k)}</div>
+        <pre class="errdetail-val">${esc(v)}</pre>
+      </div>`,
+        )
+        .join("")
+    : `<p class="muted">（无错误详情）</p>`;
+
+  dom.errDetailContent.innerHTML = `
+    ${errorCode != null ? `<div class="errdetail-code">Error Code: <strong>${esc(errorCode)}</strong></div>` : ""}
+    ${rows}
+  `;
+  dom.errDetailOverlay.classList.remove("hidden");
+}
+
+function closeErrorDetail() {
+  dom.errDetailOverlay.classList.add("hidden");
+}
+
+// ── Dead keys tab ─────────────────────────────────────────────────────────
+function providerHosts() {
+  const hosts = ((state.settings || {}).providers || [])
+    .map((p) => extractHost(p.api_base))
+    .filter(Boolean);
+  return Array.from(new Set(hosts)).sort();
+}
+
+/** Host dropdowns always mirror state.settings.providers, plus any host already
+ *  recorded in dead_keys (a provider may have been deleted after the fact). */
+function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
+  const hosts = new Set(providerHosts());
+  for (const r of state.deadKeys) if (r?.provider_host) hosts.add(r.provider_host);
+  const list = Array.from(hosts).sort();
+
+  const opts = [];
+  if (includeAll) opts.push(`<option value="">全部域名</option>`);
+  else if (!list.length) opts.push(`<option value="">（尚无服务商）</option>`);
+  for (const h of list) opts.push(`<option value="${escAttr(h)}">${esc(h)}</option>`);
+  select.innerHTML = opts.join("");
+  if (selected && list.includes(selected)) select.value = selected;
+}
+
+function dkDateOf(rec) {
+  const v = rec && typeof rec.expired_at === "string" ? rec.expired_at : "";
+  return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : "";
+}
+
+/** A record whose error_detail was nulled by dedup borrows the one stored on the
+ *  first record of its host + code group, so 📋 always shows something. */
+function detailFor(rec) {
+  if (rec.error_detail) return rec.error_detail;
+  const twin = state.deadKeys.find(
+    (r) =>
+      r &&
+      r.error_detail &&
+      r.provider_host === rec.provider_host &&
+      (r.error_code ?? null) === (rec.error_code ?? null),
+  );
+  return twin ? twin.error_detail : null;
+}
+
+function detailMessage(detail) {
+  if (!detail) return "";
+  for (const k of ["message", "msg", "raw"]) {
+    if (detail[k]) return String(detail[k]);
+  }
+  const first = Object.values(detail)[0];
+  return first ? String(first) : "";
+}
+
+async function loadDeadKeys(force = false) {
+  dom.dkError.classList.add("hidden");
+  dom.dkFormError.textContent = "";
+
+  if (state.deadKeysLoaded && !force) {
+    renderDeadKeys();
+    return;
+  }
+
+  dom.dkLoading.classList.remove("hidden");
+  dom.dkEmpty.classList.add("hidden");
+  dom.dkTableWrap.classList.add("hidden");
+
+  try {
+    if (!state.settings) {
+      if (MOCK) {
+        state.settings = (await getMock()).settings;
+      } else {
+        const d = await api("/api/settings", { auth: true });
+        state.settings = d.settings || {};
+        applySettingsToUI();
+      }
+    }
+
+    if (MOCK) {
+      const mock = await getMock();
+      state.deadKeys = Array.isArray(mock.dead_keys) ? mock.dead_keys : [];
+    } else {
+      const d = await api("/api/dead-keys", { auth: true });
+      state.deadKeys = Array.isArray(d.dead_keys) ? d.dead_keys : [];
+    }
+    state.deadKeysLoaded = true;
+    renderDeadKeys();
+  } catch (err) {
+    dom.dkError.textContent = `读取失败：${err.message}`;
+    dom.dkError.classList.remove("hidden");
+  } finally {
+    dom.dkLoading.classList.add("hidden");
+  }
+}
+
+function filteredDeadKeys() {
+  const host = dom.dkFHost.value;
+  const q = dom.dkFKey.value.trim().toLowerCase();
+  const from = dom.dkFFrom.value;
+  const to = dom.dkFTo.value;
+  // One bound alone stays open-ended; the same day twice narrows to that day.
+  const swap = from && to && from > to;
+  const lo = swap ? to : from;
+  const hi = swap ? from : to;
+
+  return state.deadKeys.filter((r) => {
+    if (!r) return false;
+    if (host && r.provider_host !== host) return false;
+    if (q && !String(r.api_key || "").toLowerCase().includes(q)) return false;
+    if (lo || hi) {
+      const d = dkDateOf(r);
+      if (!d) return false;
+      if (lo && d < lo) return false;
+      if (hi && d > hi) return false;
+    }
+    return true;
+  });
+}
+
+function activeFilterCount() {
+  return [
+    dom.dkFHost.value,
+    dom.dkFKey.value.trim(),
+    dom.dkFFrom.value,
+    dom.dkFTo.value,
+  ].filter(Boolean).length;
+}
+
+function renderDeadKeys() {
+  fillHostSelect(dom.dkHost, { selected: dom.dkHost.value });
+  fillHostSelect(dom.dkFHost, { includeAll: true, selected: dom.dkFHost.value });
+
+  const n = activeFilterCount();
+  dom.dkFilterCount.textContent = String(n);
+  dom.dkFilterCount.classList.toggle("hidden", n === 0);
+
+  const rows = filteredDeadKeys();
+  if (!rows.length) {
+    dom.dkEmpty.textContent = state.deadKeys.length
+      ? "没有符合筛选条件的记录。"
+      : "尚无失效密钥记录。";
+    dom.dkEmpty.classList.remove("hidden");
+    dom.dkTableWrap.classList.add("hidden");
+    return;
+  }
+  dom.dkEmpty.classList.add("hidden");
+  dom.dkTableWrap.innerHTML = renderDeadKeysTable(rows);
+  dom.dkTableWrap.classList.remove("hidden");
+}
+
+function renderDeadKeysTable(rows) {
+  const body = rows
+    .map((r) => {
+      const detail = detailFor(r);
+      const msg = detailMessage(detail);
+      const detailBtn = detail
+        ? `<button class="btn btn-ghost btn-xs" type="button" title="查看错误详情" aria-label="查看错误详情" data-dk-detail="${escAttr(r.id)}">📋</button>`
+        : `<span class="na">-</span>`;
+      const preview = msg
+        ? `<span class="dk-msg" title="${escAttr(msg)}">${esc(truncate(msg))}</span>`
+        : "";
+      return `<tr>
+      <td><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
+      <td><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code></td>
+      <td class="dk-date-cell">${esc(dkDateOf(r) || "-")}</td>
+      <td>${r.error_code != null ? esc(r.error_code) : `<span class="na">-</span>`}</td>
+      <td><div class="dk-msg-line">${detailBtn}${preview}</div></td>
+      <td class="dk-actions">
+        <button class="btn btn-secondary btn-xs" type="button" title="编辑" aria-label="编辑" data-dk-edit="${escAttr(r.id)}">✏️</button>
+        <button class="btn btn-danger btn-xs" type="button" title="删除" aria-label="删除" data-dk-del="${escAttr(r.id)}">🗑️</button>
+      </td>
+    </tr>`;
+    })
+    .join("");
+
+  return `
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr>
+          <th>域名供应商</th>
+          <th>KEY</th>
+          <th>失效时间</th>
+          <th>Code</th>
+          <th>错误讯息</th>
+          <th>操作</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function toIsoDay(dateStr) {
+  return dateStr ? `${dateStr}T00:00:00.000Z` : null;
+}
+
+async function addDeadKey() {
+  dom.dkFormError.textContent = "";
+  const provider_host = dom.dkHost.value.trim();
+  const api_key = dom.dkKey.value.trim();
+  if (!provider_host) {
+    dom.dkFormError.textContent = "请先在「来源设定」新增服务商，或选择域名";
+    return;
+  }
+  if (!api_key) {
+    dom.dkFormError.textContent = "请输入 API Key";
+    return;
+  }
+
+  const payload = {
+    provider_host,
+    api_key,
+    expired_at: toIsoDay(dom.dkExpired.value),
+  };
+
+  dom.dkAddBtn.disabled = true;
+  try {
+    if (MOCK) {
+      if (state.deadKeys.some((r) => r && r.api_key === api_key)) {
+        throw new Error("api_key already recorded");
+      }
+      state.deadKeys.push({
+        id: crypto.randomUUID(),
+        ...payload,
+        error_code: null,
+        error_detail: null,
+        created_at: new Date().toISOString(),
+      });
+    } else {
+      const d = await api("/api/dead-keys", {
+        method: "POST",
+        auth: true,
+        body: payload,
+      });
+      if (d.record) state.deadKeys.push(d.record);
+    }
+    dom.dkKey.value = "";
+    dom.dkExpired.value = "";
+    renderDeadKeys();
+  } catch (err) {
+    dom.dkFormError.textContent =
+      err.message === "api_key already recorded"
+        ? "此 Key 已记录过，保留最早的那一笔"
+        : err.message;
+  } finally {
+    dom.dkAddBtn.disabled = false;
+  }
+}
+
+function openDkEdit(id) {
+  const rec = state.deadKeys.find((r) => r && r.id === id);
+  if (!rec) return;
+  dom.dkEditId.value = id;
+  dom.dkEditError.textContent = "";
+  fillHostSelect(dom.dkeHost, { selected: rec.provider_host || "" });
+  dom.dkeKey.value = rec.api_key || "";
+  dom.dkeExpired.value = dkDateOf(rec);
+  dom.dkeCode.value = rec.error_code != null ? String(rec.error_code) : "";
+  dom.dkEditOverlay.classList.remove("hidden");
+  dom.dkeKey.focus();
+}
+
+function closeDkEdit() {
+  dom.dkEditOverlay.classList.add("hidden");
+}
+
+async function saveDkEdit() {
+  const id = dom.dkEditId.value;
+  const rec = state.deadKeys.find((r) => r && r.id === id);
+  if (!rec) return closeDkEdit();
+
+  dom.dkEditError.textContent = "";
+  const api_key = dom.dkeKey.value.trim();
+  if (!api_key) {
+    dom.dkEditError.textContent = "请输入 API Key";
+    return;
+  }
+  const codeRaw = dom.dkeCode.value.trim();
+  const patch = {
+    provider_host: dom.dkeHost.value.trim() || rec.provider_host,
+    api_key,
+    expired_at: toIsoDay(dom.dkeExpired.value),
+    error_code: codeRaw === "" ? null : Number(codeRaw),
+  };
+
+  dom.dkEditSave.disabled = true;
+  try {
+    if (MOCK) {
+      if (state.deadKeys.some((r) => r && r.id !== id && r.api_key === api_key)) {
+        throw new Error("api_key already recorded");
+      }
+      Object.assign(rec, patch);
+    } else {
+      const d = await api(`/api/dead-keys?id=${encodeURIComponent(id)}`, {
+        method: "PUT",
+        auth: true,
+        body: patch,
+      });
+      if (d.record) Object.assign(rec, d.record);
+    }
+    renderDeadKeys();
+    closeDkEdit();
+  } catch (err) {
+    dom.dkEditError.textContent =
+      err.message === "api_key already recorded"
+        ? "此 Key 已存在于其他记录"
+        : err.message;
+  } finally {
+    dom.dkEditSave.disabled = false;
+  }
+}
+
+async function deleteDeadKey(id) {
+  const rec = state.deadKeys.find((r) => r && r.id === id);
+  if (!rec || !confirm(`确定删除 ${rec.api_key} ？`)) return;
+  try {
+    if (MOCK) {
+      state.deadKeys = state.deadKeys.filter((r) => r && r.id !== id);
+      renderDeadKeys();
+    } else {
+      await api(`/api/dead-keys?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        auth: true,
+      });
+      // Deleting may hand the group's error_detail over to another record server-side.
+      await loadDeadKeys(true);
+    }
+  } catch (err) {
+    dom.dkError.textContent = `删除失败：${err.message}`;
+    dom.dkError.classList.remove("hidden");
+  }
 }
 
 // ── Result group open/close ──────────────────────────────────────────────
@@ -1068,6 +1472,15 @@ function esc(v) {
 }
 function escAttr(v) {
   return esc(v);
+}
+
+// Collapse whitespace and cut overly long provider messages so they fit one line.
+// The untruncated text stays available via title attribute / error detail modal.
+function truncate(v, n = 120) {
+  const s = String(v ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return s.length > n ? s.slice(0, n) + "..." : s;
 }
 
 function extractHost(url) {
@@ -1237,6 +1650,63 @@ function bindEvents() {
       const payload = JSON.parse(sampleBtn.dataset.sample);
       openSample(payload.model, payload.sample);
     }
+
+    const errBtn = e.target.closest("[data-errdetail]");
+    if (errBtn) {
+      e.stopPropagation();
+      const payload = JSON.parse(errBtn.dataset.errdetail);
+      openErrorDetail(payload.error_code, payload.error_detail);
+    }
+  });
+
+  // Dead keys tab
+  dom.dkRefreshBtn.addEventListener("click", () => loadDeadKeys(true));
+  dom.dkAddBtn.addEventListener("click", addDeadKey);
+  dom.dkKey.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addDeadKey();
+  });
+  dom.dkFilterToggle.addEventListener("click", () => {
+    const open = dom.dkFilterPanel.classList.toggle("hidden") === false;
+    dom.dkFilterToggle.setAttribute("aria-expanded", String(open));
+  });
+  [dom.dkFHost, dom.dkFFrom, dom.dkFTo].forEach((el) =>
+    el.addEventListener("change", renderDeadKeys),
+  );
+  dom.dkFKey.addEventListener("input", renderDeadKeys);
+  dom.dkFReset.addEventListener("click", () => {
+    dom.dkFHost.value = "";
+    dom.dkFKey.value = "";
+    dom.dkFFrom.value = "";
+    dom.dkFTo.value = "";
+    renderDeadKeys();
+  });
+  dom.dkTableWrap.addEventListener("click", (e) => {
+    const detailBtn = e.target.closest("[data-dk-detail]");
+    if (detailBtn) {
+      const rec = state.deadKeys.find(
+        (r) => r && r.id === detailBtn.dataset.dkDetail,
+      );
+      if (rec)
+        openErrorDetail(rec.error_code, detailFor(rec), rec.provider_host || "");
+      return;
+    }
+    const editBtn = e.target.closest("[data-dk-edit]");
+    if (editBtn) return openDkEdit(editBtn.dataset.dkEdit);
+    const delBtn = e.target.closest("[data-dk-del]");
+    if (delBtn) deleteDeadKey(delBtn.dataset.dkDel);
+  });
+
+  // Dead key editor modal
+  dom.dkEditSave.addEventListener("click", saveDkEdit);
+  dom.dkEditCancel.addEventListener("click", closeDkEdit);
+  dom.dkEditOverlay.addEventListener("click", (e) => {
+    if (e.target.dataset.closeModal === "dkedit") closeDkEdit();
+  });
+
+  // Error detail modal
+  dom.errDetailClose.addEventListener("click", closeErrorDetail);
+  dom.errDetailOverlay.addEventListener("click", (e) => {
+    if (e.target.dataset.closeModal === "errdetail") closeErrorDetail();
   });
 
   // Settings modal
@@ -1263,6 +1733,8 @@ function bindEvents() {
     if (!dom.editorOverlay.classList.contains("hidden")) closeEditor();
     if (!dom.settingsOverlay.classList.contains("hidden")) closeSettings();
     if (!dom.sampleOverlay.classList.contains("hidden")) closeSample();
+    if (!dom.dkEditOverlay.classList.contains("hidden")) closeDkEdit();
+    if (!dom.errDetailOverlay.classList.contains("hidden")) closeErrorDetail();
   });
 }
 

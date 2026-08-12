@@ -115,6 +115,13 @@
                         >
                             测试结果
                         </button>
+                        <button
+                            class="tab-btn"
+                            data-tab="deadkeys"
+                            type="button"
+                        >
+                            失效密钥
+                        </button>
                     </nav>
                     <div class="topbar-actions">
                         <a
@@ -239,6 +246,124 @@
                         尚无测试结果，请先执行一次测试。
                     </div>
                     <div id="results-body" class="hidden"></div>
+                </section>
+
+                <!-- ── Dead keys tab ── -->
+                <section id="tab-deadkeys" class="tab-panel hidden">
+                    <div class="panel-head">
+                        <div>
+                            <h2>失效密钥</h2>
+                            <p class="muted">
+                                手动记录已失效的 Key、失效时间与供应商回传的错误讯息。
+                            </p>
+                        </div>
+                        <button
+                            id="dk-refresh-btn"
+                            class="btn btn-secondary"
+                            type="button"
+                        >
+                            重新读取
+                        </button>
+                    </div>
+
+                    <div class="dk-toolbar">
+                        <div class="dk-add-row">
+                            <select
+                                id="dk-host"
+                                class="input-select"
+                                aria-label="域名供应商"
+                            ></select>
+                            <input
+                                type="text"
+                                id="dk-key"
+                                class="input-text"
+                                placeholder="API Key"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
+                            <input
+                                type="date"
+                                id="dk-expired"
+                                class="input-text"
+                                aria-label="失效时间"
+                            />
+                            <button
+                                id="dk-add-btn"
+                                class="btn btn-primary"
+                                type="button"
+                            >
+                                新增
+                            </button>
+                        </div>
+                        <button
+                            id="dk-filter-toggle"
+                            class="btn btn-ghost btn-sm dk-filter-btn"
+                            type="button"
+                            aria-expanded="false"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="14"
+                                height="14"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                fill="none"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <polygon
+                                    points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
+                                ></polygon>
+                            </svg>
+                            筛选
+                            <span id="dk-filter-count" class="badge hidden"></span>
+                        </button>
+                    </div>
+
+                    <p id="dk-form-error" class="form-error" role="alert"></p>
+
+                    <div id="dk-filter-panel" class="dk-filter-panel hidden">
+                        <label class="field">
+                            <span class="field-label">供应商域名</span>
+                            <select id="dk-f-host" class="input-select"></select>
+                        </label>
+                        <label class="field">
+                            <span class="field-label">Key 搜寻</span>
+                            <input
+                                type="text"
+                                id="dk-f-key"
+                                class="input-text"
+                                placeholder="模糊匹配"
+                                autocomplete="off"
+                            />
+                        </label>
+                        <label class="field">
+                            <span class="field-label">失效时间（起）</span>
+                            <input
+                                type="date"
+                                id="dk-f-from"
+                                class="input-text"
+                            />
+                        </label>
+                        <label class="field">
+                            <span class="field-label">失效时间（迄）</span>
+                            <input type="date" id="dk-f-to" class="input-text" />
+                        </label>
+                        <button
+                            id="dk-f-reset"
+                            class="btn btn-ghost btn-sm"
+                            type="button"
+                        >
+                            清除筛选
+                        </button>
+                    </div>
+
+                    <div id="dk-loading" class="state-card">读取中...</div>
+                    <div id="dk-error" class="alert alert-error hidden"></div>
+                    <div id="dk-empty" class="state-card hidden">
+                        尚无失效密钥记录。
+                    </div>
+                    <div id="dk-table-wrap" class="hidden"></div>
                 </section>
             </main>
         </div>
@@ -504,6 +629,98 @@
                     </button>
                 </div>
                 <div class="modal-body" id="sample-content"></div>
+            </section>
+        </div>
+
+        <!-- Dead key editor modal -->
+        <div id="dkedit-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="dkedit"></div>
+            <section
+                class="modal-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dkedit-title"
+            >
+                <div class="modal-header">
+                    <h3 id="dkedit-title">编辑失效密钥</h3>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="dkedit-id" value="" />
+                    <label class="field">
+                        <span class="field-label">域名供应商</span>
+                        <select id="dke-host" class="input-select"></select>
+                    </label>
+                    <label class="field">
+                        <span class="field-label">API Key</span>
+                        <input
+                            type="text"
+                            id="dke-key"
+                            class="input-text"
+                            autocomplete="off"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <label class="field">
+                        <span class="field-label">失效时间</span>
+                        <input type="date" id="dke-expired" class="input-text" />
+                    </label>
+                    <label class="field">
+                        <span class="field-label">
+                            Error Code
+                            <small class="muted">选填，HTTP 状态码</small>
+                        </span>
+                        <input
+                            type="number"
+                            id="dke-code"
+                            class="input-text"
+                            placeholder="401"
+                            style="width: 8rem"
+                        />
+                    </label>
+                    <p id="dkedit-error" class="form-error" role="alert"></p>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        class="btn btn-primary"
+                        id="dkedit-save-btn"
+                        type="button"
+                    >
+                        储存
+                    </button>
+                    <button
+                        class="btn btn-ghost"
+                        id="dkedit-cancel-btn"
+                        type="button"
+                    >
+                        取消
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- Error detail modal (shared: results tab + dead keys tab) -->
+        <div id="errdetail-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="errdetail"></div>
+            <section
+                class="modal-panel modal-panel--wide"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="errdetail-title"
+            >
+                <div class="modal-header">
+                    <div>
+                        <h3 id="errdetail-title">错误详情</h3>
+                        <p id="errdetail-subtitle" class="muted"></p>
+                    </div>
+                    <button
+                        class="btn btn-ghost btn-sm"
+                        id="errdetail-close-btn"
+                        type="button"
+                    >
+                        关闭
+                    </button>
+                </div>
+                <div class="modal-body" id="errdetail-content"></div>
             </section>
         </div>
 
