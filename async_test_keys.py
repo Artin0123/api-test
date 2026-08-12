@@ -32,6 +32,13 @@ TTFT_TIMEOUT = 5.0
 TOTAL_TIMEOUT = 20.0
 CHECKPOINT_EVERY_N_TASKS = 200
 PROMPT = "What is 17 multiplied by 19? Think step by step."
+# 生成上限（token）。调大会让话多的模型一直生成到 TOTAL_TIMEOUT 为止，
+# 反而把本来会被截断收尾的模型判成逾时。
+MAX_OUTPUT_TOKENS = 512
+# 样本字元上限（content 与 thinking 各自计算）。这是给「吃不到 token 上限」的
+# 情况用的安全网：代理商忽略不认得的参数、或推理 token 不计入上限时，
+# 上面那个 512 形同虚设，只剩这里挡得住。超长就掐头留尾。
+SAMPLE_MAX_LEN = 2048
 # 服务商只有一支 Key 时，同一个 (Key, Model) 会连跑两轮；两轮之间的间隔秒数，
 # 用来避免连续打同一支 Key 被判成限流。
 SINGLE_KEY_RERUN_DELAY = 2.0
@@ -131,6 +138,25 @@ def normalize_message(msg):
     return " ".join(s.split())[:REASON_MAX_LEN]
 
 
+CLIP_MARK = "…（已省略"
+
+
+def clip_sample(text):
+    """样本超长时掐头留尾，各留一半。
+
+    推理模型常常想很久、结论落在最后一句，只取前段会把「= 323」切掉，
+    看起来像没答完。注意：answer_verified 必须在截断前用完整文字判定。
+
+    可重复套用：截过的字串带标记，会原样返回，不会叠上第二层省略。
+    """
+    s = text or ""
+    if len(s) <= SAMPLE_MAX_LEN or CLIP_MARK in s:
+        return s
+    head = SAMPLE_MAX_LEN // 2
+    tail = SAMPLE_MAX_LEN - head
+    return f"{s[:head]}\n{CLIP_MARK} {len(s) - SAMPLE_MAX_LEN} 字）…\n{s[-tail:]}"
+
+
 def pick_error_message(detail):
     """从 parse_error_body 的结果取一句可读讯息；取不到回 None。"""
     if not detail:
@@ -177,26 +203,26 @@ def build_payload(provider_type, model, stream, extra_body=None):
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
-            "max_tokens": 512,
+            "max_tokens": MAX_OUTPUT_TOKENS,
             "stream": stream,
         }
     elif provider_type == "ollama":
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
-            "options": {"num_predict": 512},
+            "options": {"num_predict": MAX_OUTPUT_TOKENS},
             "stream": stream,
         }
     elif provider_type == "gemini":
         payload = {
             "contents": [{"role": "user", "parts": [{"text": PROMPT}]}],
-            "generationConfig": {"maxOutputTokens": 512},
+            "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS},
         }
     elif provider_type == "anthropic":
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
-            "max_tokens": 512,
+            "max_tokens": MAX_OUTPUT_TOKENS,
             "stream": stream,
         }
     else:
@@ -725,9 +751,10 @@ async def run_provider(
                     "avg_total": total,
                     "has_thinking": has_thinking,
                     "has_content": has_content,
-                    "sample_content": sample_content,
-                    "sample_thinking": sample_thinking,
+                    # 先用完整文字判定答案，再截断样本：顺序反过来会把长回应误判成没答对
                     "answer_verified": "323" in (sample_content + sample_thinking),
+                    "sample_content": clip_sample(sample_content),
+                    "sample_thinking": clip_sample(sample_thinking),
                 }
                 results[key].append(record)
 
@@ -824,10 +851,12 @@ async def run_provider(
                     model_perf[m]["answer_verified"] = True
                 # 每个模型只存第一次成功的 sample
                 if model_perf[m]["sample"] is None:
+                    # 再截一次：从旧 checkpoint 恢复的纪录是在加上限之前写的，
+                    # 这里是样本进 KV 的最后一道关卡（clip_sample 可重复套用）
                     model_perf[m]["sample"] = {
                         "has_thinking": bool(r.get("has_thinking")),
-                        "thinking": r.get("sample_thinking", ""),
-                        "content": r.get("sample_content", ""),
+                        "thinking": clip_sample(r.get("sample_thinking", "")),
+                        "content": clip_sample(r.get("sample_content", "")),
                     }
 
     invalid_output = []
