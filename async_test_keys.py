@@ -954,8 +954,13 @@ async def run_provider(
     if PAGES_URL and ADMIN_TOKEN:
         print(f"[Pages] 上传结果到 {PAGES_URL}/api/results ...")
         try:
-            _pages_request("POST", "/api/results", final_report)
-            print("[Pages] 上传成功。")
+            resp = _pages_request("POST", "/api/results", final_report)
+            # dead_keys_added 由 handlePostResults 回传；旧版 worker 没有这个字段
+            added = (resp or {}).get("dead_keys_added")
+            if added:
+                print(f"[Pages] 上传成功。已自动记录 {added} 支失效 Key（仅 401）。")
+            else:
+                print("[Pages] 上传成功。")
         except Exception as e:
             print(f"[Pages] 上传失败（本地文件仍保留）: {e}")
 
