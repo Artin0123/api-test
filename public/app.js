@@ -1006,17 +1006,21 @@ function renderPerfTable(modelPerf) {
 function renderInvalidGroups(records) {
   if (!records.length) return `<p class="muted">（无）</p>`;
 
-  // error_reason is already the provider's own message (Python side), so grouping
-  // by it collapses identical failures without any extra dedup logic.
+  // Group by error_code + normalized message. Raw text would split one cause across
+  // every key (providers embed the key fragment in the message); error_code alone
+  // would merge two genuinely different causes sharing a code.
   const groups = new Map();
   for (const rec of records) {
     const reason = rec.error_reason || "未知原因";
-    if (!groups.has(reason)) groups.set(reason, []);
-    groups.get(reason).push(rec);
+    const groupKey = `${rec.error_code ?? ""}|${normalizeMessage(reason)}`;
+    if (!groups.has(groupKey)) groups.set(groupKey, []);
+    groups.get(groupKey).push(rec);
   }
 
-  return Array.from(groups.entries())
-    .map(([reason, recs]) => {
+  return Array.from(groups.values())
+    .map((recs) => {
+      // Every record keeps its own message; the group shows the first one.
+      const reason = recs[0].error_reason || "未知原因";
       const items = recs
         .map(
           (rec) => `<div class="inv-key-item">
@@ -1025,14 +1029,21 @@ function renderInvalidGroups(records) {
         )
         .join("");
 
-      // Only the first record of a group carries error_detail (the rest are nulled by dedup).
+      // Only one record per cause carries error_detail (the rest are nulled by dedup).
       const withDetail = recs.find((rec) => rec.error_detail);
-      const errorCode = (withDetail || recs[0] || {}).error_code;
+      const errorCode = recs[0].error_code ?? null;
+      const fullReason = truncate(reason, Infinity);
+      const shownReason = truncate(reason);
       const title =
-        errorCode != null ? `${errorCode} · ${truncate(reason)}` : truncate(reason);
-      const detailBtn = withDetail
+        errorCode != null ? `${errorCode} · ${shownReason}` : shownReason;
+      // When no record in the group carries a detail, still offer the modal if the
+      // title had to be cut — reading the whole message is the point of the button.
+      const detail =
+        withDetail?.error_detail ??
+        (shownReason !== fullReason ? { message: fullReason } : null);
+      const detailBtn = detail
         ? `<button class="btn btn-ghost btn-sm" type="button" title="查看错误详情" aria-label="查看错误详情"
-             data-errdetail="${escAttr(JSON.stringify({ error_code: withDetail.error_code ?? null, error_detail: withDetail.error_detail }))}">📋</button>`
+             data-errdetail="${escAttr(JSON.stringify({ error_code: withDetail?.error_code ?? errorCode, error_detail: detail }))}">📋</button>`
         : "";
 
       const keysToCopy = recs.map((rec) => rec.api_key).join("\n");
@@ -1481,6 +1492,25 @@ function truncate(v, n = 120) {
     .replace(/\s+/g, " ")
     .trim();
   return s.length > n ? s.slice(0, n) + "..." : s;
+}
+
+// Mask the fragments that vary per key/request so two records can be compared as
+// "same cause". Must produce byte-identical output to normalize_message() in
+// async_test_keys.py, hence two constraints on these patterns:
+//   - no \b or \d: Python counts CJK as word chars and full-width digits as digits,
+//     JS does not, so they disagree on the Chinese messages providers return.
+//   - no lookbehind: it is a parse-time syntax error below Safari 16.4, which would
+//     take down this whole file; a captured leading char does the same job.
+function normalizeMessage(v) {
+  return String(v ?? "")
+    .toLowerCase()
+    .replace(/(^|[^a-z0-9])(?:sk|gsk|api|key)[-_][a-z0-9_\-*]{3,}/g, "$1<key>")
+    .replace(/\*{2,}[a-z0-9]+/g, "<key>")
+    .replace(/(^|[^a-z0-9])[0-9a-f]{8,}(?![a-z0-9])/g, "$1<id>")
+    .replace(/[0-9０-９]+/g, "<n>")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
 }
 
 function extractHost(url) {

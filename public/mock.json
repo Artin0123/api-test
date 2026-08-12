@@ -40,9 +40,19 @@
           },
           {
             "api_key": "sk-dddddddddddddddd",
-            "error_reason": "Incorrect API key provided: sk-cc**cccc. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-9f8e7d6c5b4a)",
+            "error_reason": "Incorrect API key provided: sk-dd**dddd. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-1a2b3c4d5e6f)",
             "error_code": 401,
             "error_detail": null
+          },
+          {
+            "api_key": "sk-ffffffffffffffff",
+            "error_reason": "Your account has been deactivated. Please contact support.",
+            "error_code": 401,
+            "error_detail": {
+              "message": "Your account has been deactivated. Please contact support.",
+              "type": "account_deactivated",
+              "code": "account_deactivated"
+            }
           },
           {
             "api_key": "sk-eeeeeeeeeeeeeeee",

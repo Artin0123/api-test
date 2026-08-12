@@ -106,6 +106,31 @@ def parse_error_body(body):
     return detail if detail else {"raw": body[:ERROR_BODY_MAX_LEN]}
 
 
+# 讯息里会逐支 Key / 逐次请求变动的片段：Key 本体、遮罩尾码、hex id、任何数字。
+# 必须与 app.js 的 normalizeMessage() 输出完全一致，因此有两个限制：
+#   - 不用 \b 和 \d：Python 的 \w/\d 认得 CJK 与全形数字，JS 的只认 ASCII。
+#   - 不用 lookbehind：Safari 16.4 以下会直接语法错误，改用捕获前导字元。
+_VARIABLE_FRAGMENTS = (
+    (re.compile(r"(^|[^a-z0-9])(?:sk|gsk|api|key)[-_][a-z0-9_\-*]{3,}"), r"\1<key>"),
+    (re.compile(r"\*{2,}[a-z0-9]+"), "<key>"),
+    (re.compile(r"(^|[^a-z0-9])[0-9a-f]{8,}(?![a-z0-9])"), r"\1<id>"),
+    (re.compile(r"[0-9０-９]+"), "<n>"),
+)
+
+
+def normalize_message(msg):
+    """把逐支 Key 变动的片段遮掉，用来判断两笔错误是不是「同一种原因」。
+
+    供应商常把 Key 尾码写进 message（例："Your api key: ****2fb7 is invalid"），
+    逐字比对会让每支 Key 各成一组；只比 error_code 又会把同一个码底下两种真正
+    不同的原因（invalid key vs. 帐号停用）合并掉。遮掉变动片段后两者都成立。
+    """
+    s = str(msg or "").lower()
+    for pattern, placeholder in _VARIABLE_FRAGMENTS:
+        s = pattern.sub(placeholder, s)
+    return " ".join(s.split())[:REASON_MAX_LEN]
+
+
 def pick_error_message(detail):
     """从 parse_error_body 的结果取一句可读讯息；取不到回 None。"""
     if not detail:
@@ -806,8 +831,10 @@ async def run_provider(
                     }
 
     invalid_output = []
-    # error_reason -> 只有该组第一笔保留 error_detail，其余存 null，避免同样的 body 重复塞进 KV
-    seen_detail_reasons = set()
+    # (error_code, 正规化后的讯息) -> 只有这组第一笔保留 error_detail。
+    # 每支 Key 自己的 error_reason 都留着：一支约 100 bytes，比起遗失「同一个 code
+    # 底下第二种原因」的代价便宜得多；真正占空间的是 error_detail 这个物件。
+    stored_detail_keys = set()
 
     for k, records in results.items():
         key_all_failed = True
@@ -841,29 +868,29 @@ async def run_provider(
 
             # 优先显示供应商的原话；只有连 body 都拿不到时才退回人工归类的说明
             if message:
-                final_reason = message
+                own_reason = message
             elif hard_failure_reason:
-                final_reason = hard_failure_reason
+                own_reason = hard_failure_reason
                 # 说明文字讲的是 401/403，error_code 就得跟着它，不能停在首个失败的状态码
                 error_code = hard_failure_status
             elif any(r["model"] in proven_working_models for r in records):
-                final_reason = (
+                own_reason = (
                     "全盘软失效 (测试的所有模型均失败，但部分模型被其他Key证实健康)"
                 )
             else:
-                final_reason = "全部模型皆无响应 (无法断定是Key的问题，因全网皆败)"
+                own_reason = "全部模型皆无响应 (无法断定是Key的问题，因全网皆败)"
 
-            if final_reason in seen_detail_reasons:
-                detail = None
-            elif detail:
-                seen_detail_reasons.add(final_reason)
+            # 同一种原因（同 code + 正规化后同讯息）只存一份 error_detail
+            dedup_key = (error_code, normalize_message(own_reason))
+            if detail and dedup_key not in stored_detail_keys:
+                stored_detail_keys.add(dedup_key)
             else:
                 detail = None
 
             invalid_output.append(
                 {
                     "api_key": k,
-                    "error_reason": final_reason,
+                    "error_reason": own_reason,
                     "error_code": error_code,
                     "error_detail": detail,
                 }
