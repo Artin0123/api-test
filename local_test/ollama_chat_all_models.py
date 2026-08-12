@@ -17,10 +17,9 @@ BASE_URL = "https://ollama.com"
 TAGS_URL = f"{BASE_URL}/api/tags"
 CHAT_URL = f"{BASE_URL}/v1/chat/completions"
 
-# 兩種方式擇一：
-# 1) 推薦：設環境變數 OLLAMA_API_KEY
-# 2) 或在這裡手動填（不要提交到 git）
-OLLAMA_API_KEY = "c8d7ff0439984157a8e8c2b1abf78fbd.MiVMRE-HvRjKut-tLrQVMiEc"
+# 金鑰一律從環境變數或專案根目錄的 .env 讀取（.env 已列入 .gitignore）。
+# 不要把金鑰寫回這個檔案——它會進版控。範本見 .env.example。
+ENV_VAR_NAME = "OLLAMA_API_KEY"
 
 PROMPT = "Hello! Reply with a short answer."
 SYSTEM = ""  # 可留空
@@ -43,11 +42,36 @@ OUTPUT_PATH = os.path.join(HERE, "ollama_chat_results.json")
 # ===============================================================
 
 
+ENV_FILE = os.path.join(os.path.dirname(HERE), ".env")  # 專案根目錄，已 gitignore
+
+
+def load_env_file(path: str | None = None) -> None:
+    """讀取 KEY=VALUE 形式的 .env。真正的環境變數優先，不覆蓋已設定的值。
+
+    刻意不引入 python-dotenv：這支腳本以 PEP 723 內嵌相依執行，只依賴 aiohttp。
+    """
+    path = path or ENV_FILE  # 在呼叫時才取值，方便覆寫 ENV_FILE
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, _, value = line.partition("=")
+            name = name.strip()
+            if name and name not in os.environ:
+                os.environ[name] = value.strip().strip("\"'")
+
+
 def resolve_key() -> str:
-    key = (os.environ.get("OLLAMA_API_KEY") or OLLAMA_API_KEY).strip()
+    load_env_file()
+    key = os.environ.get(ENV_VAR_NAME, "").strip()
     if not key:
         raise SystemExit(
-            "Missing API key. Set env OLLAMA_API_KEY or fill OLLAMA_API_KEY at top of this file."
+            f"缺少 API key。請在專案根目錄建立 .env（已 gitignore）並填入：\n"
+            f"    {ENV_VAR_NAME}=你的金鑰\n"
+            f"或直接設定同名環境變數。範本：.env.example"
         )
     return key
 
