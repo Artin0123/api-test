@@ -31,7 +31,7 @@ No linter, formatter, or type checker exists. `node --check` is parse-only.
 - `app_settings` — full settings JSON
 - `results:{fingerprint}` — per-provider test results
 - `checkpoint:{fingerprint}` — in-progress checkpoint
-- `dead_keys` — array of dead key records (`GET/POST/PUT/DELETE /api/dead-keys`, `id` via `crypto.randomUUID()`). Added manually, or automatically by `handlePostResults` when a test run uploads results — but **only for `error_code` 401**. Everything else (403, 402, quota wording, 429, 全网皆败) stays manual on purpose: `api_key` dedup keeps the earliest record forever, so a key recorded by mistake never leaves on its own.
+- `dead_keys` — array of dead key records (`GET/POST/PUT/DELETE /api/dead-keys`, `id` via `crypto.randomUUID()`). The list means **"keys currently failing"**, not a permanent ledger. `handlePostResults` reconciles it against every uploaded run via `syncDeadKeysFromResults`: keys in `invalid_records` are recorded (any failure code), keys in `valid_keys` are dropped for that `provider_host` — manual entries included, since the record now asserts something untrue. That self-correction is what makes recording transient failures (429, 500, 全网皆败) safe: they clear on the next run. Removing a key from `来源设定` remains a manual decision.
 
 KV binding name is exactly `KV_STORE` (must match dashboard and `--kv=KV_STORE` flag).
 

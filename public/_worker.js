@@ -256,18 +256,24 @@ async function handlePostResults(request, env) {
 
   // Best-effort: the results are already stored, so a failure here must not make
   // the uploader think the whole run was lost and retry it.
-  let recorded = 0;
+  let synced = { added: 0, removed: 0 };
   try {
-    recorded = await recordDeadKeysFromResults(
+    synced = await syncDeadKeysFromResults(
       kv,
       api_base.trim(),
+      body.valid_keys,
       body.invalid_records,
       payload.uploaded_at,
     );
   } catch (err) {
-    console.error("dead key auto-record failed", err);
+    console.error("dead key sync failed", err);
   }
-  return json({ ok: true, fingerprint: fp, dead_keys_added: recorded });
+  return json({
+    ok: true,
+    fingerprint: fp,
+    dead_keys_added: synced.added,
+    dead_keys_removed: synced.removed,
+  });
 }
 
 // ─── /api/checkpoint ─────────────────────────────────────────────────────────
@@ -354,42 +360,72 @@ function normalizeErrorDetail(value) {
   return Object.keys(out).length ? out : null;
 }
 
-/** Only HTTP 401 is auto-recorded. Anything else (403, 402, quota wording, 429…)
- *  stays manual on purpose: api_key dedup keeps the earliest record forever, so a
- *  key parked here by mistake never leaves on its own. */
-const AUTO_RECORD_CODE = 401;
-
-function isDeadKeyRecord(rec) {
-  if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) return false;
-  return normalizeErrorCode(rec.error_code) === AUTO_RECORD_CODE;
-}
-
-/** Append keys that a test run proved dead, applying the same dedup rules as a
- *  manual POST. Returns how many records were added. */
-async function recordDeadKeysFromResults(kv, api_base, invalidRecords, uploadedAt) {
-  if (!Array.isArray(invalidRecords) || !invalidRecords.length) return 0;
+/** Reconcile the dead key list against one test run: every key that failed is
+ *  recorded, every key that passed is dropped. The list therefore means "keys
+ *  currently failing", not a permanent ledger — which is what lets us record any
+ *  failure code, since a transient one (429, 500, 全网皆败) clears itself on the
+ *  next run instead of parking a working key here forever. Removing the key from
+ *  来源设定 stays a manual decision. */
+async function syncDeadKeysFromResults(
+  kv,
+  api_base,
+  validKeys,
+  invalidRecords,
+  uploadedAt,
+) {
+  const none = { added: 0, removed: 0 };
 
   let provider_host;
   try {
     provider_host = new URL(api_base).hostname;
   } catch {
-    return 0;
+    return none;
   }
-  if (!provider_host) return 0;
+  if (!provider_host) return none;
 
-  // Store the calendar day at midnight UTC — the exact shape manual entries use
-  // (toIsoDay in app.js). expired_at is read as a date (dkDateOf slices 10 chars,
-  // the range filter compares strings), so mixing a full instant in here would make
-  // auto and manual rows for the same day sort and filter as different days.
-  // The precise moment is still kept in created_at.
-  const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
-
-  const list = await readDeadKeys(kv);
-  const known = new Set(list.map((r) => r && r.api_key));
+  let list = await readDeadKeys(kv);
+  let removed = 0;
   let added = 0;
 
-  for (const rec of invalidRecords) {
-    if (!isDeadKeyRecord(rec)) continue;
+  // 1. Keys that answered this run are not dead any more — drop them, manual or
+  //    auto alike, since the record now asserts something untrue.
+  const recovered = new Set(
+    (Array.isArray(validKeys) ? validKeys : [])
+      .filter((k) => typeof k === "string")
+      .map((k) => k.trim())
+      .filter(Boolean),
+  );
+  if (recovered.size) {
+    const keep = [];
+    const dropped = [];
+    for (const r of list) {
+      if (r && r.provider_host === provider_host && recovered.has(r.api_key)) {
+        dropped.push(r);
+      } else {
+        keep.push(r);
+      }
+    }
+    // A dropped record may hold its group's only error_detail — hand it over,
+    // same as DELETE does.
+    for (const gone of dropped) {
+      if (!gone.error_detail) continue;
+      const heir = keep.find((r) => r && !r.error_detail && sameDedupGroup(r, gone));
+      if (heir) heir.error_detail = gone.error_detail;
+    }
+    if (dropped.length) {
+      list = keep;
+      removed = dropped.length;
+    }
+  }
+
+  // 2. Keys that failed get recorded. expired_at is stored as the calendar day at
+  //    midnight UTC — the exact shape manual entries use (toIsoDay in app.js) —
+  //    because the UI reads it as a date; the precise moment stays in created_at.
+  const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
+  const known = new Set(list.map((r) => r && r.api_key));
+
+  for (const rec of Array.isArray(invalidRecords) ? invalidRecords : []) {
+    if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) continue;
     const api_key = rec.api_key.trim();
     if (known.has(api_key)) continue;
 
@@ -420,8 +456,8 @@ async function recordDeadKeysFromResults(kv, api_base, invalidRecords, uploadedA
     added++;
   }
 
-  if (added) await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
-  return added;
+  if (added || removed) await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
+  return { added, removed };
 }
 
 async function handleGetDeadKeys(request, env) {

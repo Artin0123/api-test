@@ -955,10 +955,14 @@ async def run_provider(
         print(f"[Pages] 上传结果到 {PAGES_URL}/api/results ...")
         try:
             resp = _pages_request("POST", "/api/results", final_report)
-            # dead_keys_added 由 handlePostResults 回传；旧版 worker 没有这个字段
-            added = (resp or {}).get("dead_keys_added")
-            if added:
-                print(f"[Pages] 上传成功。已自动记录 {added} 支失效 Key（仅 401）。")
+            # 这两个字段由 handlePostResults 回传；旧版 worker 没有，取不到就只印上传成功
+            added = (resp or {}).get("dead_keys_added") or 0
+            removed = (resp or {}).get("dead_keys_removed") or 0
+            if added or removed:
+                print(
+                    f"[Pages] 上传成功。失效 Key 清单：新增 {added} 支、"
+                    f"移除 {removed} 支（本轮已恢复）。"
+                )
             else:
                 print("[Pages] 上传成功。")
         except Exception as e:
