@@ -4,7 +4,7 @@
 
 - If the change has already been reviewed, commit it directly.
 - Do not push unless the user explicitly asks for it.
-- Run `npm run check` after touching `public/_worker.js` or `public/app.js`. It is `node --check`, parse-only — this repo has no linter, formatter, or type checker, so nothing else catches a mistake before deploy.
+- Run `npm run check` after touching `public/_worker.js`, `public/app.js` or `public/boot.js`. It is `node --check`, parse-only — this repo has no linter, formatter, or type checker, so nothing else catches a mistake before deploy.
 - Never create `wrangler.toml`. All Cloudflare config is done in the dashboard.
 - Never write an API key into source. Keys come from `.env` (names in `.env.example`) or `valid_keys/*.txt`; `valid_keys/`, `async_test_results.json`, `.env` and `.dev.vars` are gitignored.
 - Test against `?mock` or a local mock provider, never a real key. Write test artifacts to a temp dir, not the repo.
@@ -28,6 +28,7 @@
 - **`normalize_message()` (Python) and `normalizeMessage()` (JS) must stay in sync, and neither may use `\b` or `\d`.** Python counts CJK as word characters and full-width digits as digits; JS does not, and these providers reply in Chinese. Use explicit classes (`[0-9０-９]`) and a captured leading char (`(^|[^a-z0-9])` … `$1`). Lookbehind is banned in `app.js` outright: below Safari 16.4 it is a parse-time error that takes down the whole file.
 - **`has_thinking_ratio` is `null`, not `0.0`, when `sample_count == 0`** — the frontend must handle null explicitly.
 - **`answer_verified` is computed before `clip_sample()`**, never after.
+- **No inline `<script>` and no `style=""`**, in `index.html` or in the HTML strings `app.js` builds. The CSP in `_worker.js` sets `script-src 'self'; style-src 'self'`, so an inline style simply stops applying — nothing errors. Writing `element.style` from JS is fine, CSP does not cover CSSOM. Security headers belong in `withSecurityHeaders()`, not a `_headers` file: Cloudflare does not apply `_headers` to Pages Functions responses, which in advanced mode is every response.
 - **The `atk_session` cookie must keep `SameSite=Strict`.** The write handlers parse bodies with `request.json()` without checking `Content-Type`, so a cross-site form post would be accepted as JSON; `Strict` is the only thing stopping it, there is no CSRF token.
 - **CI runs `pip install aiohttp`, not `-r requirements.txt`.** A new Python dependency has to be added to `.github/workflows/main.yml` as well.
 

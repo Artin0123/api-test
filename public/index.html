@@ -12,26 +12,7 @@
             type="image/svg+xml"
             href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E"
         />
-        <script>
-            (() => {
-                // Apply saved theme before paint to avoid flash
-                try {
-                    const saved = localStorage.getItem("atk_theme");
-                    const theme =
-                        saved ||
-                        (matchMedia("(prefers-color-scheme: light)").matches
-                            ? "light"
-                            : "dark");
-                    document.documentElement.setAttribute("data-theme", theme);
-                    // Not a credential — the session lives in an HttpOnly
-                    // cookie. This only avoids flashing the login card at a
-                    // user who is already signed in; app.js verifies for real.
-                    if (localStorage.getItem("atk_signed_in") === "1") {
-                        document.documentElement.classList.add("has-token");
-                    }
-                } catch {}
-            })();
-        </script>
+        <script src="/boot.js"></script>
         <link rel="stylesheet" href="/style.css" />
     </head>
     <body>
@@ -93,11 +74,10 @@
                 ></div>
                 <div id="topbar-menu" class="topbar-menu">
                     <div class="topbar-menu-header hidden-desktop">
-                        <span style="font-weight: 600">选单</span>
+                        <span class="topbar-menu-title">选单</span>
                         <button
                             id="mobile-menu-close"
-                            class="btn-ghost btn-sm"
-                            style="border: none; padding: 0.2rem"
+                            class="btn-ghost btn-sm topbar-menu-close"
                             type="button"
                         >
                             关闭
@@ -515,11 +495,10 @@
                         <input
                             type="number"
                             id="ed-max-concurrency"
-                            class="input-text"
+                            class="input-text input-concurrency"
                             placeholder="2"
                             min="1"
                             max="200"
-                            style="width: 7rem"
                         />
                     </label>
 
@@ -568,7 +547,7 @@
                     </label>
                     <label class="field">
                         <span class="field-label">Discord Webhook URL</span>
-                        <div style="display: flex; gap: 0.5rem">
+                        <div class="field-row">
                             <input
                                 type="url"
                                 id="set-discord-url"
@@ -577,9 +556,8 @@
                             />
                             <button
                                 id="test-discord-btn"
-                                class="btn btn-secondary"
+                                class="btn btn-secondary no-shrink"
                                 type="button"
-                                style="flex-shrink: 0"
                             >
                                 测试
                             </button>
@@ -675,9 +653,8 @@
                         <input
                             type="number"
                             id="dke-code"
-                            class="input-text"
+                            class="input-text input-errcode"
                             placeholder="401"
-                            style="width: 8rem"
                         />
                     </label>
                     <p id="dkedit-error" class="form-error" role="alert"></p>

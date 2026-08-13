@@ -36,23 +36,71 @@ const ROUTES = {
   "DELETE /api/dead-keys": handleDeleteDeadKey,
 };
 
+/**
+ * A `_headers` file cannot do this job: Cloudflare does not apply it to
+ * responses produced by Pages Functions, and in advanced mode that is every
+ * response, including the ones handed back from env.ASSETS.fetch(). So the
+ * headers are attached here instead, on the way out.
+ *
+ * CSP notes, each of which fails silently if broken:
+ *   script-src 'self'  — index.html must keep its pre-paint script in boot.js;
+ *                        an inline <script> would need a hash that goes stale.
+ *   style-src 'self'   — no style="" attributes anywhere, including the strings
+ *                        app.js builds for innerHTML. Writing element.style from
+ *                        JS is fine, CSP does not cover CSSOM.
+ *   img-src data:      — the favicon is an inline SVG data URI.
+ *   connect-src        — the Discord test button posts straight from the page to
+ *                        the webhook URL the user typed. Only Discord's own hosts
+ *                        are allowed; a webhook behind any other domain (a relay,
+ *                        a proxy) will be blocked and needs adding here.
+ */
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "connect-src 'self' https://discord.com https://discordapp.com",
+].join("; ");
+
+const SECURITY_HEADERS = {
+  "Content-Security-Policy": CSP,
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "same-origin",
+  "Permissions-Policy":
+    "accelerometer=(), camera=(), geolocation=(), gyroscope=(), " +
+    "magnetometer=(), microphone=(), payment=(), usb=()",
+};
+
+function withSecurityHeaders(response) {
+  const out = new Response(response.body, response);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    out.headers.set(name, value);
+  }
+  return out;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (!url.pathname.startsWith("/api/")) {
-      return env.ASSETS.fetch(request);
+      return withSecurityHeaders(await env.ASSETS.fetch(request));
     }
 
     const key = `${request.method} ${url.pathname}`;
     const handler = ROUTES[key];
-    if (!handler) return text("Not Found", 404);
+    if (!handler) return withSecurityHeaders(text("Not Found", 404));
 
     try {
-      return await handler(request, env, url);
+      return withSecurityHeaders(await handler(request, env, url));
     } catch (err) {
       console.error(err);
-      return json({ error: "Internal Server Error" }, 500);
+      return withSecurityHeaders(json({ error: "Internal Server Error" }, 500));
     }
   },
 };
@@ -246,7 +294,12 @@ const DEFAULT_SETTINGS = {
   providers: [],
   github_url: "",
   discord_webhook_url: "",
+  version: 0,
 };
+
+function settingsVersion(settings) {
+  return typeof settings.version === "number" ? settings.version : 0;
+}
 
 async function handleGetSettings(request, env) {
   if (!(await requireAuth(request, env)))
@@ -254,6 +307,7 @@ async function handleGetSettings(request, env) {
   const kv = kvStore(env);
   const raw = await kv.get(SETTINGS_KEY);
   const settings = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
+  settings.version = settingsVersion(settings);
   return json({ ok: true, settings });
 }
 
@@ -277,6 +331,19 @@ async function handlePostSettings(request, env) {
   const kv = kvStore(env);
   const raw = await kv.get(SETTINGS_KEY);
   const existing = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
+  const currentVersion = settingsVersion(existing);
+
+  // Optimistic concurrency. The whole settings object lives in one KV value and
+  // is written whole, so two tabs saving from the same starting point would
+  // silently drop one of them — providers and their keys included. A client that
+  // read version N has to still be at N to write. Omitting version skips the
+  // check on purpose, so curl and manual repair still work.
+  if (typeof body.version === "number" && body.version !== currentVersion) {
+    return json(
+      { error: "settings changed elsewhere", conflict: true },
+      409,
+    );
+  }
 
   const next = {
     providers: Array.isArray(body.providers)
@@ -290,6 +357,7 @@ async function handlePostSettings(request, env) {
       typeof body.discord_webhook_url === "string"
         ? body.discord_webhook_url
         : existing.discord_webhook_url,
+    version: currentVersion + 1,
   };
 
   await kv.put(SETTINGS_KEY, JSON.stringify(next));
@@ -326,7 +394,7 @@ async function handlePostSettings(request, env) {
     );
   }
 
-  return json({ ok: true });
+  return json({ ok: true, version: next.version });
 }
 
 // ─── /api/results ────────────────────────────────────────────────────────────

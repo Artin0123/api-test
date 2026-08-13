@@ -149,8 +149,42 @@ async function api(path, { method = "GET", auth = false, body } = {}) {
     sessionEnded();
     throw new Error("Unauthorized");
   }
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  if (!resp.ok) {
+    const err = new Error(data.error || `HTTP ${resp.status}`);
+    err.status = resp.status;
+    err.data = data;
+    throw err;
+  }
   return data;
+}
+
+// ── Settings writes ───────────────────────────────────────────────────────
+// Settings are stored as a single object and written whole, so every write
+// carries the version this tab last read. A 409 means another tab saved first
+// and this tab's copy is stale — pull the winning copy in before the user
+// retries, so they are never looking at a snapshot that no longer exists.
+async function reloadSettingsFromServer() {
+  const d = await api("/api/settings", { auth: true });
+  state.settings = d.settings || {};
+  state.selectedProviders.clear();
+  applySettingsToUI();
+  renderProviderGrid();
+}
+
+async function postSettings(patch) {
+  if (MOCK) return undefined;
+  try {
+    const resp = await api("/api/settings", {
+      method: "POST",
+      auth: true,
+      body: { ...patch, version: (state.settings || {}).version },
+    });
+    return resp.version;
+  } catch (err) {
+    if (err.status !== 409) throw err;
+    await reloadSettingsFromServer();
+    throw new Error("设定已被其他分页修改，画面已更新为最新内容，请重新操作");
+  }
 }
 
 // ── Line numbers ──────────────────────────────────────────────────────────
@@ -379,16 +413,12 @@ async function saveSettings() {
     discord_webhook_url: dom.setDiscordUrl.value.trim(),
   };
   try {
-    // Merge into existing settings and save
+    // Send only the two fields this modal owns: a full-object write from here
+    // would carry a possibly stale provider list along with it.
+    const version = await postSettings(patch);
     const current = state.settings || {};
-    if (!MOCK) {
-      await api("/api/settings", {
-        method: "POST",
-        auth: true,
-        body: { ...current, ...patch },
-      });
-    }
     state.settings = { ...current, ...patch };
+    if (version !== undefined) state.settings.version = version;
     applySettingsToUI();
     closeSettings();
   } catch (err) {
@@ -516,9 +546,9 @@ function renderProviderCard(p, index) {
         <label class="provider-card-select" title="选中以批量操作">
           <input type="checkbox" data-select="${index}"${isSelected ? " checked" : ""} />
         </label>
-        <div style="flex:1;min-width:0">
+        <div class="provider-card-badges">
           <span class="badge${isEnabled ? "" : " badge-warn"}">${isEnabled ? esc(p.provider_type) : "已停用"}</span>
-          ${!isEnabled ? `<span class="badge" style="margin-left:.25rem">${esc(p.provider_type)}</span>` : ""}
+          ${!isEnabled ? `<span class="badge badge-spaced">${esc(p.provider_type)}</span>` : ""}
         </div>
         <div class="provider-card-actions">
           <button class="btn btn-secondary btn-sm" data-edit="${index}" type="button">编辑</button>
@@ -643,14 +673,9 @@ async function saveEditor() {
 
   dom.editorSave.disabled = true;
   try {
-    if (!MOCK) {
-      await api("/api/settings", {
-        method: "POST",
-        auth: true,
-        body: { ...settings, providers },
-      });
-    }
+    const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
+    if (version !== undefined) state.settings.version = version;
     renderProviderGrid();
     closeEditor();
   } catch (err) {
@@ -672,14 +697,9 @@ async function deleteProvider(index) {
   const providers = (settings.providers || []).filter((_, i) => i !== index);
 
   try {
-    if (!MOCK) {
-      await api("/api/settings", {
-        method: "POST",
-        auth: true,
-        body: { ...settings, providers },
-      });
-    }
+    const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
+    if (version !== undefined) state.settings.version = version;
     state.selectedProviders.clear();
     renderProviderGrid();
   } catch (err) {
@@ -710,14 +730,9 @@ async function bulkToggle(enable) {
     state.selectedProviders.has(i) ? { ...p, enabled: enable } : p,
   );
   try {
-    if (!MOCK) {
-      await api("/api/settings", {
-        method: "POST",
-        auth: true,
-        body: { ...settings, providers },
-      });
-    }
+    const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
+    if (version !== undefined) state.settings.version = version;
     state.selectedProviders.clear();
     renderProviderGrid();
   } catch (err) {
@@ -857,7 +872,7 @@ function renderProviderResult({ provider, host, resultData, checkpointData }) {
 
   const bodyHtml = hasResult
     ? renderResultBody(r)
-    : `<p class="muted" style="padding:1rem 0">尚无测试结果。</p>`;
+    : `<p class="muted empty-note">尚无测试结果。</p>`;
 
   return `
     <div class="result-group">

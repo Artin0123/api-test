@@ -281,7 +281,66 @@ localStorage 只剩 `atk_signed_in` 旗標，它不是憑證，唯一用途是�
 
 ---
 
-## 七、依賴更新
+## 七、瀏覽器端防護與設定寫入
+
+### 7.1 安全標頭放在 worker，不用 `_headers`
+
+Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pages Functions 產生的回應，並點名 advanced mode 的 `_worker.js`；`env.ASSETS.fetch()` 轉手回來的靜態資源算不算例外，文件兩處敘述互相矛盾，**無法從文件確認**。因此不放 `_headers`，改在 worker 出口統一 `withSecurityHeaders()`，靜態資源、API 回應、404 與 500 全部涵蓋。
+
+實測三條路徑（`/`、`/boot.js`、`/api/settings`）都帶到 CSP、`nosniff`、`X-Frame-Options`、`Referrer-Policy`、`Permissions-Policy`。
+
+### 7.2 上 CSP 前必須先做的三件事
+
+`script-src 'self'` 與 `style-src 'self'` 不能直接開，會靜默壞掉。
+
+| 障礙 | 處理 | 為何這樣選 |
+|---|---|---|
+| `index.html` 有一段避免主題閃爍的 inline script | 搬到 `public/boot.js`，仍是 head 內的阻塞式載入，一樣在首次繪製前執行 | 另一條路是算 hash，但那份 hash 在腳本被編輯的當下就失效，而且是靜默失效 |
+| 9 處 inline `style=`（`index.html` 6、`app.js` 模板 3） | 全改成 class，新增 `.provider-card-badges`、`.badge-spaced`、`.empty-note`、`.field-row`、`.no-shrink`、`.input-concurrency`、`.input-errcode`、`.topbar-menu-title`、`.topbar-menu-close` | 保留 `'unsafe-inline'` 的話 `style-src` 等於沒設。**注意**：`app.js` 量測用的 `_mirror.style.cssText` 不必改，CSP 不管 CSSOM 寫入，只管標記裡的 style 屬性 |
+| Discord 測試按鈕是從瀏覽器直接 POST 到使用者填的網址 | `connect-src` 放行 `discord.com` 與 `discordapp.com` | 代價是走中繼／代理網域的 webhook 會被擋，需要時在此加白名單 |
+
+`img-src` 必須留 `data:`：favicon 是 inline SVG data URI，`style.css` 的下拉箭頭也是 data URI 背景圖。
+
+### 7.3 `app_settings`：版本號，不是分拆儲存
+
+**問題**：整包 full-replace 寫入。兩個分頁從同一份快照存檔，後存的會**靜默**蓋掉先存的，連 provider 與 Key 一起。
+
+| 選項 | 為何不選 |
+|---|---|
+| KV 條件寫入 / CAS | KV 沒有這個能力，直接排除 |
+| 每個 provider 一把 KV key | 消除陣列層級碰撞，但 Python 腳本讀的是單一 blob，屬中型重構 |
+| **版本號（採用）** | 約十行。value 帶 `version`，寫入時比對，不一致回 409 |
+
+競爭窗口沒有消失，只是從「分鐘級」縮到「毫秒級」；真正的收穫是**把靜默資料遺失換成看得見的錯誤**。前端收到 409 會先把伺服器上的版本拉回來重繪，再要求使用者重做，避免他對著一份已不存在的快照重存。
+
+**不帶 `version` 的請求放行**是刻意的：唯一的並發寫入者是前端，而它一定會帶；curl 手動修復則不該被版本擋住。
+
+設定 Modal 同時改成只送它自己的兩個欄位，不再回送整包——它手上的 provider 清單可能是舊的。
+
+實測：`v0` → 200（新版本 1）；重送 `v0` → 409；`v1` → 200（2）；不帶 version → 200（3）。
+
+### 7.4 `dead_keys` 全量改寫：查證後維持現狀
+
+先前把它描述成「只增不縮、長期逼近 KV 單值上限」，**查證後這個說法不成立**。`syncDeadKeysFromResults` 用 `known` 集合跳過已存在的 `api_key`（`_worker.js:566`），既有記錄整筆略過，所以：
+
+- 同一支 Key 每天重跑**不會**新增第二筆，`expired_at` 與 `created_at` 維持第一次失敗那天。
+- 清單規模的上限是「設定裡不重複的 Key 總數」，與天數無關。
+
+因此不採用筆數／天數上限——那會犧牲記錄完整性，去換一個不存在的成長問題；也不做 host 分片或搬 D1。**仍然存在的**是丟失更新：使用者在 UI 上編輯記錄的同時，上傳結果觸發對帳，窗口幾秒，代價是一次手動編輯被蓋掉。KV 沒有條件寫入，單值方案在 KV 內無解，接受。
+
+### 7.5 未處理：登入嘗試次數
+
+| 方案 | 為何不做 |
+|---|---|
+| WAF 速率限制規則 | 免費方案上限是 1 條規則、運算式只有 Path 與 Verified Bot、IP 計數、計數窗與封鎖時長都固定 10 秒。5 次/10 秒的設定下，單一 IP 每天仍可嘗試約四萬次 |
+| Worker 內用 KV 計數 | 免費寫入額度 1,000/日，而整個每日排程才用約 50 次。每次失敗登入寫一次計數器，等於讓攻擊者用幾百個請求耗盡當日寫入額度，結果上傳跟著失敗——把認證問題換成可用性問題 |
+| Turnstile | 唯一能真正擋自動化猜測的低成本手段，但要多一個第三方腳本與 secret，並牽動 CSP |
+
+**決策**：依賴密碼熵。線上猜測的速率與離線字典攻擊差好幾個數量級，而實務上密碼失守多半是外洩而非被猜中，節流對外洩沒有任何幫助。
+
+---
+
+## 八、依賴更新
 
 | 項目 | 版本 | 說明 |
 |---|---|---|
@@ -295,7 +354,7 @@ localStorage 只剩 `atk_signed_in` 旗標，它不是憑證，唯一用途是�
 
 ---
 
-## 八、驗證方式
+## 九、驗證方式
 
 | 範圍 | 方式 |
 |---|---|
@@ -303,19 +362,25 @@ localStorage 只剩 `atk_signed_in` 旗標，它不是憑證，唯一用途是�
 | dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、404／400 邊界 |
 | 前端 | jsdom 驅動真實 `index.html` + `app.js`（mock 模式與登入模式），以及 agent-browser 實機 Chrome 檢查版面、RWD、無障礙名稱 |
 | API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
+| 設定版本號 | curl 打本機 wrangler，涵蓋首次寫入、重送舊版本得 409、跟上新版本、不帶版本放行（見 §7.3） |
+| 安全標頭 | curl 檢查靜態頁、`/boot.js`、`/api/*` 三條路徑的回應標頭（見 §7.1） |
 
 實跑時一律指向本機 mock 供應商或 `?mock`，不使用任何真實 Key，測試產物寫在暫存目錄，不污染 repo。
 
 ---
 
-## 九、已知取捨總表
+## 十、已知取捨總表
 
 | 取捨 | 選擇 | 代價 |
 |---|---|---|
 | 瀏覽器認證方式 | HttpOnly session cookie | 需靠 `SameSite=Strict` 擋 CSRF，沒有 token 兜底 |
 | session 儲存 | 無狀態 HMAC，不進 KV | 無法撤銷單一 cookie；被複製的 cookie 到期前仍有效 |
 | session 簽章密鑰 | 沿用 `ADMIN_PASSWORD` | 換密碼會一併踢掉所有已登入的瀏覽器 |
-| 登入嘗試次數 | 未設限 | 單一共用密碼可無限猜，Pages 無內建節流 |
+| 登入嘗試次數 | 未設限，依賴密碼熵 | 沒有任何告警，被嘗試也不會知道 |
+| 安全標頭位置 | worker 出口統一補，不用 `_headers` | 多一層包裝；`_headers` 對 advanced mode 無效 |
+| `connect-src` | 只放行 Discord 兩個網域 | 走中繼網域的 webhook 測試會被 CSP 擋 |
+| 設定並發 | 版本號 + 409 | 競爭窗口仍在（毫秒級），只是不再靜默 |
+| `dead_keys` 並發 | 接受 | 手動編輯與對帳同時發生會丟一次編輯；KV 無條件寫入，單值方案無解 |
 | 訊息去重粒度 | 正規化後比對 | 只差數字的兩種原因會合併 |
 | 每支 Key 的訊息 | 保留 | +1.7 KB／66 支 Key |
 | 正規化邏輯 | Python 與 JS 各一份 | 需手動同步，但漂移只影響外觀 |

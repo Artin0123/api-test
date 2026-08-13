@@ -185,6 +185,13 @@ a:hover {
 .hidden-desktop {
     display: none;
 }
+.topbar-menu-title {
+    font-weight: 600;
+}
+.topbar-menu-close {
+    border: none;
+    padding: 0.2rem;
+}
 
 /* Theme toggle */
 .theme-toggle {
@@ -543,6 +550,10 @@ a:hover {
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
+}
+.provider-card-badges {
+    flex: 1;
+    min-width: 0;
 }
 .provider-card-host {
     font-size: 1rem;
@@ -1053,6 +1064,27 @@ a:hover {
 .muted {
     color: var(--text-muted);
     font-size: var(--text-sm);
+}
+/* Layout helpers. These exist so no markup needs a style attribute: the CSP
+   sets style-src 'self', which blocks inline styles but not CSSOM writes. */
+.empty-note {
+    padding: 1rem 0;
+}
+.badge-spaced {
+    margin-left: 0.25rem;
+}
+.field-row {
+    display: flex;
+    gap: 0.5rem;
+}
+.no-shrink {
+    flex-shrink: 0;
+}
+.input-concurrency {
+    width: 7rem;
+}
+.input-errcode {
+    width: 8rem;
 }
 .mono-list {
     font-family: var(--mono);

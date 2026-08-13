@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler pages dev public --kv=KV_STORE",
-    "check": "node --check public/_worker.js && node --check public/app.js"
+    "check": "node --check public/_worker.js && node --check public/app.js && node --check public/boot.js"
   },
   "devDependencies": {
     "wrangler": "^4.121.0"
