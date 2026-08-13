@@ -1,11 +1,16 @@
 # AGENTS.md
 
-## Stack
+## Working agreements
 
-- **Backend:** Cloudflare Pages + `public/_worker.js` (ESM, no TypeScript, no bundler)
-- **Frontend:** Vanilla JS (`public/app.js`) + HTML/CSS — no framework, no build step
-- **Test runner:** Python (`async_test_keys.py`) via GitHub Actions; uses `aiohttp` only
-- **Dev server:** Wrangler (`npm run dev`)
+- If the change has already been reviewed, commit it directly.
+- Do not push unless the user explicitly asks for it.
+- Run `npm run check` after touching `public/_worker.js` or `public/app.js`. It is `node --check`, parse-only — this repo has no linter, formatter, or type checker, so nothing else catches a mistake before deploy.
+- Never create `wrangler.toml`. All Cloudflare config is done in the dashboard.
+- Never write an API key into source. Keys come from `.env` (names in `.env.example`) or `valid_keys/*.txt`; `valid_keys/`, `async_test_results.json`, `.env` and `.dev.vars` are gitignored.
+- Test against `?mock` or a local mock provider, never a real key. Write test artifacts to a temp dir, not the repo.
+- Record a non-obvious decision in a comment next to the code it governs, not in this file — a copy here goes stale the moment the code moves.
+- Only add markdown when asked, as `docs/<name>-MMDDHHMM.md`. Nothing new in the repo root.
+- `docs/decision-*.md` is maintained, not a snapshot: when you change error grouping, dead keys, single-key reruns or sample clipping, update it and rename it to the time of that update. Reference it by glob, never by its current filename.
 
 ## Commands
 
@@ -16,61 +21,19 @@
 | Run Python tester | `pip install aiohttp` then `python async_test_keys.py` |
 | Frontend mock mode | Open `http://127.0.0.1:8788/?mock` |
 
-No linter, formatter, or type checker exists. `node --check` is parse-only.
+## Invariants (breaking these fails silently)
 
-## Architecture
+- **Fingerprint** is `SHA-256(JSON.stringify({ api_base, provider_type }))` — alphabetical key order, trailing slashes stripped from `api_base`. Implemented separately in `_worker.js`, `app.js` and `async_test_keys.py`; any drift makes result lookup miss.
+- **KV binding name is exactly `KV_STORE`**, in the dashboard and in the `--kv=KV_STORE` flag.
+- **`normalize_message()` (Python) and `normalizeMessage()` (JS) must stay in sync, and neither may use `\b` or `\d`.** Python counts CJK as word characters and full-width digits as digits; JS does not, and these providers reply in Chinese. Use explicit classes (`[0-9０-９]`) and a captured leading char (`(^|[^a-z0-9])` … `$1`). Lookbehind is banned in `app.js` outright: below Safari 16.4 it is a parse-time error that takes down the whole file.
+- **`has_thinking_ratio` is `null`, not `0.0`, when `sample_count == 0`** — the frontend must handle null explicitly.
+- **`answer_verified` is computed before `clip_sample()`**, never after.
+- **CI runs `pip install aiohttp`, not `-r requirements.txt`.** A new Python dependency has to be added to `.github/workflows/main.yml` as well.
 
-- `public/_worker.js`: Cloudflare Pages Functions entry point. Routes defined in a flat `ROUTES` object (`"METHOD /path" → handler`). Static files served via `env.ASSETS.fetch(request)`.
-- `public/app.js`: Frontend, global scope (not an ES module despite `"type": "module"` in package.json).
-- `async_test_keys.py`: Runs in two modes:
-  - **Local** (no `PAGES_URL` env): reads `valid_keys/keys.txt` and `models_list/models.txt`, writes `async_test_results.json` locally.
-  - **GHA** (`PAGES_URL` + `ADMIN_PASSWORD` set): fetches providers from API, uploads results to KV.
+## Orientation
 
-## KV Key Schema
-
-- `app_settings` — full settings JSON
-- `results:{fingerprint}` — per-provider test results
-- `checkpoint:{fingerprint}` — in-progress checkpoint
-- `dead_keys` — array of dead key records (`GET/POST/PUT/DELETE /api/dead-keys`, `id` via `crypto.randomUUID()`). The list means **"keys currently failing"**, not a permanent ledger. `handlePostResults` reconciles it against every uploaded run via `syncDeadKeysFromResults`: keys in `invalid_records` are recorded (any failure code), keys in `valid_keys` are dropped for that `provider_host` — manual entries included, since the record now asserts something untrue. That self-correction is what makes recording transient failures (429, 500, 全网皆败) safe: they clear on the next run. Removing a key from `来源设定` remains a manual decision.
-
-KV binding name is exactly `KV_STORE` (must match dashboard and `--kv=KV_STORE` flag).
-
-## Fingerprint (critical — must stay in sync across all three files)
-
-```js
-SHA-256( JSON.stringify({ api_base: normalized, provider_type }) )
-```
-
-- Key ordering is alphabetical: `api_base` before `provider_type`.
-- Strip trailing slashes from `api_base` before hashing.
-- Used in `_worker.js`, `app.js`, and `async_test_keys.py` — changing order in any one breaks result lookup.
-
-## Auth
-
-- `Authorization: Bearer <ADMIN_PASSWORD>` header required on all endpoints except `GET /api/results`.
-- Local secret stored in `.dev.vars` (gitignored, read automatically by Wrangler).
-
-## CI
-
-- Workflow: `.github/workflows/main.yml` — runs daily at UTC 02:00 and on `workflow_dispatch`.
-- Concurrency: `cancel-in-progress: false` — never cancels running jobs.
-- Python version: 3.14; script has no 3.14-specific features.
-- CI installs only `pip install aiohttp`, not `-r requirements.txt`.
-- Required secrets: `PAGES_URL`, `ADMIN_PASSWORD`.
-- Post-run: Discord notification via webhook URL fetched from KV `app_settings`.
-
-## Quirks and Gotchas
-
-- **`wrangler.toml` is intentionally absent.** All Cloudflare config is done via the dashboard only (per SPEC.md §13).
-- **`DELETE /api/checkpoint`** exists in `_worker.js` but is not called by Python — the checkpoint is auto-deleted by `handlePostResults` when results are uploaded. Python only deletes the local `checkpoint.json` file. The DELETE endpoint exists for manual cleanup if needed.
-- **Local fallback file paths are hardcoded** as `valid_keys/keys.txt` and `models_list/models.txt`. The per-provider named `.txt` files in those dirs are not used by the Python script.
-- **Local checkpoint path is hardcoded** as `checkpoint.json` (not `checkpoint_{fingerprint}.json`). Only one checkpoint file exists at a time in local mode.
-- **Secrets never live in source.** `valid_keys/`, `async_test_results.json`, `.env` and `.dev.vars` are all gitignored (verified: none are tracked). Local scripts read keys from `.env` via `load_env_file()` in `local_test/ollama_chat_all_models.py`, or from `valid_keys/*.txt`; see `.env.example` for the variable names. Never write a key back into a `.py` file.
-- **`has_thinking_ratio` can be `null`** (not `0.0`) when `sample_count == 0` — frontend must handle null explicitly.
-- **Circuit breaker:** HTTP 401/403, or error message containing `balance` / `quota` → key added to `dead_keys`, all remaining models for that key skipped. HTTP 429/408 → one retry after 2s.
-- **Single-key providers run every model twice.** With only one key there is no cross-key validation, so `runs_per_pair = 2` and each `(key, model)` runs two rounds separated by `SINGLE_KEY_RERUN_DELAY` (2s) to avoid tripping rate limits. Both rounds are recorded, so a model counts as failed only if both fail. The second round is skipped if round 1 tripped the circuit breaker. Resume requires `runs_per_pair` successes before a pair is treated as done, and a partially-done pair discards its stale record so the fresh rounds do not stack.
-- **Success criterion:** `has_content or has_thinking` — either non-empty content text or non-empty thinking tokens counts as success.
-- **Samples are clipped to `SAMPLE_MAX_LEN` (2048 chars each for content and thinking)**, keeping half the head and half the tail because reasoning models put the conclusion last. `answer_verified` must be computed *before* clipping — a `323` in the omitted middle would otherwise read as a wrong answer. The clip is the safety net for providers that ignore `MAX_OUTPUT_TOKENS` (512) or exclude reasoning tokens from it; a provider that honours the token cap will never reach 2048 chars. Raising `MAX_OUTPUT_TOKENS` would let verbose models run into `TOTAL_TIMEOUT` instead of being cut short.
-- **`error_reason` is the provider's own message**, parsed from the first failed record's `error_body` by `parse_error_body` / `pick_error_message` (capped at 200 chars). The old canned text (`Key 专属硬伤 ...`) is only a fallback when no message can be parsed. Frontend truncates display at 120 chars with a `...` suffix.
-- **Dedup key is `error_code` + normalized message**, computed by `normalize_message()` (Python) / `normalizeMessage()` (JS), which masks `sk-xxxx`, `****2fb7`, hex ids and digit runs. Neither side may use `\b` or `\d`: Python counts CJK as word characters and full-width digits as digits, JS does not, so those shorthands produce different output on the Chinese messages these providers return. Use explicit classes (`[0-9０-９]`) and a captured leading char (`(^|[^a-z0-9])` … `$1`) so both engines agree. Lookbehind is also off-limits in `app.js` — it is a parse-time syntax error below Safari 16.4 and would take down the whole file. Raw text would split one cause across every key (providers embed the key fragment in the message); `error_code` alone would merge two genuinely different causes under one code (invalid key vs. account deactivated). Every record keeps its own `error_reason`; only the first record of each distinct cause keeps `error_detail`. The two normalizers should stay in sync, but unlike the fingerprint a drift does not break anything: it costs at most one extra stored detail, or splits a group away from the record holding the detail — in which case `renderInvalidGroups` falls back to `{message: <full reason>}` so the 📋 modal still shows the untruncated message.
-- **Windows:** `asyncio.WindowsSelectorEventLoopPolicy()` is set automatically when running on win32.
+- `public/_worker.js` — Cloudflare Pages Functions entry. Routes in a flat `ROUTES` map (`"METHOD /path" → handler`); static files via `env.ASSETS.fetch(request)`.
+- `public/app.js` — frontend, plain global script despite `"type": "module"` in `package.json`.
+- `async_test_keys.py` — local mode (no `PAGES_URL`) reads `valid_keys/keys.txt` and `models_list/models.txt` and writes `async_test_results.json`; GHA mode (`PAGES_URL` + `ADMIN_PASSWORD`) pulls providers from the API and uploads results to KV.
+- Auth: `Authorization: Bearer <ADMIN_PASSWORD>` on every endpoint except `GET /api/results`. The local secret lives in `.dev.vars`, read automatically by Wrangler.
+- Background: `README.md` for deployment and usage, `docs/` for plans, decisions and the archived spec snapshot.

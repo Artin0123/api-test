@@ -4,7 +4,7 @@
 
 Cloudflare Pages（存储设定与结果）+ GitHub Actions（定时执行）+ `async_test_keys.py`（测试核心）。
 
-完整规范见 [SPEC.md](./SPEC.md)。
+架构与数据模型的背景说明见 [docs/SPEC-08131247.md](./docs/SPEC-08131247.md)（2026-08-13 封存的快照，不含失效密钥相关功能，以代码为准）。
 
 ---
 
@@ -43,7 +43,7 @@ async_test_keys.py   测试核心脚本
 .github/
   workflows/
     main.yml     GHA 定时执行 + Discord 通知
-SPEC.md          完整系统规范
+docs/            规划、决策与已封存的规范快照
 ```
 
 ## 快速开始
