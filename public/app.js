@@ -12,7 +12,7 @@ async function getMock() {
 
 // ── State ────────────────────────────────────────────────────────────────
 const state = {
-  token: "",
+  signedIn: false,
   settings: null,
   fpCache: new Map(), // api_base + provider_type -> sha256 fingerprint
   selectedProviders: new Set(), // indices of currently selected provider cards
@@ -131,16 +131,24 @@ const dom = {
 };
 
 // ── API ──────────────────────────────────────────────────────────────────
+// Credentials travel in the HttpOnly session cookie set by POST /api/login, so
+// nothing here reads the password back. `auth: true` marks the calls that need a
+// session: a 401 on those means the cookie expired, and the login overlay comes
+// back instead of the caller rendering an empty page.
 async function api(path, { method = "GET", auth = false, body } = {}) {
   const headers = {};
-  if (auth) headers["Authorization"] = `Bearer ${state.token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const resp = await fetch(path, {
     method,
     headers,
+    credentials: "same-origin",
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json().catch(() => ({}));
+  if (resp.status === 401 && auth) {
+    sessionEnded();
+    throw new Error("Unauthorized");
+  }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
 }
@@ -261,25 +269,44 @@ function toggleTheme() {
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────
+// The session cookie is HttpOnly, so this flag is the only thing the page can
+// see about its own login state. It holds no secret — it exists so index.html
+// can hide the overlay before first paint instead of flashing the login card.
+const SIGNED_IN_HINT = "atk_signed_in";
+
+function markSignedIn() {
+  state.signedIn = true;
+  try {
+    localStorage.setItem(SIGNED_IN_HINT, "1");
+  } catch {}
+  document.documentElement.classList.remove("has-token");
+}
+
+function sessionEnded() {
+  state.signedIn = false;
+  try {
+    localStorage.removeItem(SIGNED_IN_HINT);
+  } catch {}
+  document.documentElement.classList.remove("has-token");
+  dom.authOverlay.classList.add("active");
+}
+
 async function login() {
-  const tok = dom.authInput.value.trim();
-  if (!tok) {
+  const password = dom.authInput.value.trim();
+  if (!password) {
     dom.authError.textContent = "请输入密码";
     return;
   }
   dom.authError.textContent = "";
   dom.authBtn.disabled = true;
-  state.token = tok;
   try {
-    await api("/api/settings", { auth: true });
-    localStorage.setItem("atk_token", tok);
+    await api("/api/login", { method: "POST", body: { password } });
+    markSignedIn();
     dom.authOverlay.classList.remove("active");
     dom.authInput.value = "";
-    document.documentElement.classList.remove("has-token");
     await initApp();
   } catch (err) {
-    state.token = "";
-    localStorage.removeItem("atk_token");
+    sessionEnded();
     dom.authError.textContent =
       err.message === "Unauthorized" ? "密码错误" : `认证失败：${err.message}`;
   } finally {
@@ -287,10 +314,16 @@ async function login() {
   }
 }
 
-function logout() {
-  state.token = "";
-  localStorage.removeItem("atk_token");
-  dom.authOverlay.classList.add("active");
+async function logout() {
+  // Only the server can clear an HttpOnly cookie; if the call fails the cookie
+  // outlives the click, so the UI must not pretend otherwise.
+  try {
+    await api("/api/logout", { method: "POST" });
+  } catch {}
+  state.settings = null;
+  state.deadKeys = [];
+  state.deadKeysLoaded = false;
+  sessionEnded();
   dom.authInput.value = "";
 }
 
@@ -739,9 +772,9 @@ async function loadResults() {
           checkpointData = (mock.checkpoints || {})[host] || { exists: false };
         } else {
           [resultData, checkpointData] = await Promise.all([
-            api(`/api/results?fp=${encodeURIComponent(fp)}`).catch(() => ({
-              exists: false,
-            })),
+            api(`/api/results?fp=${encodeURIComponent(fp)}`, {
+              auth: true,
+            }).catch(() => ({ exists: false })),
             api(`/api/checkpoint?fp=${encodeURIComponent(fp)}`, {
               auth: true,
             }).catch(() => ({ exists: false })),
@@ -1830,29 +1863,33 @@ async function bootstrap() {
 
   if (MOCK) {
     // Skip auth in mock mode
-    state.token = "mock";
+    state.signedIn = true;
     dom.authOverlay.classList.remove("active");
     document.documentElement.classList.remove("has-token");
     await initApp();
     return;
   }
 
-  const saved = localStorage.getItem("atk_token") || "";
-  if (saved) {
-    state.token = saved;
-    try {
-      await api("/api/settings", { auth: true });
-      dom.authOverlay.classList.remove("active");
-      document.documentElement.classList.remove("has-token");
-      await initApp();
-    } catch {
-      state.token = "";
-      localStorage.removeItem("atk_token");
-      document.documentElement.classList.remove("has-token");
-      dom.authError.textContent = "登入已过期，请重新输入密码";
-    }
-  } else {
+  if (localStorage.getItem(SIGNED_IN_HINT) !== "1") {
     document.documentElement.classList.remove("has-token");
+    return;
+  }
+
+  // The hint says there was a session; only the server knows if the cookie is
+  // still valid, so probe it. A 401 here is handled by api() → sessionEnded().
+  try {
+    await api("/api/settings", { auth: true });
+    markSignedIn();
+    dom.authOverlay.classList.remove("active");
+    await initApp();
+  } catch (err) {
+    // Also covers a network failure, where sessionEnded() has not run yet — the
+    // pre-paint hider must come off either way or the page stays blank.
+    sessionEnded();
+    dom.authError.textContent =
+      err.message === "Unauthorized"
+        ? "登入已过期，请重新输入密码"
+        : `连线失败：${err.message}`;
   }
 }
 

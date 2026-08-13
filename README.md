@@ -62,7 +62,7 @@ Repo → Settings → Secrets 添加两个值：
 
 ### 3. 填入设定
 
-1. 访问 Pages URL，用 `ADMIN_PASSWORD` 登录
+1. 访问 Pages URL，用 `ADMIN_PASSWORD` 登录（登录后浏览器持有一个 30 天有效的 HttpOnly session cookie，密码本身不会存进浏览器）
 2. 来源设定 Tab → 新增 Provider → 填入 `api_base`（只需填到根目录）、Keys（一行一个）、Models（逗号分隔）
    > 系统保存时会自动去除无效的空白、空行或连续逗号。
    >
@@ -72,6 +72,33 @@ Repo → Settings → Secrets 添加两个值：
 ### 4. 执行测试
 
 手动触发 GHA workflow，或等待每日定时任务（UTC 02:00）。完成后测试结果 Tab 即可查看。
+
+## 认证
+
+所有 `/api/` 端点都需要认证，没有例外——结果里存的是明文 Key，而 fingerprint 由公开的 `api_base` + `provider_type` 算出来，谁都能离线算，挡不住任何人。
+
+接受两种凭证：
+
+| 凭证 | 使用者 | 说明 |
+|---|---|---|
+| `Authorization: Bearer <ADMIN_PASSWORD>` | `async_test_keys.py`、GHA workflow | 不变 |
+| `atk_session` cookie | 浏览器 | `POST /api/login` 带 `{"password": "..."}` 换取；`POST /api/logout` 清除 |
+
+session 是无状态的：cookie 值为 `<到期毫秒>.<HMAC(ADMIN_PASSWORD, 版本.到期)>`，验证不需要读 KV。**换掉 `ADMIN_PASSWORD`（或 `_worker.js` 里的 `SESSION_VERSION`）会一次作废所有已发出的 cookie**；反过来，单一 cookie 无法个别撤销，登出只是让浏览器丢掉它。
+
+### 在浏览器直接查看 API
+
+登录之后，直接在网址列打开 `https://你的域名/api/results?fp=...` 就会看到 JSON，不需要 Postman 或任何会改 header 的工具。cookie 是 `SameSite=Strict`，从网址列输入或按书签属于同站导航，会带上；但**从别的网站点连结过来不会带**，那种情况会看到 401，重新整理一次即可。
+
+fingerprint 可以在浏览器 Console 算：
+
+```js
+// 键必须按字母序，api_base 结尾的斜线要先去掉
+const p = { api_base: "https://api.example.com/v1", provider_type: "openai" };
+crypto.subtle
+  .digest("SHA-256", new TextEncoder().encode(JSON.stringify(p)))
+  .then((b) => console.log([...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("")));
+```
 
 ## 本地运行与 Mock 开发模式
 
@@ -86,6 +113,16 @@ python async_test_keys.py
 
 结果写入 `async_test_results.json`，不会上传至 Pages。
 
+### 本地起 Pages（含 API）
+
+`npm run dev` 起 `wrangler pages dev`。要能登录，repo 根目录得有一个 `.dev.vars`（已 gitignore）：
+
+```
+ADMIN_PASSWORD=随便一个本地密码
+```
+
+session cookie 带 `Secure`，浏览器把 `localhost` / `127.0.0.1` 视为安全来源，所以本地用 HTTP 也收得到。
+
 ### 前端 Mock 模式
 
 前端加入 URL 参数 `?mock` 即可进入离线开发模式（无需登入验证）：
@@ -99,7 +136,7 @@ http://127.0.0.1:8788/?mock
 
 | Secret | 存放位置 | 说明 |
 |---|---|---|
-| `ADMIN_PASSWORD` | Cloudflare Pages + GHA | API 认证门禁 |
+| `ADMIN_PASSWORD` | Cloudflare Pages + GHA | API 认证门禁；同时是 session cookie 的签章密钥，换掉它等于强制所有浏览器重新登录 |
 | `PAGES_URL` | GHA only | GHA 启动时必须知道 Pages 地址，才能读 KV — 鸡生蛋问题，无法从 KV 读 |
 | Discord Webhook URL | KV（前端设定填入） | 不需要放 Secret |
 | GitHub Actions URL | KV（前端设定填入） | 不需要放 Secret |

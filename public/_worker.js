@@ -11,11 +11,18 @@
  * Secrets required:
  *   ADMIN_PASSWORD
  *
+ * Auth: every /api/ endpoint requires either `Authorization: Bearer <ADMIN_PASSWORD>`
+ * (used by async_test_keys.py and the GHA workflow) or the session cookie issued by
+ * POST /api/login (used by the browser, so URLs can be opened straight from the
+ * address bar without a REST client).
+ *
  * Fingerprint = SHA-256( JSON.stringify({ api_base, provider_type }) )
  * key order must be alphabetical — matches both frontend and Python script.
  */
 
 const ROUTES = {
+  "POST /api/login": handleLogin,
+  "POST /api/logout": handleLogout,
   "GET /api/settings": handleGetSettings,
   "POST /api/settings": handlePostSettings,
   "GET /api/results": handleGetResults,
@@ -72,12 +79,130 @@ function kvStore(env) {
   return env.KV_STORE;
 }
 
-function requireAuth(request, env) {
+// ─── auth ───────────────────────────────────────────────────────────────────
+
+const SESSION_COOKIE = "atk_session";
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Bumping this invalidates every cookie in circulation without touching the password.
+const SESSION_VERSION = "v1";
+
+/** Length is allowed to leak; the byte comparison itself is constant-time. */
+function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function hmacHex(secret, message) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Sessions are stateless: the cookie is `<expiry-ms>.<HMAC(ADMIN_PASSWORD, ver.expiry)>`.
+ * No KV round-trip on the read path (which would otherwise double the read quota this
+ * app spends per page view), and rotating ADMIN_PASSWORD or SESSION_VERSION revokes
+ * every outstanding cookie. The trade-off is that a single cookie cannot be revoked
+ * on its own — acceptable for a single shared admin login.
+ */
+async function issueSession(adminPassword) {
+  const exp = String(Date.now() + SESSION_TTL_MS);
+  return `${exp}.${await hmacHex(adminPassword, `${SESSION_VERSION}.${exp}`)}`;
+}
+
+async function sessionIsValid(adminPassword, value) {
+  if (!value) return false;
+  const dot = value.indexOf(".");
+  if (dot <= 0) return false;
+  const exp = value.slice(0, dot);
+  const expMs = Number(exp);
+  if (!Number.isFinite(expMs) || Date.now() >= expMs) return false;
+  const expected = await hmacHex(adminPassword, `${SESSION_VERSION}.${exp}`);
+  return timingSafeEqual(value.slice(dot + 1), expected);
+}
+
+function readCookie(request, name) {
+  const header = request.headers.get("Cookie");
+  if (!header) return "";
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return "";
+}
+
+/**
+ * Path=/api keeps the cookie off static asset requests. SameSite=Strict is what
+ * stands in for a CSRF token here: the write endpoints parse the body with
+ * request.json() without checking Content-Type, so a cross-site form post would
+ * otherwise be accepted — Strict means no cross-site request carries the cookie,
+ * while typing an /api/ URL into the address bar still does.
+ */
+function sessionCookieHeader(value, maxAgeSeconds) {
+  return (
+    `${SESSION_COOKIE}=${value}; Max-Age=${maxAgeSeconds}; Path=/api; ` +
+    `HttpOnly; Secure; SameSite=Strict`
+  );
+}
+
+async function requireAuth(request, env) {
   const adminPassword = (env.ADMIN_PASSWORD || "").trim();
   if (!adminPassword) return false;
+
   const auth = request.headers.get("Authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token === adminPassword;
+  if (auth.startsWith("Bearer ")) {
+    return timingSafeEqual(auth.slice(7), adminPassword);
+  }
+  return sessionIsValid(adminPassword, readCookie(request, SESSION_COOKIE));
+}
+
+async function handleLogin(request, env) {
+  const adminPassword = (env.ADMIN_PASSWORD || "").trim();
+  if (!adminPassword) return json({ error: "Unauthorized" }, 401);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+
+  const password = typeof body.password === "string" ? body.password.trim() : "";
+  if (!password || !timingSafeEqual(password, adminPassword)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const value = await issueSession(adminPassword);
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Set-Cookie": sessionCookieHeader(value, Math.floor(SESSION_TTL_MS / 1000)),
+    },
+  });
+}
+
+function handleLogout() {
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Set-Cookie": sessionCookieHeader("", 0),
+    },
+  });
 }
 
 function parseJsonOrNull(raw) {
@@ -124,7 +249,8 @@ const DEFAULT_SETTINGS = {
 };
 
 async function handleGetSettings(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
   const kv = kvStore(env);
   const raw = await kv.get(SETTINGS_KEY);
   const settings = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
@@ -132,7 +258,8 @@ async function handleGetSettings(request, env) {
 }
 
 async function handlePostSettings(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   let body;
   try {
@@ -205,7 +332,12 @@ async function handlePostSettings(request, env) {
 // ─── /api/results ────────────────────────────────────────────────────────────
 
 async function handleGetResults(request, env, url) {
-  // Public — no auth required
+  // Authenticated: the stored results carry plaintext keys (valid_keys and
+  // invalid_records[].api_key), and fp is derived from public inputs
+  // (api_base + provider_type), so it is guessable and cannot gate access.
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
+
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
@@ -219,7 +351,8 @@ async function handleGetResults(request, env, url) {
 }
 
 async function handlePostResults(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   let body;
   try {
@@ -279,7 +412,8 @@ async function handlePostResults(request, env) {
 // ─── /api/checkpoint ─────────────────────────────────────────────────────────
 
 async function handleGetCheckpoint(request, env, url) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
@@ -294,7 +428,8 @@ async function handleGetCheckpoint(request, env, url) {
 }
 
 async function handlePostCheckpoint(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   let body;
   try {
@@ -315,7 +450,8 @@ async function handlePostCheckpoint(request, env) {
 }
 
 async function handleDeleteCheckpoint(request, env, url) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
@@ -461,13 +597,15 @@ async function syncDeadKeysFromResults(
 }
 
 async function handleGetDeadKeys(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
   const kv = kvStore(env);
   return json({ ok: true, dead_keys: await readDeadKeys(kv) });
 }
 
 async function handlePostDeadKey(request, env) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   let body;
   try {
@@ -522,7 +660,8 @@ async function handlePostDeadKey(request, env) {
 }
 
 async function handlePutDeadKey(request, env, url) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   const id = getNonEmptyString(url, "id");
   if (!id) return json({ error: "id required" }, 400);
@@ -596,7 +735,8 @@ async function handlePutDeadKey(request, env, url) {
 }
 
 async function handleDeleteDeadKey(request, env, url) {
-  if (!requireAuth(request, env)) return json({ error: "Unauthorized" }, 401);
+  if (!(await requireAuth(request, env)))
+    return json({ error: "Unauthorized" }, 401);
 
   const id = getNonEmptyString(url, "id");
   if (!id) return json({ error: "id required" }, 400);

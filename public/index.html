@@ -23,7 +23,10 @@
                             ? "light"
                             : "dark");
                     document.documentElement.setAttribute("data-theme", theme);
-                    if (localStorage.getItem("atk_token")) {
+                    // Not a credential — the session lives in an HttpOnly
+                    // cookie. This only avoids flashing the login card at a
+                    // user who is already signed in; app.js verifies for real.
+                    if (localStorage.getItem("atk_signed_in") === "1") {
                         document.documentElement.classList.add("has-token");
                     }
                 } catch {}

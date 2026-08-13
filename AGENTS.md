@@ -28,6 +28,7 @@
 - **`normalize_message()` (Python) and `normalizeMessage()` (JS) must stay in sync, and neither may use `\b` or `\d`.** Python counts CJK as word characters and full-width digits as digits; JS does not, and these providers reply in Chinese. Use explicit classes (`[0-9０-９]`) and a captured leading char (`(^|[^a-z0-9])` … `$1`). Lookbehind is banned in `app.js` outright: below Safari 16.4 it is a parse-time error that takes down the whole file.
 - **`has_thinking_ratio` is `null`, not `0.0`, when `sample_count == 0`** — the frontend must handle null explicitly.
 - **`answer_verified` is computed before `clip_sample()`**, never after.
+- **The `atk_session` cookie must keep `SameSite=Strict`.** The write handlers parse bodies with `request.json()` without checking `Content-Type`, so a cross-site form post would be accepted as JSON; `Strict` is the only thing stopping it, there is no CSRF token.
 - **CI runs `pip install aiohttp`, not `-r requirements.txt`.** A new Python dependency has to be added to `.github/workflows/main.yml` as well.
 
 ## Orientation
@@ -35,5 +36,5 @@
 - `public/_worker.js` — Cloudflare Pages Functions entry. Routes in a flat `ROUTES` map (`"METHOD /path" → handler`); static files via `env.ASSETS.fetch(request)`.
 - `public/app.js` — frontend, plain global script despite `"type": "module"` in `package.json`.
 - `async_test_keys.py` — local mode (no `PAGES_URL`) reads `valid_keys/keys.txt` and `models_list/models.txt` and writes `async_test_results.json`; GHA mode (`PAGES_URL` + `ADMIN_PASSWORD`) pulls providers from the API and uploads results to KV.
-- Auth: `Authorization: Bearer <ADMIN_PASSWORD>` on every endpoint except `GET /api/results`. The local secret lives in `.dev.vars`, read automatically by Wrangler.
+- Auth: every `/api/` endpoint requires credentials, no exceptions — stored results carry plaintext keys and the fingerprint is derived from public inputs, so it gates nothing. Two accepted forms: `Authorization: Bearer <ADMIN_PASSWORD>` (Python script and GHA) or the `atk_session` cookie from `POST /api/login` (browser). The local secret lives in `.dev.vars`, read automatically by Wrangler.
 - Background: `README.md` for deployment and usage, `docs/` for plans, decisions and the archived spec snapshot.
