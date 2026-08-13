@@ -188,7 +188,11 @@ a:hover {
 .topbar-menu-title {
     font-weight: 600;
 }
-.topbar-menu-close {
+/* Two classes on purpose: .btn-ghost and .btn-sm are declared further down the
+   file, so a single-class rule here would lose to them on source order — which
+   is what the style attribute this replaced used to win. */
+.btn-ghost.topbar-menu-close,
+.btn-sm.topbar-menu-close {
     border: none;
     padding: 0.2rem;
 }

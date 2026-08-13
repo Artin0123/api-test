@@ -297,6 +297,8 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 |---|---|---|
 | `index.html` 有一段避免主題閃爍的 inline script | 搬到 `public/boot.js`，仍是 head 內的阻塞式載入，一樣在首次繪製前執行 | 另一條路是算 hash，但那份 hash 在腳本被編輯的當下就失效，而且是靜默失效 |
 | 9 處 inline `style=`（`index.html` 6、`app.js` 模板 3） | 全改成 class，新增 `.provider-card-badges`、`.badge-spaced`、`.empty-note`、`.field-row`、`.no-shrink`、`.input-concurrency`、`.input-errcode`、`.topbar-menu-title`、`.topbar-menu-close` | 保留 `'unsafe-inline'` 的話 `style-src` 等於沒設。**注意**：`app.js` 量測用的 `_mirror.style.cssText` 不必改，CSP 不管 CSSOM 寫入，只管標記裡的 style 屬性 |
+
+**這個轉換有一個會靜默壞掉的坑**：inline style 原本永遠贏，換成 class 之後要跟既有規則比特異性與順序。`.topbar-menu-close`（宣告在 Topbar 段）就輸給了後面 Buttons 段的 `.btn-ghost`／`.btn-sm`，關閉鈕從純文字變回有框按鈕——實機量到 `border 1px / padding 6.75px`，而不是預期的 `0 / 3.2px`。改成兩個 class 的選擇器（`.btn-ghost.topbar-menu-close`）後，即使把規則塞到樣式表第 0 條（順序最不利）仍然勝出。其餘 8 處實測都正確。
 | Discord 測試按鈕是從瀏覽器直接 POST 到使用者填的網址 | `connect-src` 放行 `discord.com` 與 `discordapp.com` | 代價是走中繼／代理網域的 webhook 會被擋，需要時在此加白名單 |
 
 `img-src` 必須留 `data:`：favicon 是 inline SVG data URI，`style.css` 的下拉箭頭也是 data URI 背景圖。
@@ -364,6 +366,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 | API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
 | 設定版本號 | curl 打本機 wrangler，涵蓋首次寫入、重送舊版本得 409、跟上新版本、不帶版本放行（見 §7.3） |
 | 安全標頭 | curl 檢查靜態頁、`/boot.js`、`/api/*` 三條路徑的回應標頭（見 §7.1） |
+| CSP 實機 | agent-browser 開已部署站台的 `?mock`，走過三個分頁：console 與 page errors 全空，`script:not([src])` 為 0，唯一殘留的 style 屬性是 `_mirror`（CSSOM 產生，CSP 不管）。逐一比對 9 個改成 class 的元素的 computed style，抓到 `.topbar-menu-close` 的特異性回歸（見 §7.2）。附帶驗證了 CSP 確實在執行：注入 `<style>` 被擋，改用 `insertRule` 才生效 |
 
 實跑時一律指向本機 mock 供應商或 `?mock`，不使用任何真實 Key，測試產物寫在暫存目錄，不污染 repo。
 
