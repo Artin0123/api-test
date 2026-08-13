@@ -9,8 +9,8 @@
 - Never write an API key into source. Keys come from `.env` (names in `.env.example`) or `valid_keys/*.txt`; `valid_keys/`, `async_test_results.json`, `.env` and `.dev.vars` are gitignored.
 - Test against `?mock` or a local mock provider, never a real key. Write test artifacts to a temp dir, not the repo.
 - Record a non-obvious decision in a comment next to the code it governs, not in this file — a copy here goes stale the moment the code moves.
-- Only add markdown when asked, as `docs/<name>-MMDDHHMM.md`. Nothing new in the repo root.
-- `docs/decision-*.md` is maintained, not a snapshot: when you change error grouping, dead keys, single-key reruns or sample clipping, update it and rename it to the time of that update. Reference it by glob, never by its current filename.
+- Only add markdown when asked, as `docs/<name>-MMDD.md`. Nothing new in the repo root.
+- `docs/decision-*.md` is maintained, not a snapshot: when you change error grouping, dead keys, single-key reruns, sample clipping or auth, update it and rename it to the date of that update. Reference it by glob, never by its current filename. It is also where selection rationale and trade-offs belong — `README.md` carries only what an operator has to do.
 
 ## Commands
 

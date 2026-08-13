@@ -4,7 +4,7 @@
 
 Cloudflare Pages（存储设定与结果）+ GitHub Actions（定时执行）+ `async_test_keys.py`（测试核心）。
 
-架构与数据模型的背景说明见 [docs/SPEC-08131247.md](./docs/SPEC-08131247.md)（2026-08-13 封存的快照，不含失效密钥相关功能，以代码为准）。
+架构与数据模型的背景说明见 [docs/SPEC-0813.md](./docs/SPEC-0813.md)（2026-08-13 封存的快照，不含失效密钥相关功能，以代码为准）。选型与取舍的理由见 [docs/decision-0813.md](./docs/decision-0813.md)。
 
 ---
 
@@ -75,20 +75,19 @@ Repo → Settings → Secrets 添加两个值：
 
 ## 认证
 
-所有 `/api/` 端点都需要认证，没有例外——结果里存的是明文 Key，而 fingerprint 由公开的 `api_base` + `provider_type` 算出来，谁都能离线算，挡不住任何人。
+所有 `/api/` 端点都需要认证，没有例外。接受两种凭证：
 
-接受两种凭证：
-
-| 凭证 | 使用者 | 说明 |
+| 凭证 | 使用者 | 取得方式 |
 |---|---|---|
-| `Authorization: Bearer <ADMIN_PASSWORD>` | `async_test_keys.py`、GHA workflow | 不变 |
-| `atk_session` cookie | 浏览器 | `POST /api/login` 带 `{"password": "..."}` 换取；`POST /api/logout` 清除 |
+| `Authorization: Bearer <ADMIN_PASSWORD>` | `async_test_keys.py`、GHA workflow | 直接带 header |
+| `atk_session` cookie | 浏览器 | `POST /api/login` 带 `{"password": "..."}`；`POST /api/logout` 清除 |
 
-session 是无状态的：cookie 值为 `<到期毫秒>.<HMAC(ADMIN_PASSWORD, 版本.到期)>`，验证不需要读 KV。**换掉 `ADMIN_PASSWORD`（或 `_worker.js` 里的 `SESSION_VERSION`）会一次作废所有已发出的 cookie**；反过来，单一 cookie 无法个别撤销，登出只是让浏览器丢掉它。
+- 有效期 30 天。cookie 是 `HttpOnly; Secure; SameSite=Strict; Path=/api`，密码本身不进浏览器储存。
+- 换掉 `ADMIN_PASSWORD` 或 `_worker.js` 里的 `SESSION_VERSION`，已发出的 cookie 全部立即失效；单一 cookie 无法个别撤销。
 
 ### 在浏览器直接查看 API
 
-登录之后，直接在网址列打开 `https://你的域名/api/results?fp=...` 就会看到 JSON，不需要 Postman 或任何会改 header 的工具。cookie 是 `SameSite=Strict`，从网址列输入或按书签属于同站导航，会带上；但**从别的网站点连结过来不会带**，那种情况会看到 401，重新整理一次即可。
+登录后在网址列打开 `https://你的域名/api/results?fp=...` 即可看到 JSON。从别的站点连结过来不会带 cookie（`SameSite=Strict`），那种情况会看到 401，在网址列重新整理一次即可。
 
 fingerprint 可以在浏览器 Console 算：
 
@@ -121,7 +120,7 @@ python async_test_keys.py
 ADMIN_PASSWORD=随便一个本地密码
 ```
 
-session cookie 带 `Secure`，浏览器把 `localhost` / `127.0.0.1` 视为安全来源，所以本地用 HTTP 也收得到。
+session cookie 带 `Secure`，但浏览器把 `localhost` / `127.0.0.1` 视为安全来源，本地走 HTTP 也收得到。
 
 ### 前端 Mock 模式
 
@@ -136,7 +135,7 @@ http://127.0.0.1:8788/?mock
 
 | Secret | 存放位置 | 说明 |
 |---|---|---|
-| `ADMIN_PASSWORD` | Cloudflare Pages + GHA | API 认证门禁；同时是 session cookie 的签章密钥，换掉它等于强制所有浏览器重新登录 |
+| `ADMIN_PASSWORD` | Cloudflare Pages + GHA | API 认证门禁，同时是 session cookie 的签章密钥 |
 | `PAGES_URL` | GHA only | GHA 启动时必须知道 Pages 地址，才能读 KV — 鸡生蛋问题，无法从 KV 读 |
 | Discord Webhook URL | KV（前端设定填入） | 不需要放 Secret |
 | GitHub Actions URL | KV（前端设定填入） | 不需要放 Secret |

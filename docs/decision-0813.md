@@ -1,8 +1,8 @@
 # 決策說明（最後更新 2026-08-13）
 
-**本文持續維護**，記錄「失效密鑰分頁 + 錯誤訊息改造 + 單一 Key 連跑兩輪」及其後續調整中，每個決策的**背景、選項、取捨理由與實測依據**。改動這幾塊行為時請一併更新本文，並把檔名的時間後綴改成當次更新時間。
+**本文持續維護**，記錄「失效密鑰分頁 + 錯誤訊息改造 + 單一 Key 連跑兩輪 + API 認證」及其後續調整中，每個決策的**背景、選項、取捨理由與實測依據**。改動這幾塊行為時請一併更新本文，並把檔名的日期後綴改成當次更新的日期。
 
-搭配 `docs/new_plan-08122246.md`（功能規劃草案，細節已被本文取代）閱讀。
+搭配 `docs/new_plan-0812.md`（功能規劃草案，細節已被本文取代）閱讀。
 
 ---
 
@@ -218,6 +218,7 @@ Your account has been deactivated. Please contact support.
 - 來源設定頁：每次切換 1 次讀取。
 - 失效密鑰頁：首次載入 1 次，之後快取，只有「重新讀取」或整頁重載才會再讀。
 - **無任何輪詢**：全專案沒有 `setInterval`／visibilitychange 自動刷新，所有讀取都由使用者動作觸發。
+- **認證不佔用量**：session 驗證是純運算（HMAC），不讀 KV；`GET /api/results` 改為需認證後，讀取次數也沒有變化。
 
 **一個已知但不處理的點**
 
@@ -225,7 +226,62 @@ Your account has been deactivated. Please contact support.
 
 ---
 
-## 六、依賴更新
+## 六、API 認證
+
+### 6.1 `GET /api/results` 從公開改為需認證
+
+| | |
+|---|---|
+| **問題** | 該端點回傳的是明文 Key —— `valid_keys` 全清單，加上 `invalid_records[].api_key`。唯一的門檻是 `fp`，而 fingerprint = `SHA-256(api_base + provider_type)`，兩個輸入都是公開資訊，任何人離線就能算出來窮舉。 |
+| **關鍵事實** | 這個公開性沒有換到任何功能：結果頁本來就要登入才渲染得出來（`loadResults()` 第一件事就是帶憑證打 `/api/settings`）。 |
+| **決策** | 加上 `requireAuth`，前端該筆呼叫補上 `auth: true`。功能零損失。 |
+
+### 6.2 瀏覽器憑證：session cookie，而不是 Bearer
+
+**問題**：全部端點都要認證之後，手動檢查任何 API 都得靠會改 header 的工具（Postman、擴充套件）。網址列送不出 `Authorization`。
+
+| 選項 | 優點 | 為何不選 |
+|---|---|---|
+| 維持 localStorage + Bearer | CSRF 免疫（跨站無法附加自訂 header） | 存的就是 `ADMIN_PASSWORD` 本人，JS 可讀，一次 XSS 即永久外洩且無法撤銷；網址列仍然不能用 |
+| HTTP Basic | 程式碼最少，瀏覽器自動帶 | HTTP 沒有登出語意，憑證由瀏覽器快取到整個關閉為止，做不出可用的登出按鈕；登入 UI 變成原生彈窗，現有 `authOverlay` 與 `?mock` 流程都要重排；沒有 `SameSite` 可用 |
+| 簽章 query token（`?t=...`） | 可分享 | 會進瀏覽器歷史、Referer 與 CF 日誌，等於把憑證灑出去 |
+| Cloudflare Access | 零程式碼，順帶擋掉暴力破解 | 綁定 dashboard 設定，GHA 要改用 Service Token |
+| **cookie session（採用）** | HttpOnly 讓 XSS 偷不走可離線重用的憑證；有到期；登出由伺服器清除，即時可靠；網址列直接開 `/api/...` 就看得到 JSON | 需自行處理 CSRF（見 6.4） |
+
+Bearer 路徑原樣保留給 `async_test_keys.py` 與 GHA，兩者不受影響。
+
+### 6.3 session 為何是無狀態的
+
+cookie 值為 `<到期毫秒>.<HMAC(ADMIN_PASSWORD, 版本.到期)>`。
+
+| | |
+|---|---|
+| **替代方案** | KV 存 `session:{id}`，可個別撤銷 |
+| **不選的理由** | 每個認證請求多一次 KV 讀取，等於把第五節記的用量直接翻倍（結果頁每次瀏覽 20 → 40 次）；另外新寫入的 session 受 KV 最終一致性影響，登入偶發失敗 |
+| **代價** | 單一 cookie 無法個別撤銷，登出只是叫瀏覽器丟掉它；若 cookie 值事先被複製，它在到期前仍然有效 |
+| **全域撤銷手段** | 換 `ADMIN_PASSWORD`，或把 `_worker.js` 的 `SESSION_VERSION` 加一（不必動密碼） |
+
+簽章密鑰直接用 `ADMIN_PASSWORD`，不另外開一個 secret：多一個 secret 就多一處要在 dashboard 與 GHA 同步，而它的外洩後果與密碼本身相同，分開存放並沒有換到隔離性。
+
+### 6.4 CSRF：靠 `SameSite=Strict`，不做 token
+
+寫入端點都用 `request.json()` 解析，而它**不檢查 `Content-Type`**——跨站的 `<form enctype="text/plain">` 送出的 body 一樣會被當成 JSON 吃下去，且瀏覽器會自動附上 cookie。`SameSite=Strict` 是這裡唯一的防線：任何跨站發起的請求都不帶 cookie，而在網址列輸入或按書籤屬於同站導航，照常帶上。代價是從外部網站點連結進 `/api/...` 會看到 401，重新整理即可。
+
+`Path=/api` 讓 cookie 不會跟著每個靜態資源送出去。
+
+### 6.5 前端不再持有任何憑證
+
+localStorage 只剩 `atk_signed_in` 旗標，它不是憑證，唯一用途是讓 `index.html` 在首次繪製前決定要不要藏登入卡片，否則已登入者每次重整都會閃一下登入畫面。真正的驗證由 `bootstrap()` 打一次 `/api/settings` 完成。`api()` 的 `auth: true` 參數改變語意：不再是「加 header」，而是「這支呼叫需要 session，收到 401 就把登入遮罩叫回來」，順帶把 session 過期處理掉。
+
+### 6.6 實測
+
+本機 `wrangler pages dev`，七項全過：無認證讀 `/api/results` → 401；錯誤密碼 → 401；正確密碼 → 200 且 `Set-Cookie` 屬性完整；帶 cookie 讀 results／settings → 200；Bearer 讀 settings → 200；錯誤 Bearer → 401。
+
+> 過程中發現：在 repo 根目錄跑 `npm run dev`，`/api/*` 會全部落到靜態資源 404（body 是 `404 Not Found` 加 `Vary: Origin`），worker 根本沒被呼叫；同一份檔案複製到乾淨目錄跑就正常，改動前的版本也一樣。疑似 `.wrangler/` 殘留狀態，**未驗證**。
+
+---
+
+## 七、依賴更新
 
 | 項目 | 版本 | 說明 |
 |---|---|---|
@@ -235,26 +291,31 @@ Your account has been deactivated. Please contact support.
 
 **推送時遇到的衝突**：遠端已合併 Dependabot 的 wrangler `^4.103.0`。採 rebase，`package.json` 保留較新的 `^4.121.0`，`package-lock.json` 直接以解好的 `package.json` 重新產生，而不是手動合併 380 行 lockfile。
 
-**未處理**：`npm run dev` 仍需手動加 `--compatibility-date`。wrangler 預設帶入「今天」，但內建的 workerd 只支援到前一天，永遠差一天。由於「不放 `wrangler.toml`、Cloudflare 設定一律走 dashboard」是既定約束（見 `AGENTS.md`，出處為 `docs/SPEC-08131247.md` §13），此處未自作主張修改。
+**未處理**：`npm run dev` 仍需手動加 `--compatibility-date`。wrangler 預設帶入「今天」，但內建的 workerd 只支援到前一天，永遠差一天。由於「不放 `wrangler.toml`、Cloudflare 設定一律走 dashboard」是既定約束（見 `AGENTS.md`，出處為 `docs/SPEC-0813.md` §13），此處未自作主張修改。
 
 ---
 
-## 七、驗證方式
+## 八、驗證方式
 
 | 範圍 | 方式 |
 |---|---|
 | 錯誤解析／去重／單一 Key 兩輪 | Python 腳本對 mock 供應商（本機 aiohttp server）實跑，涵蓋 401 熔斷、flaky 模型第二輪救回、中斷續跑 |
 | dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、404／400 邊界 |
 | 前端 | jsdom 驅動真實 `index.html` + `app.js`（mock 模式與登入模式），以及 agent-browser 實機 Chrome 檢查版面、RWD、無障礙名稱 |
+| API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
 
 實跑時一律指向本機 mock 供應商或 `?mock`，不使用任何真實 Key，測試產物寫在暫存目錄，不污染 repo。
 
 ---
 
-## 八、已知取捨總表
+## 九、已知取捨總表
 
 | 取捨 | 選擇 | 代價 |
 |---|---|---|
+| 瀏覽器認證方式 | HttpOnly session cookie | 需靠 `SameSite=Strict` 擋 CSRF，沒有 token 兜底 |
+| session 儲存 | 無狀態 HMAC，不進 KV | 無法撤銷單一 cookie；被複製的 cookie 到期前仍有效 |
+| session 簽章密鑰 | 沿用 `ADMIN_PASSWORD` | 換密碼會一併踢掉所有已登入的瀏覽器 |
+| 登入嘗試次數 | 未設限 | 單一共用密碼可無限猜，Pages 無內建節流 |
 | 訊息去重粒度 | 正規化後比對 | 只差數字的兩種原因會合併 |
 | 每支 Key 的訊息 | 保留 | +1.7 KB／66 支 Key |
 | 正規化邏輯 | Python 與 JS 各一份 | 需手動同步，但漂移只影響外觀 |
