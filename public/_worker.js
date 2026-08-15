@@ -553,6 +553,22 @@ function sameDedupGroup(a, b) {
   );
 }
 
+/** Hand error_detail from removed records to a remaining sibling in the same
+ *  host+code group. Dedup stores the message on one row only, so deleting that
+ *  holder without this step would blank the group's 📋 for everyone left. */
+function rebalanceErrorDetail(removed, remaining) {
+  for (const gone of removed) {
+    if (!gone || !gone.error_detail) continue;
+    if (remaining.some((r) => r && r.error_detail && sameDedupGroup(r, gone))) {
+      continue;
+    }
+    const heir = remaining.find(
+      (r) => r && !r.error_detail && sameDedupGroup(r, gone),
+    );
+    if (heir) heir.error_detail = gone.error_detail;
+  }
+}
+
 /** error_detail must be a flat-ish key-value object; anything else is dropped. */
 function normalizeErrorDetail(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -611,11 +627,7 @@ async function syncDeadKeysFromResults(
     }
     // A dropped record may hold its group's only error_detail — hand it over,
     // same as DELETE does.
-    for (const gone of dropped) {
-      if (!gone.error_detail) continue;
-      const heir = keep.find((r) => r && !r.error_detail && sameDedupGroup(r, gone));
-      if (heir) heir.error_detail = gone.error_detail;
-    }
+    rebalanceErrorDetail(dropped, keep);
     if (dropped.length) {
       list = keep;
       removed = dropped.length;
@@ -802,28 +814,49 @@ async function handlePutDeadKey(request, env, url) {
   return json({ ok: true, record: next });
 }
 
+async function collectDeleteIds(request, url) {
+  const ids = [];
+  const seen = new Set();
+  const add = (v) => {
+    if (typeof v !== "string") return;
+    const t = v.trim();
+    if (!t || seen.has(t)) return;
+    seen.add(t);
+    ids.push(t);
+  };
+  for (const v of url.searchParams.getAll("id")) add(v);
+  try {
+    const body = await request.json();
+    if (Array.isArray(body?.ids)) body.ids.forEach(add);
+    else if (typeof body?.id === "string") add(body.id);
+  } catch {
+    // Empty or non-JSON body is fine when ?id= is present.
+  }
+  return ids;
+}
+
 async function handleDeleteDeadKey(request, env, url) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
 
-  const id = getNonEmptyString(url, "id");
-  if (!id) return json({ error: "id required" }, 400);
+  const ids = await collectDeleteIds(request, url);
+  if (!ids.length) return json({ error: "id required" }, 400);
 
   const kv = kvStore(env);
   const list = await readDeadKeys(kv);
-  const removed = list.find((r) => r && r.id === id);
-  if (!removed) return json({ error: "Not Found" }, 404);
-  const next = list.filter((r) => !r || r.id !== id);
-
-  // The deleted record may have been the only holder of its group's error_detail
-  // (the rest were nulled by dedup) — hand it over so the group keeps its message.
-  if (removed.error_detail) {
-    const heir = next.find(
-      (r) => r && !r.error_detail && sameDedupGroup(r, removed),
-    );
-    if (heir) heir.error_detail = removed.error_detail;
+  const idSet = new Set(ids);
+  const removed = [];
+  const next = [];
+  for (const r of list) {
+    if (r && idSet.has(r.id)) removed.push(r);
+    else next.push(r);
   }
+  if (!removed.length) return json({ error: "Not Found" }, 404);
+
+  // dead_keys is one KV value, so N ids still cost 1 get + 1 put — the whole
+  // point of accepting a list instead of N single-id DELETEs.
+  rebalanceErrorDetail(removed, next);
 
   await kv.put(DEAD_KEYS_KEY, JSON.stringify(next));
-  return json({ ok: true });
+  return json({ ok: true, deleted: removed.length, dead_keys: next });
 }

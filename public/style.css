@@ -1025,6 +1025,14 @@ a:hover {
 .btn-danger:hover:not(:disabled) {
     background: rgba(239, 68, 68, 0.22);
 }
+/* Same geometry as .btn-primary; solid red for destructive toolbar actions. */
+.btn-danger-solid {
+    background: var(--fail);
+    color: #fff;
+}
+.btn-danger-solid:hover:not(:disabled) {
+    opacity: 0.9;
+}
 .btn-sm {
     padding: 0.5rem 0.9rem;
     font-size: var(--text-xs);
@@ -1120,8 +1128,8 @@ code {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+    gap: 0.6rem;
+    flex-wrap: nowrap;
     margin-bottom: 0.85rem;
 }
 .dk-add-row {
@@ -1130,24 +1138,34 @@ code {
     gap: 0.6rem;
     flex: 1;
     min-width: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 .dk-add-row .input-select {
     width: auto;
-    min-width: 12rem;
+    min-width: 8rem;
+    flex-shrink: 1;
 }
 .dk-add-row .input-text[type="text"] {
-    flex: 1;
-    min-width: 14rem;
+    flex: 1 1 8rem;
+    min-width: 0;
 }
 .dk-add-row .input-text[type="date"] {
     width: auto;
+    flex-shrink: 0;
+}
+.dk-add-row .btn {
+    flex-shrink: 0;
+}
+.dk-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
 }
 .dk-filter-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    flex-shrink: 0;
 }
 
 .dk-filter-panel {
@@ -1203,6 +1221,93 @@ code {
     display: flex;
     gap: 0.35rem;
     white-space: nowrap;
+}
+.data-table th.dk-check-col,
+.data-table td.dk-check-col {
+    width: 1%;
+    text-align: center;
+    vertical-align: middle;
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+}
+.dk-check-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.dk-check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 1.5px solid var(--fail);
+    border-radius: var(--radius-sm);
+    background: rgba(239, 68, 68, 0.12);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    vertical-align: middle;
+    transition:
+        background 0.15s,
+        border-color 0.15s;
+}
+.dk-check:hover {
+    background: rgba(239, 68, 68, 0.22);
+}
+.dk-check:checked {
+    background: var(--fail);
+    border-color: var(--fail);
+}
+.dk-check:checked::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -62%) rotate(45deg);
+    width: 0.27rem;
+    height: 0.5rem;
+    border: 1.5px solid #fff;
+    border-top: none;
+    border-left: none;
+}
+.dk-check:focus-visible {
+    outline: 2px solid var(--fail);
+    outline-offset: 2px;
+}
+
+.dk-confirm-msg {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.7;
+}
+.dk-confirm-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    max-height: 12rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+.dk-confirm-list li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+.dk-confirm-key {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    word-break: break-all;
+}
+.dk-confirm-host {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
 }
 
 /* ── Error detail modal ────────────────────────────────────────────────── */
@@ -1371,23 +1476,30 @@ code {
         flex: none;
     }
 
-    /* Dead keys: stack the add form and let the filter panel go single column */
+    /* Dead keys: stack the add form; keep filter + bulk-delete on one row */
     .dk-toolbar {
         flex-direction: column;
         align-items: stretch;
+        flex-wrap: wrap;
     }
-    .dk-filter-btn {
-        align-self: flex-start;
+    .dk-toolbar-actions {
+        width: 100%;
+    }
+    .dk-toolbar-actions .btn {
+        flex: 1;
+        min-height: 2.6rem;
     }
     .dk-add-row {
         flex-direction: column;
         align-items: stretch;
+        flex-wrap: wrap;
     }
     .dk-add-row .input-select,
     .dk-add-row .input-text[type="text"],
     .dk-add-row .input-text[type="date"] {
         width: 100%;
         min-width: 0;
+        flex: none;
     }
     .dk-filter-panel {
         grid-template-columns: 1fr;

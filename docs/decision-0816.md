@@ -1,4 +1,4 @@
-# 決策說明（最後更新 2026-08-13）
+# 決策說明（最後更新 2026-08-16）
 
 **本文持續維護**，記錄「失效密鑰分頁 + 錯誤訊息改造 + 單一 Key 連跑兩輪 + API 認證」及其後續調整中，每個決策的**背景、選項、取捨理由與實測依據**。改動這幾塊行為時請一併更新本文，並把檔名的日期後綴改成當次更新的日期。
 
@@ -138,14 +138,15 @@ Your account has been deactivated. Please contact support.
 
 只做去重不做再平衡會出事：
 
-- **DELETE**：刪掉持有 detail 的那筆，同組其他筆的 detail 都是 `null`，整組訊息就消失了 → 刪除時把 detail 交棒給同組的下一筆。
+- **DELETE**：刪掉持有 detail 的那筆，同組其他筆的 detail 都是 `null`，整組訊息就消失了 → 刪除時把 detail 交棒給同組的下一筆。批次刪除走同一條 `rebalanceErrorDetail()`，對每個被刪的 holder 各交棒一次；同組若刪光則無需交棒。
 - **PUT**：編輯 host 或 code 等於把記錄移出原組，原組會被孤兒化；移入的新組又可能變成兩份 detail → 兩個方向都要處理。
-- 三個 handler 共用 `sameDedupGroup()`，避免邏輯各自漂移。
+- 三個 handler 共用 `sameDedupGroup()`，DELETE 與對帳再共用 `rebalanceErrorDetail()`，避免邏輯各自漂移。
 
 ### 2.4 前端顯示
 
 - 被去重掉（`error_detail: null`）的列，📋 會自動借用同組第一筆的內容，使用者不需要自己去找第一筆在哪。
 - 表格欄位在 `<td>` 上設 `max-width` **無效**（auto table layout 會忽略），必須改設在內層元素上，才做得出單行 + `...` 省略。
+- 單列不再放刪除按鈕。改由工具列「批量删除」進入勾選模式（操作欄右側出現紅框半透明勾選框），勾至少一筆後按鈕變成「确认删除」，再以既有 modal 樣式二次確認。
 
 ### 2.5 自動對帳：清單語意是「當前正在失敗」，不是永久帳本
 
@@ -166,6 +167,16 @@ Your account has been deactivated. Please contact support.
 **沿用既有規則**：`api_key` 全域去重（已在清單裡就跳過）、`error_detail` 依 `sameDedupGroup()` 只留一份、移除記錄時把 detail 交棒給同組下一筆——與 §2.2／§2.3 完全同一套邏輯，沒有第二份實作。取不到 `error_detail` 時退回 `{message: error_reason}`，確保 📋 至少有東西可看。
 
 **可觀測性**：handler 回傳 `dead_keys_added` / `dead_keys_removed`，Python 端印出來（`async_test_keys.py:988`）。舊版 worker 沒有這兩個欄位，取不到就只印上傳成功，不會炸。
+
+### 2.6 批次刪除：一次 KV 寫入
+
+（2026-08-16 追加。）
+
+**問題**：`dead_keys` 是單一 KV 陣列，但舊 `DELETE /api/dead-keys?id=` 每刪一筆就是 1 get + 1 put。UI 若對 N 筆各打一次，會變成 N 次寫入，又撞「同一 key 每秒 1 次寫入」限制。
+
+**決策**：同一個 DELETE 接受 `ids: string[]`（body）或重複的 `?id=`（相容舊呼叫）。讀一次、過一遍再平衡、寫一次。N 筆與 1 筆的 KV 成本相同（1 get + 1 put）。回應帶上更新後的 `dead_keys`，前端不必再 GET。
+
+未命中任何 id → 404；空 ids → 400。部分命中則只刪存在的那些。
 
 ---
 
@@ -208,7 +219,7 @@ Your account has been deactivated. Please contact support.
 | `POST /api/checkpoint` | 每 200 個任務 1 次 + 每個供應商結束 1 次 |
 | `POST /api/results` | 每個供應商 1 put + 1 delete，外加對帳的 1 get；清單有變動時再 1 put |
 | `POST /api/settings` | 使用者儲存時 1 put + N delete（僅清理已移除的供應商 checkpoint） |
-| dead-keys 增／改／刪 | 各 1 get + 1 put |
+| dead-keys 增／改／刪 | 各 1 get + 1 put；批次刪除仍是 1 put，與筆數無關 |
 
 單一供應商 600 個任務 ≈ 5–6 次寫入；10 個供應商的每日排程約 60 次，遠低於額度。穩定狀態下（沒有 Key 狀態變化）對帳不寫入，回到約 50 次。
 
@@ -361,7 +372,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 | 範圍 | 方式 |
 |---|---|
 | 錯誤解析／去重／單一 Key 兩輪 | Python 腳本對 mock 供應商（本機 aiohttp server）實跑，涵蓋 401 熔斷、flaky 模型第二輪救回、中斷續跑 |
-| dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、404／400 邊界 |
+| dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、批次 DELETE 一次寫入、404／400 邊界 |
 | 前端 | jsdom 驅動真實 `index.html` + `app.js`（mock 模式與登入模式），以及 agent-browser 實機 Chrome 檢查版面、RWD、無障礙名稱 |
 | API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
 | 設定版本號 | curl 打本機 wrangler，涵蓋首次寫入、重送舊版本得 409、跟上新版本、不帶版本放行（見 §7.3） |
