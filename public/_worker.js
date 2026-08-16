@@ -806,24 +806,56 @@ async function handleDeleteDeadKey(request, env, url) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
 
-  const id = getNonEmptyString(url, "id");
-  if (!id) return json({ error: "id required" }, 400);
+  const idsToDelete = new Set();
+  const queryId = getNonEmptyString(url, "id");
+  if (queryId) idsToDelete.add(queryId);
+  const queryIds = getNonEmptyString(url, "ids");
+  if (queryIds) {
+    for (const part of queryIds.split(",")) {
+      const trimmed = part.trim();
+      if (trimmed) idsToDelete.add(trimmed);
+    }
+  }
+
+  try {
+    const text = await request.text();
+    if (text) {
+      const body = JSON.parse(text);
+      if (Array.isArray(body?.ids)) {
+        for (const item of body.ids) {
+          if (typeof item === "string" && item.trim()) {
+            idsToDelete.add(item.trim());
+          }
+        }
+      } else if (typeof body?.id === "string" && body.id.trim()) {
+        idsToDelete.add(body.id.trim());
+      }
+    }
+  } catch {
+    // Body is optional if query params were supplied
+  }
+
+  if (idsToDelete.size === 0) return json({ error: "id or ids required" }, 400);
 
   const kv = kvStore(env);
   const list = await readDeadKeys(kv);
-  const removed = list.find((r) => r && r.id === id);
-  if (!removed) return json({ error: "Not Found" }, 404);
-  const next = list.filter((r) => !r || r.id !== id);
+  const removedList = list.filter((r) => r && idsToDelete.has(r.id));
+  if (removedList.length === 0) return json({ error: "Not Found" }, 404);
 
-  // The deleted record may have been the only holder of its group's error_detail
-  // (the rest were nulled by dedup) — hand it over so the group keeps its message.
-  if (removed.error_detail) {
-    const heir = next.find(
-      (r) => r && !r.error_detail && sameDedupGroup(r, removed),
-    );
-    if (heir) heir.error_detail = removed.error_detail;
+  const next = list.filter((r) => !r || !idsToDelete.has(r.id));
+
+  // The deleted records may have been the only holders of their group's error_detail
+  // (the rest were nulled by dedup) — hand each over to a surviving record so the group keeps its message.
+  for (const removed of removedList) {
+    if (removed.error_detail) {
+      const heir = next.find(
+        (r) => r && !r.error_detail && sameDedupGroup(r, removed),
+      );
+      if (heir) heir.error_detail = removed.error_detail;
+    }
   }
 
   await kv.put(DEAD_KEYS_KEY, JSON.stringify(next));
-  return json({ ok: true });
+  return json({ ok: true, deleted_count: removedList.length });
 }
+

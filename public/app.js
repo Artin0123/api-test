@@ -18,6 +18,8 @@ const state = {
   selectedProviders: new Set(), // indices of currently selected provider cards
   deadKeys: [], // dead key records loaded from /api/dead-keys
   deadKeysLoaded: false,
+  dkBatchMode: false,
+  selectedDeadKeys: new Set(),
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -97,6 +99,7 @@ const dom = {
   dkKey: $("dk-key"),
   dkExpired: $("dk-expired"),
   dkAddBtn: $("dk-add-btn"),
+  dkBatchDelBtn: $("dk-batch-del-btn"),
   dkFilterToggle: $("dk-filter-toggle"),
   dkFilterCount: $("dk-filter-count"),
   dkFilterPanel: $("dk-filter-panel"),
@@ -121,6 +124,14 @@ const dom = {
   dkeKey: $("dke-key"),
   dkeExpired: $("dke-expired"),
   dkeCode: $("dke-code"),
+
+  // dead keys batch delete modal
+  dkBatchDelOverlay: $("dkbatchdel-overlay"),
+  dkBatchDelCount: $("dkbatchdel-count"),
+  dkBatchDelList: $("dkbatchdel-list"),
+  dkBatchDelConfirm: $("dkbatchdel-confirm-btn"),
+  dkBatchDelCancel: $("dkbatchdel-cancel-btn"),
+  dkBatchDelError: $("dkbatchdel-error"),
 
   // error detail modal
   errDetailOverlay: $("errdetail-overlay"),
@@ -1282,6 +1293,12 @@ function activeFilterCount() {
   ].filter(Boolean).length;
 }
 
+function updateDkBatchBtn() {
+  if (!dom.dkBatchDelBtn) return;
+  const count = state.selectedDeadKeys.size;
+  dom.dkBatchDelBtn.textContent = count > 0 ? "确认删除" : "批量删除";
+}
+
 function renderDeadKeys() {
   fillHostSelect(dom.dkHost, { selected: dom.dkHost.value });
   fillHostSelect(dom.dkFHost, { includeAll: true, selected: dom.dkFHost.value });
@@ -1289,6 +1306,13 @@ function renderDeadKeys() {
   const n = activeFilterCount();
   dom.dkFilterCount.textContent = String(n);
   dom.dkFilterCount.classList.toggle("hidden", n === 0);
+
+  // Clean up any stale IDs from selectedDeadKeys
+  const validIds = new Set(state.deadKeys.map((r) => r?.id).filter(Boolean));
+  for (const id of state.selectedDeadKeys) {
+    if (!validIds.has(id)) state.selectedDeadKeys.delete(id);
+  }
+  updateDkBatchBtn();
 
   const rows = sortByProviderOrder(filteredDeadKeys());
   if (!rows.length) {
@@ -1305,6 +1329,10 @@ function renderDeadKeys() {
 }
 
 function renderDeadKeysTable(rows) {
+  const isBatch = state.dkBatchMode;
+  const isAllSelected =
+    rows.length > 0 && rows.every((r) => state.selectedDeadKeys.has(r.id));
+
   const body = rows
     .map((r) => {
       const detail = detailFor(r);
@@ -1315,6 +1343,15 @@ function renderDeadKeysTable(rows) {
       const preview = msg
         ? `<span class="dk-msg" title="${escAttr(msg)}">${esc(truncate(msg))}</span>`
         : "";
+      const isSelected = state.selectedDeadKeys.has(r.id);
+      const checkboxCol = isBatch
+        ? `<td class="dk-select-col">
+            <label class="dk-checkbox-label" title="选中以删除">
+              <input type="checkbox" class="dk-checkbox" data-dk-select="${escAttr(r.id)}"${isSelected ? " checked" : ""} />
+            </label>
+          </td>`
+        : "";
+
       return `<tr>
       <td><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
       <td><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code></td>
@@ -1323,11 +1360,19 @@ function renderDeadKeysTable(rows) {
       <td><div class="dk-msg-line">${detailBtn}${preview}</div></td>
       <td class="dk-actions">
         <button class="btn btn-secondary btn-xs" type="button" title="编辑" aria-label="编辑" data-dk-edit="${escAttr(r.id)}">✏️</button>
-        <button class="btn btn-danger btn-xs" type="button" title="删除" aria-label="删除" data-dk-del="${escAttr(r.id)}">🗑️</button>
       </td>
+      ${checkboxCol}
     </tr>`;
     })
     .join("");
+
+  const headerCheckbox = isBatch
+    ? `<th class="dk-select-col">
+        <label class="dk-checkbox-label" title="全选 / 取消全选">
+          <input type="checkbox" class="dk-checkbox" id="dk-select-all"${isAllSelected ? " checked" : ""} />
+        </label>
+      </th>`
+    : "";
 
   return `
     <div class="table-scroll">
@@ -1339,6 +1384,7 @@ function renderDeadKeysTable(rows) {
           <th>Code</th>
           <th>错误讯息</th>
           <th>操作</th>
+          ${headerCheckbox}
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
@@ -1468,24 +1514,62 @@ async function saveDkEdit() {
   }
 }
 
-async function deleteDeadKey(id) {
-  const rec = state.deadKeys.find((r) => r && r.id === id);
-  if (!rec || !confirm(`确定删除 ${rec.api_key} ？`)) return;
+function openDkBatchDel() {
+  const selectedList = state.deadKeys.filter(
+    (r) => r && state.selectedDeadKeys.has(r.id),
+  );
+  if (!selectedList.length) return;
+
+  dom.dkBatchDelCount.textContent = String(selectedList.length);
+  dom.dkBatchDelError.textContent = "";
+  dom.dkBatchDelList.innerHTML = selectedList
+    .map(
+      (r) =>
+        `<div class="dk-batchdel-item"><span class="dk-batchdel-item-host">${esc(r.provider_host || "")}</span><code class="dk-batchdel-item-key">${esc(r.api_key || "")}</code></div>`,
+    )
+    .join("");
+  dom.dkBatchDelOverlay.classList.remove("hidden");
+  dom.dkBatchDelConfirm.focus();
+}
+
+function closeDkBatchDel() {
+  dom.dkBatchDelOverlay.classList.add("hidden");
+}
+
+async function confirmDkBatchDel() {
+  const targetIds = Array.from(state.selectedDeadKeys);
+  if (!targetIds.length) {
+    closeDkBatchDel();
+    return;
+  }
+
+  dom.dkBatchDelConfirm.disabled = true;
+  dom.dkBatchDelError.textContent = "";
+  const originalText = dom.dkBatchDelConfirm.textContent;
+  dom.dkBatchDelConfirm.textContent = "删除中...";
+
   try {
     if (MOCK) {
-      state.deadKeys = state.deadKeys.filter((r) => r && r.id !== id);
-      renderDeadKeys();
+      const set = new Set(targetIds);
+      state.deadKeys = state.deadKeys.filter((r) => !r || !set.has(r.id));
     } else {
-      await api(`/api/dead-keys?id=${encodeURIComponent(id)}`, {
+      await api("/api/dead-keys", {
         method: "DELETE",
         auth: true,
+        body: { ids: targetIds },
       });
-      // Deleting may hand the group's error_detail over to another record server-side.
-      await loadDeadKeys(true);
+      const d = await api("/api/dead-keys", { auth: true });
+      state.deadKeys = Array.isArray(d.dead_keys) ? d.dead_keys : [];
     }
+    state.selectedDeadKeys.clear();
+    state.dkBatchMode = false;
+    closeDkBatchDel();
+    renderDeadKeys();
   } catch (err) {
-    dom.dkError.textContent = `删除失败：${err.message}`;
-    dom.dkError.classList.remove("hidden");
+    dom.dkBatchDelError.textContent = `删除失败：${err.message}`;
+  } finally {
+    dom.dkBatchDelConfirm.disabled = false;
+    dom.dkBatchDelConfirm.textContent = originalText;
   }
 }
 
@@ -1791,6 +1875,14 @@ function bindEvents() {
   dom.dkKey.addEventListener("keydown", (e) => {
     if (e.key === "Enter") addDeadKey();
   });
+  dom.dkBatchDelBtn.addEventListener("click", () => {
+    if (state.selectedDeadKeys.size > 0) {
+      openDkBatchDel();
+    } else {
+      state.dkBatchMode = !state.dkBatchMode;
+      renderDeadKeys();
+    }
+  });
   dom.dkFilterToggle.addEventListener("click", () => {
     const open = dom.dkFilterPanel.classList.toggle("hidden") === false;
     dom.dkFilterToggle.setAttribute("aria-expanded", String(open));
@@ -1818,8 +1910,35 @@ function bindEvents() {
     }
     const editBtn = e.target.closest("[data-dk-edit]");
     if (editBtn) return openDkEdit(editBtn.dataset.dkEdit);
-    const delBtn = e.target.closest("[data-dk-del]");
-    if (delBtn) deleteDeadKey(delBtn.dataset.dkDel);
+  });
+  dom.dkTableWrap.addEventListener("change", (e) => {
+    const selectAll = e.target.closest("#dk-select-all");
+    if (selectAll) {
+      const rows = filteredDeadKeys();
+      if (selectAll.checked) {
+        rows.forEach((r) => r && state.selectedDeadKeys.add(r.id));
+      } else {
+        rows.forEach((r) => r && state.selectedDeadKeys.delete(r.id));
+      }
+      renderDeadKeys();
+      return;
+    }
+    const selectCb = e.target.closest("[data-dk-select]");
+    if (selectCb) {
+      const id = selectCb.dataset.dkSelect;
+      if (selectCb.checked) {
+        state.selectedDeadKeys.add(id);
+      } else {
+        state.selectedDeadKeys.delete(id);
+      }
+      updateDkBatchBtn();
+      const allCb = $("dk-select-all");
+      if (allCb) {
+        const rows = filteredDeadKeys();
+        allCb.checked =
+          rows.length > 0 && rows.every((r) => state.selectedDeadKeys.has(r.id));
+      }
+    }
   });
 
   // Dead key editor modal
@@ -1827,6 +1946,13 @@ function bindEvents() {
   dom.dkEditCancel.addEventListener("click", closeDkEdit);
   dom.dkEditOverlay.addEventListener("click", (e) => {
     if (e.target.dataset.closeModal === "dkedit") closeDkEdit();
+  });
+
+  // Dead keys batch delete modal
+  dom.dkBatchDelConfirm.addEventListener("click", confirmDkBatchDel);
+  dom.dkBatchDelCancel.addEventListener("click", closeDkBatchDel);
+  dom.dkBatchDelOverlay.addEventListener("click", (e) => {
+    if (e.target.dataset.closeModal === "dkbatchdel") closeDkBatchDel();
   });
 
   // Error detail modal
@@ -1860,6 +1986,7 @@ function bindEvents() {
     if (!dom.settingsOverlay.classList.contains("hidden")) closeSettings();
     if (!dom.sampleOverlay.classList.contains("hidden")) closeSample();
     if (!dom.dkEditOverlay.classList.contains("hidden")) closeDkEdit();
+    if (!dom.dkBatchDelOverlay.classList.contains("hidden")) closeDkBatchDel();
     if (!dom.errDetailOverlay.classList.contains("hidden")) closeErrorDetail();
   });
 }

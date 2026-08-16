@@ -280,7 +280,7 @@
                         </div>
                         <button
                             id="dk-filter-toggle"
-                            class="btn btn-ghost btn-sm dk-filter-btn"
+                            class="btn btn-ghost dk-filter-btn"
                             type="button"
                             aria-expanded="false"
                         >
@@ -300,6 +300,13 @@
                             </svg>
                             筛选
                             <span id="dk-filter-count" class="badge hidden"></span>
+                        </button>
+                        <button
+                            id="dk-batch-del-btn"
+                            class="btn btn-danger-fill"
+                            type="button"
+                        >
+                            批量删除
                         </button>
                     </div>
 
@@ -670,6 +677,42 @@
                     <button
                         class="btn btn-ghost"
                         id="dkedit-cancel-btn"
+                        type="button"
+                    >
+                        取消
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- Dead keys batch delete confirmation modal -->
+        <div id="dkbatchdel-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="dkbatchdel"></div>
+            <section
+                class="modal-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dkbatchdel-title"
+            >
+                <div class="modal-header">
+                    <h3 id="dkbatchdel-title">确认批量删除</h3>
+                </div>
+                <div class="modal-body">
+                    <p>确定要删除选中的 <strong id="dkbatchdel-count">0</strong> 笔失效密钥记录？此操作无法撤销。</p>
+                    <div id="dkbatchdel-list" class="dk-batchdel-list"></div>
+                    <p id="dkbatchdel-error" class="form-error" role="alert"></p>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        class="btn btn-danger-fill"
+                        id="dkbatchdel-confirm-btn"
+                        type="button"
+                    >
+                        确认删除
+                    </button>
+                    <button
+                        class="btn btn-ghost"
+                        id="dkbatchdel-cancel-btn"
                         type="button"
                     >
                         取消
