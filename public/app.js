@@ -18,8 +18,9 @@ const state = {
   selectedProviders: new Set(), // indices of currently selected provider cards
   deadKeys: [], // dead key records loaded from /api/dead-keys
   deadKeysLoaded: false,
-  dkSelectMode: false,
-  dkSelected: new Set(), // record ids checked in bulk-delete mode
+  dkSelectMode: false, // bulk-selection mode active on dead keys tab
+  dkSelected: new Set(), // set of dead key record ids checked in the table
+  dkPendingDelete: null, // snapshot of ids currently being confirmed for deletion
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -129,6 +130,7 @@ const dom = {
   dkConfirmOverlay: $("dkconfirm-overlay"),
   dkConfirmMsg: $("dkconfirm-msg"),
   dkConfirmList: $("dkconfirm-list"),
+  dkConfirmError: $("dkconfirm-error"),
   dkConfirmOk: $("dkconfirm-ok-btn"),
   dkConfirmCancel: $("dkconfirm-cancel-btn"),
 
@@ -1566,6 +1568,7 @@ function selectedDeadKeys() {
 function openDkConfirm() {
   const recs = selectedDeadKeys();
   if (!recs.length) return;
+  state.dkPendingDelete = recs.map((r) => r.id);
   dom.dkConfirmMsg.textContent = `确定删除以下 ${recs.length} 笔失效密钥？此操作无法复原。`;
   dom.dkConfirmList.innerHTML = recs
     .map(
@@ -1575,19 +1578,28 @@ function openDkConfirm() {
     </li>`,
     )
     .join("");
+  if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
   dom.dkConfirmOverlay.classList.remove("hidden");
+  dom.dkConfirmOk.focus();
 }
 
 function closeDkConfirm() {
+  state.dkPendingDelete = null;
   dom.dkConfirmOverlay.classList.add("hidden");
+  if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
+  if (dom.dkBulkDelBtn) dom.dkBulkDelBtn.focus();
 }
 
 async function confirmDeleteDeadKeys() {
-  const ids = selectedDeadKeys().map((r) => r.id);
+  const ids = state.dkPendingDelete || selectedDeadKeys().map((r) => r.id);
   if (!ids.length) return closeDkConfirm();
 
   dom.dkError.classList.add("hidden");
   dom.dkConfirmOk.disabled = true;
+  const originalText = dom.dkConfirmOk.textContent;
+  dom.dkConfirmOk.textContent = "删除中...";
+  if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
+
   try {
     if (MOCK) {
       removeDeadKeysLocal(ids);
@@ -1607,11 +1619,16 @@ async function confirmDeleteDeadKeys() {
     exitDkSelectMode();
     renderDeadKeys();
   } catch (err) {
-    closeDkConfirm();
-    dom.dkError.textContent = `删除失败：${err.message}`;
-    dom.dkError.classList.remove("hidden");
+    if (dom.dkConfirmError) {
+      dom.dkConfirmError.textContent = `删除失败：${err.message}`;
+    } else {
+      dom.dkError.textContent = `删除失败：${err.message}`;
+      dom.dkError.classList.remove("hidden");
+      closeDkConfirm();
+    }
   } finally {
     dom.dkConfirmOk.disabled = false;
+    dom.dkConfirmOk.textContent = originalText;
   }
 }
 
@@ -2015,15 +2032,8 @@ function bindEvents() {
     if (!dom.settingsOverlay.classList.contains("hidden")) closeSettings();
     if (!dom.sampleOverlay.classList.contains("hidden")) closeSample();
     if (!dom.dkEditOverlay.classList.contains("hidden")) closeDkEdit();
-    if (!dom.dkConfirmOverlay.classList.contains("hidden")) {
-      closeDkConfirm();
-      return;
-    }
+    if (!dom.dkConfirmOverlay.classList.contains("hidden")) closeDkConfirm();
     if (!dom.errDetailOverlay.classList.contains("hidden")) closeErrorDetail();
-    if (state.dkSelectMode) {
-      exitDkSelectMode();
-      renderDeadKeys();
-    }
   });
 }
 

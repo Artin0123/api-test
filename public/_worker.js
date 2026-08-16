@@ -825,21 +825,34 @@ async function collectDeleteIds(request, url) {
     ids.push(t);
   };
   for (const v of url.searchParams.getAll("id")) add(v);
+
+  let text = "";
   try {
-    const body = await request.json();
+    text = (await request.text()).trim();
+  } catch {
+    // Empty or unreadable body
+  }
+
+  if (text) {
+    let body;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return { ids, invalidJson: true };
+    }
     if (Array.isArray(body?.ids)) body.ids.forEach(add);
     else if (typeof body?.id === "string") add(body.id);
-  } catch {
-    // Empty or non-JSON body is fine when ?id= is present.
   }
-  return ids;
+
+  return { ids, invalidJson: false };
 }
 
 async function handleDeleteDeadKey(request, env, url) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
 
-  const ids = await collectDeleteIds(request, url);
+  const { ids, invalidJson } = await collectDeleteIds(request, url);
+  if (invalidJson) return json({ error: "Invalid JSON" }, 400);
   if (!ids.length) return json({ error: "id required" }, 400);
 
   const kv = kvStore(env);

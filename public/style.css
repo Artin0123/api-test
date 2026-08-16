@@ -1255,7 +1255,8 @@ code {
 .dk-check:hover {
     background: rgba(239, 68, 68, 0.22);
 }
-.dk-check:checked {
+.dk-check:checked,
+.dk-check:indeterminate {
     background: var(--fail);
     border-color: var(--fail);
 }
@@ -1270,6 +1271,17 @@ code {
     border: 1.5px solid #fff;
     border-top: none;
     border-left: none;
+}
+.dk-check:indeterminate::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 0.55rem;
+    height: 1.5px;
+    background: #fff;
+    border-radius: 1px;
 }
 .dk-check:focus-visible {
     outline: 2px solid var(--fail);
