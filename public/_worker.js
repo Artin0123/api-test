@@ -457,7 +457,7 @@ async function handlePostResults(request, env) {
 
   // Best-effort: the results are already stored, so a failure here must not make
   // the uploader think the whole run was lost and retry it.
-  let synced = { added: 0, removed: 0 };
+  let synced = { added: 0, removed: 0, updated: 0 };
   try {
     synced = await syncDeadKeysFromResults(
       kv,
@@ -474,6 +474,7 @@ async function handlePostResults(request, env) {
     fingerprint: fp,
     dead_keys_added: synced.added,
     dead_keys_removed: synced.removed,
+    dead_keys_updated: synced.updated,
   });
 }
 
@@ -580,6 +581,34 @@ function normalizeErrorDetail(value) {
   return Object.keys(out).length ? out : null;
 }
 
+/** Flatten a result record into the stored error_detail shape. Prefer the
+ *  structured object; fall back to {message: error_reason} so 📋 still has
+ *  something when the provider returned no body. */
+function extractRecordDetail(rec) {
+  if (!rec) return null;
+  const detail = normalizeErrorDetail(rec.error_detail);
+  if (detail) return detail;
+  if (rec.error_reason) return { message: String(rec.error_reason) };
+  return null;
+}
+
+/** Compare normalized error_detail objects by sorted keys so insertion order
+ *  cannot trigger a false "updated" write. */
+function areErrorDetailsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+  const keysA = Object.keys(a).sort();
+  const keysB = Object.keys(b).sort();
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i++) {
+    const k = keysA[i];
+    if (k !== keysB[i]) return false;
+    if (String(a[k]) !== String(b[k])) return false;
+  }
+  return true;
+}
+
 /** Providers store keys as a newline-separated string (normalizeKeys in app.js),
  *  not an array. Union every card on this host so one upload cannot drop another
  *  card's still-configured dead keys. */
@@ -606,7 +635,9 @@ function collectConfiguredKeysForHost(settings, provider_host) {
  *  which is what lets us record any failure code, since a transient one (429,
  *  500, 全网皆败) clears itself on the next successful run. A key dropped from
  *  来源设定 is also dropped here (ghost cleanup). 来源设定 itself is never
- *  rewritten by this path. */
+ *  rewritten by this path. Existing records keep id/expired_at/created_at;
+ *  error_code and error_detail are refreshed in two stages so Python's
+ *  per-cause holder (often a different key) cannot wipe or skip the KV holder. */
 async function syncDeadKeysFromResults(
   kv,
   api_base,
@@ -614,7 +645,7 @@ async function syncDeadKeysFromResults(
   invalidRecords,
   uploadedAt,
 ) {
-  const none = { added: 0, removed: 0 };
+  const none = { added: 0, removed: 0, updated: 0 };
 
   let provider_host;
   try {
@@ -667,7 +698,88 @@ async function syncDeadKeysFromResults(
   }
   if (dropped.length) rebalanceErrorDetail(dropped, keep);
 
-  let listNext = keep;
+  const invList = Array.isArray(invalidRecords) ? invalidRecords : [];
+  const invMap = new Map();
+  // First non-empty detail per error_code from this upload. Python only stores
+  // error_detail on one key per (code, normalized message), which is often not
+  // the same key as the KV group's current holder.
+  const newGroupDetails = new Map();
+
+  for (const rec of invList) {
+    if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) continue;
+    const key = rec.api_key.trim();
+    invMap.set(key, rec);
+
+    const code = normalizeErrorCode(rec.error_code);
+    if (!newGroupDetails.has(code)) {
+      const d = extractRecordDetail(rec);
+      if (d) newGroupDetails.set(code, d);
+    }
+  }
+
+  let codeUpdates = 0;
+  let detailUpdates = 0;
+
+  // Stage 1: migrate error_code per key. Hand off the old group's detail
+  // immediately — waiting until the end would drop it if several keys leave
+  // the same group in one pass.
+  for (let i = 0; i < keep.length; i++) {
+    const r = keep[i];
+    if (!r || r.provider_host !== provider_host) continue;
+
+    const recKey = typeof r.api_key === "string" ? r.api_key.trim() : "";
+    if (!recKey) continue;
+    const newRec = invMap.get(recKey);
+    if (!newRec) continue;
+
+    const nextCode = normalizeErrorCode(newRec.error_code);
+    if (normalizeErrorCode(r.error_code) === nextCode) continue;
+
+    if (r.error_detail) {
+      const heir = keep.find(
+        (other, oi) =>
+          oi !== i && other && !other.error_detail && sameDedupGroup(other, r),
+      );
+      if (heir) heir.error_detail = r.error_detail;
+    }
+    r.error_code = nextCode;
+    r.error_detail = null;
+    codeUpdates++;
+  }
+
+  // Stage 2: one holder per (host, code); refresh from this upload's
+  // representative detail. A missing body must not wipe an existing 📋.
+  const hostCodes = new Set();
+  for (const r of keep) {
+    if (r && r.provider_host === provider_host) {
+      hostCodes.add(normalizeErrorCode(r.error_code));
+    }
+  }
+
+  for (const code of hostCodes) {
+    const siblings = keep.filter(
+      (r) =>
+        r &&
+        r.provider_host === provider_host &&
+        normalizeErrorCode(r.error_code) === code,
+    );
+    if (!siblings.length) continue;
+
+    const holder = siblings.find((s) => s.error_detail) || siblings[0];
+    for (const s of siblings) {
+      if (s !== holder && s.error_detail) s.error_detail = null;
+    }
+
+    if (newGroupDetails.has(code)) {
+      const fresh = newGroupDetails.get(code);
+      if (!areErrorDetailsEqual(holder.error_detail, fresh)) {
+        holder.error_detail = fresh;
+        detailUpdates++;
+      }
+    }
+  }
+
+  const listNext = keep;
   const removed = dropped.length;
   let added = 0;
 
@@ -675,9 +787,14 @@ async function syncDeadKeysFromResults(
   // midnight UTC — the exact shape manual entries use (toIsoDay in app.js) —
   // because the UI reads it as a date; the precise moment stays in created_at.
   const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
-  const known = new Set(listNext.map((r) => r && r.api_key));
+  const known = new Set();
+  for (const r of listNext) {
+    if (r && typeof r.api_key === "string" && r.api_key.trim()) {
+      known.add(r.api_key.trim());
+    }
+  }
 
-  for (const rec of Array.isArray(invalidRecords) ? invalidRecords : []) {
+  for (const rec of invList) {
     if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) continue;
     const api_key = rec.api_key.trim();
     if (known.has(api_key)) continue;
@@ -686,18 +803,12 @@ async function syncDeadKeysFromResults(
     if (settingsAvailable && !configuredKeysForHost.has(api_key)) continue;
 
     const error_code = normalizeErrorCode(rec.error_code);
-    let error_detail = normalizeErrorDetail(rec.error_detail);
-    if (!error_detail && rec.error_reason) {
-      error_detail = { message: String(rec.error_reason) };
-    }
-    if (
-      error_detail &&
-      listNext.some(
-        (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
-      )
-    ) {
-      error_detail = null;
-    }
+    const hasHolder = listNext.some(
+      (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
+    );
+    const error_detail = hasHolder
+      ? null
+      : newGroupDetails.get(error_code) || extractRecordDetail(rec);
 
     listNext.push({
       id: crypto.randomUUID(),
@@ -712,8 +823,11 @@ async function syncDeadKeysFromResults(
     added++;
   }
 
-  if (added || removed) await kv.put(DEAD_KEYS_KEY, JSON.stringify(listNext));
-  return { added, removed };
+  const updated = codeUpdates + detailUpdates;
+  if (added || removed || updated) {
+    await kv.put(DEAD_KEYS_KEY, JSON.stringify(listNext));
+  }
+  return { added, removed, updated };
 }
 
 async function handleGetDeadKeys(request, env) {

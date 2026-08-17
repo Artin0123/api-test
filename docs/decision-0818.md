@@ -1,4 +1,4 @@
-# 決策說明（最後更新 2026-08-17）
+# 決策說明（最後更新 2026-08-18）
 
 **本文持續維護**，記錄「失效密鑰分頁 + 錯誤訊息改造 + 單一 Key 連跑兩輪 + API 認證」及其後續調整中，每個決策的**背景、選項、取捨理由與實測依據**。改動這幾塊行為時請一併更新本文，並把檔名的日期後綴改成當次更新的日期。
 
@@ -161,12 +161,12 @@ Your account has been deactivated. Please contact support.
 | 移除範圍 | 連手動新增的記錄一起移除 | 該記錄現在斷言了一件不成立的事（這支 Key 是死的），來源是人或機器不影響它已經錯了 |
 | 是否連帶改 `来源设定` | 否，維持手動 | 從測試清單裡拿掉一支 Key 是使用者的決定，不該由一次測試結果代勞 |
 | 失敗時的處理 | `try/catch` 包住，只 `console.error` | 結果已經寫進 KV 了；對帳失敗若讓整個 `POST /api/results` 回錯，上傳端會以為整批結果掉了而重跑 |
-| 寫入時機 | 只在 `added \|\| removed` 時 `put`（`_worker.js:715`） | 穩定狀態下每日排程不會產生任何 dead-keys 寫入 |
+| 寫入時機 | 只在 `added \|\| removed \|\| updated` 時 `put` | 穩定狀態下每日排程不會產生任何 dead-keys 寫入 |
 | `expired_at` 格式 | 當日 UTC 午夜（`toIsoDay` 的形狀） | UI 當日期讀；精確時刻另存在 `created_at` |
 
-**沿用既有規則**：`api_key` 全域去重（已在清單裡就跳過）、`error_detail` 依 `sameDedupGroup()` 只留一份、移除記錄時把 detail 交棒給同組下一筆——與 §2.2／§2.3 完全同一套邏輯，沒有第二份實作。取不到 `error_detail` 時退回 `{message: error_reason}`，確保 📋 至少有東西可看。
+**沿用既有規則**：`api_key` 全域去重（同一支 Key 不新增第二筆）、`error_detail` 依 `sameDedupGroup()` 只留一份、移除或換碼時把 detail 交棒給同組下一筆——與 §2.2／§2.3 完全同一套邏輯。取不到 `error_detail` 時退回 `{message: error_reason}`，確保 📋 至少有東西可看。既有記錄不再整筆略過：`error_code` / `error_detail` 會跟著最新測試走，見下方「狀態碼與訊息同步」。
 
-**可觀測性**：handler 回傳 `dead_keys_added` / `dead_keys_removed`，Python 端印出來（`async_test_keys.py:988`）。舊版 worker 沒有這兩個欄位，取不到就只印上傳成功，不會炸。
+**可觀測性**：handler 回傳 `dead_keys_added` / `dead_keys_removed` / `dead_keys_updated`，Python 端印出來。舊版 worker 沒有這些欄位，取不到就只印上傳成功，不會炸。
 
 **幽靈 Key（2026-08-17）**
 
@@ -179,6 +179,20 @@ Your account has been deactivated. Please contact support.
 `app_settings` 缺失或 JSON 壞掉時，**不**把來源當成空的（否則會整 host 清空）；只做 `valid_keys` 恢復刪除，新增也不用聯集過濾。真正存成 `{providers:[]}` 才表示來源空了，該 host 的幽靈可以清。
 
 殘餘：該 host 只剩的那張卡被整張刪掉或 Key 全空時，Python 不會 `POST /api/results`，對帳不會跑，幽靈要等手動刪或同 host 還有別家上傳。
+
+**狀態碼與訊息同步（2026-08-18）**
+
+**問題**：既有對帳用 `known.has(api_key)` 整筆跳過已在清單裡的 Key。同一支 Key 從 402（餘額不足）變成 401（未授權）時，錯誤碼與 📋 會永遠停在初次失敗。
+
+**為什麼不能逐筆覆寫 `rec.error_detail`**：Python 同一個 `(error_code, 正規化訊息)` 只有第一筆帶 `error_detail`，其餘是 `null`。這份 holder 和 KV 裡的 holder 經常不是同一支 Key。把 `null` 當成「訊息變了」會清空整組 📋；把 `null` 當成「沒有新訊息」則新原文進不來。多筆同時換碼時，若等全部改完才交棒，舊組可能丟掉唯一的 detail。
+
+**決策**：二段式，不逐筆相信單筆的 `error_detail`。
+
+1. **換碼**：本 host、且出現在本次 `invalid_records` 的既有記錄，若 `error_code` 變了，當下把舊組 detail 交棒給仍留在舊碼的兄弟，自身 `error_detail` 先清空。`id` / `expired_at` / `created_at` 不動。
+2. **群組刷新**：每個 `(provider_host, error_code)` 只留一個 holder。用本次上傳該碼的第一份非空 detail（`extractRecordDetail`，含 `error_reason` fallback）去比；內容不同才寫入。本次沒抓到 body → 不覆寫既有 📋。
+3. **新增**：真正新出現的失敗 Key 才 `added++`；該組已有 holder 則 detail 為 `null`。
+
+`updated = codeUpdates + detailUpdates`（一支 Key 換碼後新組再填 detail 會算 2，這是計數方式，不是多寫一次 KV）。三者皆 0 則不 `put`。只動本 host。
 
 ### 2.6 批次刪除：一次 KV 寫入
 
@@ -347,10 +361,11 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 
 ### 7.4 `dead_keys` 全量改寫：查證後維持現狀
 
-先前把它描述成「只增不縮、長期逼近 KV 單值上限」，**查證後這個說法不成立**。`syncDeadKeysFromResults` 用 `known` 集合跳過已存在的 `api_key`（`_worker.js:678`），既有記錄整筆略過，所以：
+先前把它描述成「只增不縮、長期逼近 KV 單值上限」，**查證後這個說法不成立**。`syncDeadKeysFromResults` 對已存在的 `api_key` 不新增第二筆，只刷新 `error_code` / `error_detail`，所以：
 
 - 同一支 Key 每天重跑**不會**新增第二筆，`expired_at` 與 `created_at` 維持第一次失敗那天。
 - 清單規模的上限是「設定裡不重複的 Key 總數」，與天數無關。
+- 錯誤碼與 📋 會跟著最新測試走；無實質變化時仍然 0 寫入。
 
 因此不採用筆數／天數上限——那會犧牲記錄完整性，去換一個不存在的成長問題；也不做 host 分片或搬 D1。**仍然存在的**是丟失更新：使用者在 UI 上編輯記錄的同時，上傳結果觸發對帳，窗口幾秒，代價是一次手動編輯被蓋掉。KV 沒有條件寫入，單值方案在 KV 內無解，接受。
 
@@ -386,7 +401,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 |---|---|
 | 錯誤解析／去重／單一 Key 兩輪 | Python 腳本對 mock 供應商（本機 aiohttp server）實跑，涵蓋 401 熔斷、flaky 模型第二輪救回、中斷續跑 |
 | dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、批次 DELETE 一次寫入、404／400 邊界 |
-| dead-keys 對帳（Plan B） | Node 腳本打本機 wrangler：恢復刪除、來源移除的幽靈刪除、同 host 另一張卡保留、停用卡的 Key 仍算在來源、不在來源的 `invalid_records` 不新增、設定缺失時不整 host 清空、他 host 不動、detail 交棒、無變動 0 寫入 |
+| dead-keys 對帳（Plan B + 狀態同步） | Node 腳本打本機 wrangler：恢復刪除、來源移除的幽靈刪除、同 host 另一張卡保留、停用卡的 Key 仍算在來源、不在來源的 `invalid_records` 不新增、設定缺失時不整 host 清空、他 host 不動、detail 交棒、無變動 0 寫入、402→401 換碼且 `expired_at`/`created_at` 不變、Python holder ≠ KV holder 時仍刷新 📋、無 body 不沖刷、同碼同訊息 0 寫入 |
 | 前端 | jsdom 驅動真實 `index.html` + `app.js`（mock 模式與登入模式），以及 agent-browser 實機 Chrome 檢查版面、RWD、無障礙名稱 |
 | API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
 | 設定版本號 | curl 打本機 wrangler，涵蓋首次寫入、重送舊版本得 409、跟上新版本、不帶版本放行（見 §7.3） |
@@ -438,7 +453,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 | 自定義標頭覆蓋性 | 在預設標頭之後合併 | 使用者若填入錯誤的 Auth 標頭會覆蓋掉正常的 Key 認證 |
 | dead_keys 儲存 | 單一 KV 陣列 | 無並發安全、每次全量改寫 |
 | dead_keys 語意 | 來源裡目前仍失敗的 Key，每次跑完對帳 | 一支 Key 可能今天進、明天出，不留失效歷史；該 host 已無卡片可上傳時幽靈仍要手動清 |
-| 對帳失敗 | 吞掉錯誤只記 log | 靜默失敗，要靠 `dead_keys_added/removed` 的輸出才看得出來 |
+| 對帳失敗 | 吞掉錯誤只記 log | 靜默失敗，要靠 `dead_keys_added/removed/updated` 的輸出才看得出來 |
 | 樣本長度 | 各 2048 字元掐頭留尾 | 失控的長回應看不到中段 |
 | 單一 Key 測試 | 連跑兩輪 | 測試時間與請求數加倍 |
 | 續跑判定 | 要求滿額成功 | 中斷後可能重跑已成功的一輪 |

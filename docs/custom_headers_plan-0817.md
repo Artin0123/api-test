@@ -1,6 +1,6 @@
 # 自定義請求頭 (Custom Headers) 功能設計與實現方案
 
-**狀態：已於 2026-08-17 完成實作並合入代碼庫**，實作程式碼位於 `public/app.js`、`public/index.html`、`public/style.css`、`async_test_keys.py`，後續維護與決策依據請參閱 `docs/decision-0817.md` §十。
+**狀態：已於 2026-08-17 完成實作並合入代碼庫**，實作程式碼位於 `public/app.js`、`public/index.html`、`public/style.css`、`async_test_keys.py`，後續維護與決策依據請參閱 `docs/decision-*.md` §十。
 
 ## 1. 需求背景與目標
 
