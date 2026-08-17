@@ -3,6 +3,9 @@
 // Example: http://localhost:8788/?mock
 const MOCK = new URLSearchParams(location.search).has("mock");
 
+const COPY_ICON_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+const CHECK_ICON_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
 // Lazily-loaded mock data (fetched once, cached here)
 let _mockData = null;
 async function getMock() {
@@ -1080,11 +1083,15 @@ function renderInvalidGroups(records) {
       // Every record keeps its own message; the group shows the first one.
       const reason = recs[0].error_reason || "未知原因";
       const items = recs
-        .map(
-          (rec) => `<div class="inv-key-item">
+        .map((rec) => {
+          const copyBtn = rec.api_key
+            ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rec.api_key)}">${COPY_ICON_SVG}</button>`
+            : "";
+          return `<div class="inv-key-item">
         <span class="inv-key-mono">${esc(rec.api_key || "")}</span>
-      </div>`,
-        )
+        ${copyBtn}
+      </div>`;
+        })
         .join("");
 
       // Only one record per cause carries error_detail (the rest are nulled by dedup).
@@ -1323,7 +1330,7 @@ function renderDeadKeys() {
 function renderDeadKeysTable(rows) {
   const selecting = state.dkSelectMode;
   const body = rows
-    .map((r) => {
+    .map((r, i) => {
       const detail = detailFor(r);
       const msg = detailMessage(detail);
       const detailBtn = detail
@@ -1333,38 +1340,41 @@ function renderDeadKeysTable(rows) {
         ? `<span class="dk-msg" title="${escAttr(msg)}">${esc(truncate(msg))}</span>`
         : "";
       const checked = state.dkSelected.has(r.id) ? " checked" : "";
-      const checkCell = selecting
-        ? `<td class="dk-check-col"><label class="dk-check-label"><input type="checkbox" class="dk-check" data-dk-check="${escAttr(r.id)}" aria-label="选中此记录"${checked} /></label></td>`
+      const copyKeyBtn = r.api_key
+        ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(r.api_key)}">${COPY_ICON_SVG}</button>`
         : "";
+      const numOrCheckCell = selecting
+        ? `<td class="dk-check-col"><label class="dk-check-label"><input type="checkbox" class="dk-check" data-dk-check="${escAttr(r.id)}" aria-label="选中此记录"${checked} /></label></td>`
+        : `<td class="dk-check-col dk-num-cell">${i + 1}</td>`;
       return `<tr>
+      ${numOrCheckCell}
       <td><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
-      <td><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code></td>
+      <td><div class="dk-key-line"><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code>${copyKeyBtn}</div></td>
       <td class="dk-date-cell">${esc(dkDateOf(r) || "-")}</td>
       <td>${r.error_code != null ? esc(r.error_code) : `<span class="na">-</span>`}</td>
       <td><div class="dk-msg-line">${detailBtn}${preview}</div></td>
       <td class="dk-actions">
         <button class="btn btn-secondary btn-xs" type="button" title="编辑" aria-label="编辑" data-dk-edit="${escAttr(r.id)}">✏️</button>
       </td>
-      ${checkCell}
     </tr>`;
     })
     .join("");
 
-  const checkHead = selecting
+  const numOrCheckHead = selecting
     ? `<th class="dk-check-col" scope="col"><label class="dk-check-label"><input type="checkbox" class="dk-check" data-dk-check-all aria-label="全选" /></label></th>`
-    : "";
+    : `<th class="dk-check-col" scope="col">编号</th>`;
 
   return `
     <div class="table-scroll">
       <table class="data-table">
         <thead><tr>
+          ${numOrCheckHead}
           <th>域名供应商</th>
           <th>KEY</th>
           <th>失效时间</th>
           <th>Code</th>
           <th>错误讯息</th>
-          <th>操作</th>
-          ${checkHead}
+          <th>编辑</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
@@ -1526,7 +1536,11 @@ function removeDeadKeysLocal(ids) {
 function updateDkBulkBtn(visibleCount) {
   const n = state.dkSelected.size;
   const selecting = state.dkSelectMode;
-  dom.dkBulkDelBtn.textContent = selecting && n > 0 ? "确认删除" : "批量删除";
+  if (!selecting) {
+    dom.dkBulkDelBtn.textContent = "删除密钥";
+  } else {
+    dom.dkBulkDelBtn.textContent = n > 0 ? "确认删除" : "取消删除";
+  }
   dom.dkBulkDelBtn.setAttribute("aria-pressed", String(selecting));
   const empty = visibleCount === 0 && !selecting;
   dom.dkBulkDelBtn.disabled = empty;
@@ -1685,10 +1699,35 @@ function closeSample() {
 }
 
 // ── Copy ──────────────────────────────────────────────────────────────────
+function fallbackCopy(text) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+  } catch (_) {}
+  document.body.removeChild(ta);
+}
+
 function copyText(text, btn) {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => {
+  const doFeedback = () => {
+    if (!btn) return;
+    const isIconOnly =
+      btn.classList.contains("btn-icon") || !btn.textContent.trim();
+    if (isIconOnly) {
+      const origHtml = btn.innerHTML;
+      btn.innerHTML = CHECK_ICON_SVG;
+      btn.classList.add("copied");
+      btn.disabled = true;
+      setTimeout(() => {
+        btn.innerHTML = origHtml;
+        btn.classList.remove("copied");
+        btn.disabled = false;
+      }, 1500);
+    } else {
       const orig = btn.textContent;
       btn.textContent = "已复制!";
       btn.disabled = true;
@@ -1696,17 +1735,21 @@ function copyText(text, btn) {
         btn.textContent = orig;
         btn.disabled = false;
       }, 1500);
-    })
-    .catch(() => {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    });
+    }
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard
+      .writeText(text)
+      .then(doFeedback)
+      .catch(() => {
+        fallbackCopy(text);
+        doFeedback();
+      });
+  } else {
+    fallbackCopy(text);
+    doFeedback();
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

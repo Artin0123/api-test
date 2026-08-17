@@ -240,13 +240,23 @@
                                 手动记录已失效的 Key、失效时间与供应商回传的错误讯息。
                             </p>
                         </div>
-                        <button
-                            id="dk-refresh-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
-                            重新读取
-                        </button>
+                        <div class="panel-head-actions">
+                            <button
+                                id="dk-refresh-btn"
+                                class="btn btn-secondary"
+                                type="button"
+                            >
+                                重新读取
+                            </button>
+                            <button
+                                id="dk-bulk-del-btn"
+                                class="btn btn-danger-solid"
+                                type="button"
+                                aria-pressed="false"
+                            >
+                                删除密钥
+                            </button>
+                        </div>
                     </div>
 
                     <div class="dk-toolbar">
@@ -304,14 +314,6 @@
                                     id="dk-filter-count"
                                     class="badge hidden"
                                 ></span>
-                            </button>
-                            <button
-                                id="dk-bulk-del-btn"
-                                class="btn btn-danger-solid"
-                                type="button"
-                                aria-pressed="false"
-                            >
-                                批量删除
                             </button>
                         </div>
                     </div>
