@@ -478,7 +478,7 @@
                         <span class="field-label">
                             Extra Body
                             <small class="muted"
-                                >选填，JSON，键直接覆盖请求体同名键</small
+                                >选填，键直接覆盖请求体同名键</small
                             >
                             <span
                                 id="ed-extra-body-status"
@@ -498,6 +498,28 @@
                             ></textarea>
                         </div>
                     </label>
+
+                    <div class="field">
+                        <div class="field-label-row">
+                            <span class="field-label">
+                                Headers
+                                <small class="muted"
+                                    >选填，附加的请求头</small
+                                >
+                            </span>
+                            <button
+                                id="ed-add-header-btn"
+                                class="btn btn-secondary btn-xs"
+                                type="button"
+                            >
+                                + 添加请求头
+                            </button>
+                        </div>
+                        <div
+                            id="ed-headers-container"
+                            class="custom-headers-container"
+                        ></div>
+                    </div>
 
                     <label class="field">
                         <span class="field-label">

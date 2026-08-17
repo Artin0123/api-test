@@ -6,7 +6,10 @@
         "provider_type": "openai",
         "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "keys": "sk-aaaaaaaaaaaaaaaa\nsk-bbbbbbbbbbbbbbbb\nsk-cccccccccccccccc",
-        "models": "qwen-max,qwen-plus,qwen-turbo"
+        "models": "qwen-max,qwen-plus,qwen-turbo",
+        "custom_headers": [
+          { "key": "HTTP-Referer", "value": "https://example.com" }
+        ]
       },
       {
         "enabled": false,

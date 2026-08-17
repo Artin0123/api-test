@@ -24,6 +24,7 @@ CHECKPOINT_PATH = "checkpoint.json"
 API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini', 'anthropic'
 EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例：'{"temperature": 0.7}'
+CUSTOM_HEADERS = []  # 选填，例：[{"key": "HTTP-Referer", "value": "https://example.com"}]
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
@@ -232,6 +233,39 @@ def build_payload(provider_type, model, stream, extra_body=None):
     return payload
 
 
+# RFC 7230 token. Must match HEADER_NAME_RE in app.js. Invalid names make
+# aiohttp raise and fail the whole request, so they are dropped here.
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+def sanitize_custom_headers(raw, origin=""):
+    """Return [(name, value), ...] ready to merge. Skip empty / illegal names."""
+    prefix = f"{origin} " if origin else ""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        print(f"[警告] {prefix}custom_headers 不是列表，已忽略")
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            print(f"[警告] {prefix}忽略无法解析的请求头条目")
+            continue
+        key = str(item.get("key") or "").strip()
+        if not key:
+            continue
+        if not _HEADER_NAME_RE.match(key):
+            print(f"[警告] {prefix}忽略非法请求头名称: {key!r}")
+            continue
+        value = item.get("value")
+        if value is None:
+            value = ""
+        else:
+            value = str(value).replace("\r", "").replace("\n", "")
+        out.append((key, value))
+    return out
+
+
 def extract_stream_chunk(line, provider_type):
     has_content = False
     has_thinking = False
@@ -372,7 +406,14 @@ async def parse_stream(response, provider_type, ttft_timeout=None):
 
 
 async def test_single_request(
-    session, key, model, stream, provider_type, api_base, extra_body=None
+    session,
+    key,
+    model,
+    stream,
+    provider_type,
+    api_base,
+    extra_body=None,
+    custom_headers=None,
 ):
     headers = {"Content-Type": "application/json", "User-Agent": "claude-code/2.1.152"}
     if provider_type == "gemini":
@@ -382,6 +423,9 @@ async def test_single_request(
         headers["anthropic-version"] = "2023-06-01"
     else:
         headers["Authorization"] = f"Bearer {key}"
+    # After protocol headers so the user can override Authorization / User-Agent.
+    for h_name, h_value in custom_headers or []:
+        headers[h_name] = h_value
 
     payload = build_payload(provider_type, model, stream, extra_body)
     timeout = aiohttp.ClientTimeout(total=TOTAL_TIMEOUT)
@@ -492,7 +536,14 @@ async def test_single_request(
 
 
 async def benchmark_model(
-    session, key, model, provider_type, api_base, dead_keys=None, extra_body=None
+    session,
+    key,
+    model,
+    provider_type,
+    api_base,
+    dead_keys=None,
+    extra_body=None,
+    custom_headers=None,
 ):
     # 在发起请求前，再次检查当前 Key 是否已断状态
     # 应对并发情况：可能有 worker 已处理断点，此协程才刚被调度执行
@@ -518,6 +569,7 @@ async def benchmark_model(
             provider_type=provider_type,
             api_base=api_base,
             extra_body=extra_body,
+            custom_headers=custom_headers,
         )
 
     # 1. 优先尝试流式 (第一次测试)
@@ -616,7 +668,13 @@ async def benchmark_model(
 
 
 async def run_provider(
-    api_base, provider_type, keys, models, extra_body=None, max_concurrency=None
+    api_base,
+    provider_type,
+    keys,
+    models,
+    extra_body=None,
+    max_concurrency=None,
+    custom_headers=None,
 ):
     concurrency = max_concurrency if max_concurrency is not None else MAX_CONCURRENCY
     global_start_time = time.perf_counter()
@@ -730,6 +788,7 @@ async def run_provider(
                     api_base=api_base,
                     dead_keys=dead_keys,
                     extra_body=extra_body,
+                    custom_headers=custom_headers,
                 )
 
                 # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
@@ -1056,7 +1115,12 @@ async def main():
                             mc = None
                     except (TypeError, ValueError):
                         mc = None
-                providers_to_run.append((ab, pt, k_list, m_list, extra_body, mc))
+                custom_headers = sanitize_custom_headers(
+                    p.get("custom_headers"), origin=f"服务商 {pt} | {ab}"
+                )
+                providers_to_run.append(
+                    (ab, pt, k_list, m_list, extra_body, mc, custom_headers)
+                )
 
         except Exception as e:
             return print(f"[错误] 无法从 Pages 读取设定: {e}")
@@ -1079,7 +1143,15 @@ async def main():
             except json.JSONDecodeError:
                 return print("[错误] EXTRA_BODY_JSON 不是有效的 JSON，请检查配置")
         providers_to_run.append(
-            (API_BASE, PROVIDER_TYPE, keys, models, local_extra, None)
+            (
+                API_BASE,
+                PROVIDER_TYPE,
+                keys,
+                models,
+                local_extra,
+                None,
+                sanitize_custom_headers(CUSTOM_HEADERS),
+            )
         )
 
     if not providers_to_run:
@@ -1087,8 +1159,16 @@ async def main():
 
     print(f"\n总共将执行 {len(providers_to_run)} 个服务商测试。")
 
-    for ab, pt, k_list, m_list, extra_body, mc in providers_to_run:
-        await run_provider(ab, pt, k_list, m_list, extra_body, max_concurrency=mc)
+    for ab, pt, k_list, m_list, extra_body, mc, custom_headers in providers_to_run:
+        await run_provider(
+            ab,
+            pt,
+            k_list,
+            m_list,
+            extra_body,
+            max_concurrency=mc,
+            custom_headers=custom_headers,
+        )
 
     print(f"\n{'=' * 50}\n全部服务商测试执行完毕！\n{'=' * 50}")
 

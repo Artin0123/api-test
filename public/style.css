@@ -729,6 +729,36 @@ a:hover {
     gap: 0.5rem;
 }
 
+.field-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.field-label-row .field-label {
+    flex: 1;
+    min-width: 0;
+}
+
+.custom-headers-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.custom-header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.custom-header-row .input-text {
+    flex: 1;
+    min-width: 0;
+}
+
 .input-text,
 .input-textarea,
 .input-select {
@@ -1159,6 +1189,21 @@ a:hover {
 .btn-xs {
     padding: 0.35rem 0.65rem;
     font-size: var(--text-xs);
+}
+
+.btn.btn-danger-icon {
+    flex-shrink: 0;
+    width: 2.2rem;
+    height: 2.2rem;
+    padding: 0;
+    background: transparent;
+    color: var(--fail);
+    border: 1px solid transparent;
+}
+
+.btn.btn-danger-icon:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.25);
 }
 
 /* ── Status / alerts ───────────────────────────────────────────────────── */
@@ -1782,6 +1827,14 @@ code {
 
     .modal-body {
         padding: 1.25rem;
+    }
+
+    .custom-header-row {
+        flex-wrap: wrap;
+    }
+
+    .custom-header-row .input-text {
+        flex: 1 1 calc(50% - 1.6rem);
     }
 
     .modal-footer {

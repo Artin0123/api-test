@@ -66,7 +66,7 @@ Repo → Settings → Secrets 添加两个值：
 2. 来源设定 Tab → 新增 Provider → 填入 `api_base`（只需填到根目录）、Keys（一行一个）、Models（逗号分隔）
    > 系统保存时会自动去除无效的空白、空行或连续逗号。
    >
-   > 可选填 `Extra Body`（JSON，用于注入特殊参数如 `{"enable_thinking": true}`）和 `Max Concurrency`（覆盖该 provider 的并发数，留空使用全局默认值 2）。
+   > 可选填 `Extra Body`（JSON，用于注入特殊参数如 `{"enable_thinking": true}`）、`Custom Headers`（请求时附加的 HTTP Headers，同名会覆盖预设标头）和 `Max Concurrency`（覆盖该 provider 的并发数，留空使用全局默认值 2）。
 3. Topbar「设定」→ 填入 GitHub Actions URL（跳转「立即执行」按钮）与 Discord Webhook URL（可按旁边按钮真实发送测试通知）。
    > 「测试」按钮是从浏览器直接送出的，受 CSP 的 `connect-src` 限制，目前只放行 `discord.com` 与 `discordapp.com`。webhook 若架在其他网域，要在 `_worker.js` 的 `CSP` 里加上该网域，否则测试会被挡（GHA 的定时通知走伺服器端，不受影响）。
 

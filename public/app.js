@@ -5,6 +5,10 @@ const MOCK = new URLSearchParams(location.search).has("mock");
 
 const COPY_ICON_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
 const CHECK_ICON_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+const TRASH_ICON_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+// RFC 7230 token. Must match _HEADER_NAME_RE in async_test_keys.py — aiohttp
+// rejects anything else and the whole request would fail.
+const HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 // Lazily-loaded mock data (fetched once, cached here)
 let _mockData = null;
@@ -78,6 +82,8 @@ const dom = {
   edModels: $("ed-models"),
   edExtraBody: $("ed-extra-body"),
   edExtraBodyStatus: $("ed-extra-body-status"),
+  edAddHeaderBtn: $("ed-add-header-btn"),
+  edHeadersContainer: $("ed-headers-container"),
   edMaxConcurrency: $("ed-max-concurrency"),
 
   // app settings modal
@@ -581,6 +587,75 @@ function renderProviderCard(p, index) {
 }
 
 // ── Provider editor modal ──────────────────────────────────────────────────
+// Build rows via DOM APIs, not innerHTML: key/value can contain quotes.
+function createHeaderRow(key = "", value = "") {
+  const row = document.createElement("div");
+  row.className = "custom-header-row";
+
+  const keyInput = document.createElement("input");
+  keyInput.type = "text";
+  keyInput.className = "input-text";
+  keyInput.autocomplete = "off";
+  keyInput.spellcheck = false;
+  keyInput.placeholder = "名称，如 X-Custom-Auth";
+  keyInput.setAttribute("aria-label", "请求头名称");
+  keyInput.dataset.headerKey = "";
+  keyInput.value = key;
+
+  const valueInput = document.createElement("input");
+  valueInput.type = "text";
+  valueInput.className = "input-text";
+  valueInput.autocomplete = "off";
+  valueInput.spellcheck = false;
+  valueInput.placeholder = "值";
+  valueInput.setAttribute("aria-label", "请求头值");
+  valueInput.dataset.headerValue = "";
+  valueInput.value = value;
+
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "btn btn-danger-icon";
+  delBtn.title = "删除";
+  delBtn.setAttribute("aria-label", "删除此请求头");
+  delBtn.innerHTML = TRASH_ICON_SVG;
+  delBtn.addEventListener("click", () => row.remove());
+
+  row.append(keyInput, valueInput, delBtn);
+  return row;
+}
+
+function renderEditorHeaders(headers = []) {
+  dom.edHeadersContainer.replaceChildren();
+  if (!Array.isArray(headers)) return;
+  for (const h of headers) {
+    const key = typeof h?.key === "string" ? h.key : "";
+    const value = typeof h?.value === "string" ? h.value : "";
+    if (!key && !value) continue;
+    dom.edHeadersContainer.appendChild(createHeaderRow(key, value));
+  }
+}
+
+function getEditorHeaders() {
+  const headers = [];
+  const invalid = [];
+  for (const row of dom.edHeadersContainer.querySelectorAll(
+    ".custom-header-row",
+  )) {
+    const key = (row.querySelector("[data-header-key]")?.value || "").trim();
+    const value = (row.querySelector("[data-header-value]")?.value || "").replace(
+      /[\r\n]/g,
+      "",
+    );
+    if (!key) continue;
+    if (!HEADER_NAME_RE.test(key)) {
+      invalid.push(key);
+      continue;
+    }
+    headers.push({ key, value });
+  }
+  return { headers, invalid };
+}
+
 function openEditor(index = -1) {
   dom.editorIndex.value = String(index);
   dom.editorError.textContent = "";
@@ -593,6 +668,7 @@ function openEditor(index = -1) {
     dom.edKeys.value = p.keys || "";
     dom.edModels.value = p.models || "";
     dom.edExtraBody.value = p.extra_body || "";
+    renderEditorHeaders(p.custom_headers);
     dom.edMaxConcurrency.value =
       p.max_concurrency != null ? String(p.max_concurrency) : "";
   } else {
@@ -602,6 +678,7 @@ function openEditor(index = -1) {
     dom.edKeys.value = "";
     dom.edModels.value = "";
     dom.edExtraBody.value = "";
+    renderEditorHeaders([]);
     dom.edMaxConcurrency.value = "";
   }
   dom.edExtraBodyStatus.textContent = "";
@@ -629,6 +706,7 @@ async function saveEditor() {
   const models = normalizeModels(dom.edModels.value);
   const pType = dom.edProviderType.value;
   const extraBodyRaw = dom.edExtraBody.value.trim();
+  const { headers: customHeaders, invalid: invalidHeaders } = getEditorHeaders();
   const maxConcurrencyRaw = dom.edMaxConcurrency.value.trim();
 
   // Update UI immediately so the user sees the cleaned up data if they reopen
@@ -657,6 +735,10 @@ async function saveEditor() {
       return;
     }
   }
+  if (invalidHeaders.length) {
+    dom.editorError.textContent = `请求头名称不合法: ${invalidHeaders[0]}`;
+    return;
+  }
 
   let maxConcurrency = null;
   if (maxConcurrencyRaw !== "") {
@@ -675,6 +757,7 @@ async function saveEditor() {
     keys,
     models,
     extra_body: extraBodyRaw,
+    custom_headers: customHeaders,
     max_concurrency: maxConcurrency,
   };
   const settings = state.settings || {};
@@ -1895,6 +1978,11 @@ function bindEvents() {
   dom.addProviderBtn.addEventListener("click", () => openEditor());
   dom.bulkEnableBtn.addEventListener("click", () => bulkToggle(true));
   dom.bulkDisableBtn.addEventListener("click", () => bulkToggle(false));
+  dom.edAddHeaderBtn.addEventListener("click", () => {
+    const row = createHeaderRow();
+    dom.edHeadersContainer.appendChild(row);
+    row.querySelector("[data-header-key]")?.focus();
+  });
   dom.editorSave.addEventListener("click", saveEditor);
   dom.editorCancel.addEventListener("click", closeEditor);
   dom.editorOverlay.addEventListener("click", (e) => {
