@@ -278,29 +278,42 @@
                                 新增
                             </button>
                         </div>
-                        <button
-                            id="dk-filter-toggle"
-                            class="btn btn-ghost btn-sm dk-filter-btn"
-                            type="button"
-                            aria-expanded="false"
-                        >
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="14"
-                                height="14"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                fill="none"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
+                        <div class="dk-toolbar-actions">
+                            <button
+                                id="dk-filter-toggle"
+                                class="btn btn-ghost btn-sm dk-filter-btn"
+                                type="button"
+                                aria-expanded="false"
                             >
-                                <polygon
-                                    points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
-                                ></polygon>
-                            </svg>
-                            筛选
-                            <span id="dk-filter-count" class="badge hidden"></span>
-                        </button>
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    width="14"
+                                    height="14"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    fill="none"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                >
+                                    <polygon
+                                        points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
+                                    ></polygon>
+                                </svg>
+                                筛选
+                                <span
+                                    id="dk-filter-count"
+                                    class="badge hidden"
+                                ></span>
+                            </button>
+                            <button
+                                id="dk-bulk-del-btn"
+                                class="btn btn-danger-solid"
+                                type="button"
+                                aria-pressed="false"
+                            >
+                                批量删除
+                            </button>
+                        </div>
                     </div>
 
                     <p id="dk-form-error" class="form-error" role="alert"></p>
@@ -670,6 +683,42 @@
                     <button
                         class="btn btn-ghost"
                         id="dkedit-cancel-btn"
+                        type="button"
+                    >
+                        取消
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- Dead key bulk-delete confirm -->
+        <div id="dkconfirm-overlay" class="modal-overlay hidden">
+            <div class="modal-backdrop" data-close-modal="dkconfirm"></div>
+            <section
+                class="modal-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dkconfirm-title"
+            >
+                <div class="modal-header">
+                    <h3 id="dkconfirm-title">确认删除</h3>
+                </div>
+                <div class="modal-body">
+                    <p id="dkconfirm-msg" class="dk-confirm-msg"></p>
+                    <ul id="dkconfirm-list" class="dk-confirm-list"></ul>
+                    <p id="dkconfirm-error" class="form-error" role="alert"></p>
+                </div>
+                <div class="modal-footer">
+                    <button
+                        class="btn btn-danger-solid"
+                        id="dkconfirm-ok-btn"
+                        type="button"
+                    >
+                        确认删除
+                    </button>
+                    <button
+                        class="btn btn-ghost"
+                        id="dkconfirm-cancel-btn"
                         type="button"
                     >
                         取消
