@@ -9,8 +9,9 @@ date = 可靠來源裡最早的那天（不含 gateway）。
 
 - 阿里雲：Qwen Cloud changelog
 - Silicon Flow：www.siliconflow.com/models 的 Release on（created 全是 0，不用來排除）
+- NVIDIA：NGC 公開目錄 dateCreated（/v1/models 的 created 全是同一個佔位值，不用來排除）
 
-gateway created 只用來排除（且必須 > 0）。
+gateway created 只用來排除（且必須 > 0，且各模型不是同一個值）。
 gateway 在期限內或缺失、可靠來源都沒日期 → Pending。
 任一可靠來源確認超過 WITHIN_DAYS → 刪。
 Pending / 仍查不到 → 保留。
@@ -33,15 +34,17 @@ if hasattr(sys.stdout, "reconfigure"):
 
 # ==================== 【手動配置區：只改這裡】 ====================
 HERE = os.path.dirname(os.path.abspath(__file__))
-INPUT_FILE = os.path.join(HERE, "response.json")
-DATES_JSON = os.path.join(HERE, "model_release_dates.json")
-OUTPUT_TXT = os.path.join(HERE, "released_within_year.txt")
+INPUT_FILE = os.path.join(HERE, "nvidia", "response.json")
+DATES_JSON = os.path.join(os.path.dirname(INPUT_FILE), "model_release_dates.json")
+OUTPUT_TXT = os.path.join(os.path.dirname(INPUT_FILE), "released_within_year.txt")
 
 WITHIN_DAYS = 365
-# None = 依模型 id 自動判斷（多數含 org/name → siliconflow）
-PROVIDER = None  # "siliconflow" | "alibaba"
+# None = 依模型 id 自動判斷（Pro/LoRA → siliconflow；nvidia/ 多 → nvidia；無斜線 → alibaba）
+PROVIDER = None  # "siliconflow" | "alibaba" | "nvidia"
 QWEN_CHANGELOG_URL = "https://docs.qwencloud.com/changelog/models.md"
 SF_MODELS_URL = "https://www.siliconflow.com/models"
+NV_CATALOG_URL = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
+NV_CATALOG_ORG = "qc69jvmznzxy"  # build.nvidia.com 的 NGC org
 OPENROUTER_URL = "https://openrouter.ai/api/v1/models"
 HF_API = "https://huggingface.co/api/models"
 HF_WORKERS = 8
@@ -56,10 +59,22 @@ SF_SKIP_LABELS = frozenset(
     {"chat", "image", "video", "audio", "vision", "llm", "embedding", "rerank"}
 )
 SF_PREFIXES = ("Pro/", "LoRA/")
-UA = {"User-Agent": "api-test/local_test/lookup_model_release_dates.py"}
+UA = {
+    "User-Agent": "api-test/local_test/lookup_model_release_dates.py",
+    "Accept": "application/json, text/html, text/plain;q=0.9, */*;q=0.8",
+}
 RELIABLE_SOURCES = frozenset(
-    {"id_iso", "id_yymm", "changelog", "sf_catalog", "openrouter", "huggingface"}
+    {
+        "id_iso",
+        "id_yymm",
+        "changelog",
+        "sf_catalog",
+        "nv_catalog",
+        "openrouter",
+        "huggingface",
+    }
 )
+KNOWN_PROVIDERS = frozenset({"siliconflow", "alibaba", "nvidia"})
 
 
 def http_get(url: str, timeout: int = 30) -> str:
@@ -104,11 +119,23 @@ def parse_yymm(model_id: str) -> datetime | None:
     return datetime(2000 + yy, mm, 1, tzinfo=timezone.utc)
 
 
+def nv_norm(name: str) -> str:
+    """NGC slug 用底線代替點（llama-3_1 vs llama-3.1）。"""
+    return compact(name).replace(".", "-")
+
+
 def detect_provider(models: list[str]) -> str:
-    if PROVIDER in {"siliconflow", "alibaba"}:
+    if PROVIDER in KNOWN_PROVIDERS:
         return PROVIDER
     slashed = sum(1 for m in models if "/" in m)
-    return "siliconflow" if slashed >= max(len(models) * 0.5, 1) else "alibaba"
+    if slashed < max(len(models) * 0.5, 1):
+        return "alibaba"
+    if any(m.startswith(SF_PREFIXES) for m in models):
+        return "siliconflow"
+    nvidia_n = sum(1 for m in models if m.lower().startswith("nvidia/"))
+    if nvidia_n >= max(len(models) * 0.15, 3):
+        return "nvidia"
+    return "siliconflow"
 
 
 def parse_qwen_changelog(md: str) -> dict[str, datetime]:
@@ -153,6 +180,76 @@ def load_sf_catalog() -> dict[str, datetime]:
         key = compact(name)
         out.setdefault(key, dt)
         out.setdefault(name.lower(), dt)
+    return out
+
+
+def _nv_publisher(res: dict) -> str:
+    for lab in res.get("labels") or []:
+        if not isinstance(lab, dict) or lab.get("key") != "publisher":
+            continue
+        vals = lab.get("values") or lab.get("unresolvedValues") or []
+        if vals and isinstance(vals[0], str):
+            return vals[0]
+    return ""
+
+
+def _catalog_put(out: dict[str, datetime], key: str, dt: datetime) -> None:
+    if not key:
+        return
+    out.setdefault(key.lower(), dt)
+    out.setdefault(compact(key), dt)
+    out.setdefault(nv_norm(key), dt)
+
+
+def load_nv_catalog() -> dict[str, datetime]:
+    """build.nvidia.com 目錄：NGC dateCreated = 上架日。dateModified 是卡片更新，不用。"""
+    out: dict[str, datetime] = {}
+    for page in range(20):
+        q = urllib.parse.quote(
+            json.dumps(
+                {
+                    "query": "*",
+                    "filters": [{"field": "orgName", "value": NV_CATALOG_ORG}],
+                    "page": page,
+                    "pageSize": 200,
+                }
+            )
+        )
+        data = json.loads(http_get(f"{NV_CATALOG_URL}?q={q}", timeout=45))
+        page_n = 0
+        for group in data.get("results") or []:
+            if not isinstance(group, dict):
+                continue
+            for res in group.get("resources") or []:
+                if not isinstance(res, dict):
+                    continue
+                page_n += 1
+                if res.get("orgName") != NV_CATALOG_ORG:
+                    continue
+                created = res.get("dateCreated")
+                if not isinstance(created, str) or not created:
+                    continue
+                try:
+                    dt = datetime.fromisoformat(
+                        created.replace("Z", "+00:00")
+                    ).astimezone(timezone.utc)
+                except ValueError:
+                    continue
+                name = res.get("name") if isinstance(res.get("name"), str) else ""
+                disp = (
+                    res.get("displayName")
+                    if isinstance(res.get("displayName"), str)
+                    else ""
+                )
+                pub = _nv_publisher(res)
+                _catalog_put(out, name, dt)
+                _catalog_put(out, disp, dt)
+                if pub and name:
+                    _catalog_put(out, f"{pub}/{name}", dt)
+                if pub and disp:
+                    _catalog_put(out, f"{pub}/{disp}", dt)
+        if page_n == 0:
+            break
     return out
 
 
@@ -278,6 +375,12 @@ def main() -> int:
         if isinstance(created, (int, float)) and created > 0:
             gateway_created[mid] = datetime.fromtimestamp(created, tz=timezone.utc)
 
+    # NVIDIA /v1/models 的 created 全是同一個佔位時間戳（目前 735790403 ≈ 1993），不能當上架日。
+    if len({dt.timestamp() for dt in gateway_created.values()}) == 1 and len(
+        gateway_created
+    ) > 1:
+        gateway_created = {}
+
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=WITHIN_DAYS)
     provider = detect_provider(models)
@@ -290,6 +393,10 @@ def main() -> int:
         print("抓 Qwen Cloud changelog / OpenRouter …")
         catalog = parse_qwen_changelog(http_get(QWEN_CHANGELOG_URL))
         catalog_name = "changelog"
+    elif provider == "nvidia":
+        print("抓 NVIDIA NGC 目錄 / OpenRouter …")
+        catalog = load_nv_catalog()
+        catalog_name = "nv_catalog"
     else:
         print("抓 SiliconFlow 模型目錄 / OpenRouter …")
         catalog = load_sf_catalog()
@@ -307,7 +414,11 @@ def main() -> int:
         yymm = parse_yymm(mid)
         if yymm:
             all_dates[mid]["id_yymm"] = yymm
-        cl = catalog.get(mid.lower()) or catalog.get(compact(mid))
+        cl = (
+            catalog.get(mid.lower())
+            or catalog.get(compact(mid))
+            or catalog.get(nv_norm(mid))
+        )
         if cl:
             all_dates[mid][catalog_name] = cl
         or_dt = (

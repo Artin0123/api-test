@@ -1,0 +1,88 @@
+{
+  "collected_at": "2026-08-17T16:57:07.538767+00:00",
+  "endpoint": "https://gpt-load-production-737b.up.railway.app/proxy/nvidia/chat/completions",
+  "total": 52,
+  "passed_count": 20,
+  "passed": [
+    {
+      "model": "deepseek-ai/deepseek-v4-flash-0731",
+      "output": "493"
+    },
+    {
+      "model": "google/diffusiongemma-26b-a4b-it",
+      "output": "493"
+    },
+    {
+      "model": "google/gemma-4-31b-it",
+      "output": "493"
+    },
+    {
+      "model": "meta/muse-glimmer-30b",
+      "output": "493"
+    },
+    {
+      "model": "minimaxai/minimax-m3",
+      "output": "17 × 29 = 493"
+    },
+    {
+      "model": "nvidia/ising-calibration-1.5-31b",
+      "output": "17 x 29 = 493"
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      "output": "{\"User Safety\": \"unsafe\", \"Safety Categories\": \"Un"
+    },
+    {
+      "model": "nvidia/nemotron-3-nano-30b-a3b",
+      "output": "493"
+    },
+    {
+      "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "output": "493"
+    },
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "output": "493"
+    },
+    {
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "output": "493"
+    },
+    {
+      "model": "nvidia/nemotron-3.5-content-safety",
+      "output": "User Safety: safe"
+    },
+    {
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "output": "493"
+    },
+    {
+      "model": "nvidia/nemotron-nano-12b-v2-vl",
+      "output": "493"
+    },
+    {
+      "model": "nvidia/riva-translate-4b-instruct-v1.1",
+      "output": "only reply answer: 17x29="
+    },
+    {
+      "model": "nvidia/riva-translate-4b-instruct-v2",
+      "output": "only reply answer: 17x29=?"
+    },
+    {
+      "model": "poolside/laguna-xs-2.1",
+      "output": "493"
+    },
+    {
+      "model": "stepfun-ai/step-3.7-flash",
+      "output": "493"
+    },
+    {
+      "model": "thinkingmachines/inkling",
+      "output": "493"
+    },
+    {
+      "model": "z-ai/glm-5.2",
+      "output": "493"
+    }
+  ]
+}

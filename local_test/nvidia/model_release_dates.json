@@ -1,0 +1,1428 @@
+{
+  "collected_at": "2026-08-17T16:51:57.390655+00:00",
+  "provider": "nvidia",
+  "cutoff": "2025-08-17",
+  "within_days": 365,
+  "date_meaning": "earliest reliable source (not gateway)",
+  "stats": {
+    "total": 102,
+    "kept": 52,
+    "dropped": 50,
+    "pending": 26,
+    "status": {
+      "pending": 26,
+      "dropped": 50,
+      "kept": 26
+    },
+    "date_source": {
+      "none": 26,
+      "huggingface": 49,
+      "openrouter": 12,
+      "nv_catalog": 15
+    }
+  },
+  "models": [
+    {
+      "model": "01-ai/yi-large",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "adept/fuyu-8b",
+      "gateway_created": null,
+      "detail": "adept/fuyu-8b",
+      "date": "2023-10-17",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2023-10-17"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "ai21labs/jamba-1.5-large-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "aisingapore/sea-lion-7b-instruct",
+      "gateway_created": null,
+      "detail": "aisingapore/sea-lion-7b-instruct",
+      "date": "2024-02-01",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-02-01"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "baai/bge-m3",
+      "gateway_created": null,
+      "detail": "baai/bge-m3",
+      "date": "2024-01-27",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-01-27",
+        "nv_catalog": "2024-06-01"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "bigcode/starcoder2-15b",
+      "gateway_created": null,
+      "detail": "bigcode/starcoder2-15b",
+      "date": "2024-02-20",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-02-20"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "databricks/dbrx-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "deepseek-ai/deepseek-coder-6.7b-instruct",
+      "gateway_created": null,
+      "detail": "deepseek-ai/deepseek-coder-6.7b-instruct",
+      "date": "2023-10-29",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2023-10-29"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-ai/deepseek-v4-flash-0731",
+      "gateway_created": null,
+      "detail": "deepseek-ai/deepseek-v4-flash-0731",
+      "date": "2026-07-31",
+      "source": "openrouter",
+      "sources": {
+        "huggingface": "2026-07-31",
+        "openrouter": "2026-07-31"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "google/codegemma-1.1-7b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "google/codegemma-7b",
+      "gateway_created": null,
+      "detail": "google/codegemma-7b",
+      "date": "2024-03-21",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-03-21"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "google/deplot",
+      "gateway_created": null,
+      "detail": "google/deplot",
+      "date": "2023-04-03",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2023-04-03"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "google/diffusiongemma-26b-a4b-it",
+      "gateway_created": null,
+      "detail": "google/diffusiongemma-26b-a4b-it",
+      "date": "2026-06-09",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-06-09",
+        "nv_catalog": "2026-06-10"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "google/gemma-2b",
+      "gateway_created": null,
+      "detail": "google/gemma-2b",
+      "date": "2024-02-08",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-02-08"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "google/gemma-3-12b-it",
+      "gateway_created": null,
+      "detail": "google/gemma-3-12b-it",
+      "date": "2025-03-01",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-03-01",
+        "openrouter": "2025-03-13"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "google/gemma-3-4b-it",
+      "gateway_created": null,
+      "detail": "google/gemma-3-4b-it",
+      "date": "2025-02-20",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-02-20",
+        "openrouter": "2025-03-13"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "google/gemma-4-31b-it",
+      "gateway_created": null,
+      "detail": "google/gemma-4-31b-it",
+      "date": "2026-03-11",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-03-11",
+        "nv_catalog": "2026-04-02",
+        "openrouter": "2026-04-02"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "google/recurrentgemma-2b",
+      "gateway_created": null,
+      "detail": "google/recurrentgemma-2b",
+      "date": "2024-04-06",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-04-06"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "ibm/granite-3.0-3b-a800m-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "ibm/granite-3.0-8b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "ibm/granite-34b-code-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "ibm/granite-8b-code-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "meta/codellama-70b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "meta/llama-3.1-70b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-07-23",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2024-07-23",
+        "openrouter": "2024-07-23"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-3.1-8b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-07-23",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2024-07-23",
+        "openrouter": "2024-07-23"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-3.2-11b-vision-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-09-25",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2024-09-25"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-3.2-1b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-09-25",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2024-09-25",
+        "openrouter": "2024-09-25"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-3.2-3b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-09-25",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2024-09-25",
+        "openrouter": "2024-09-25"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-3.2-90b-vision-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-09-25",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2024-09-25"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-3.3-70b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-12-06",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2024-12-06",
+        "openrouter": "2024-12-06"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama-guard-4-12b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-04-30",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2025-06-28",
+        "openrouter": "2025-04-30"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "meta/llama2-70b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "meta/muse-glimmer-30b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-08-09",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2026-08-10",
+        "openrouter": "2026-08-09"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "microsoft/kosmos-2",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "microsoft/phi-3-vision-128k-instruct",
+      "gateway_created": null,
+      "detail": "microsoft/phi-3-vision-128k-instruct",
+      "date": "2024-05-19",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-05-19"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "microsoft/phi-3.5-moe-instruct",
+      "gateway_created": null,
+      "detail": "microsoft/phi-3.5-moe-instruct",
+      "date": "2024-08-17",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-08-17"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "minimaxai/minimax-m3",
+      "gateway_created": null,
+      "detail": "minimaxai/minimax-m3",
+      "date": "2026-05-31",
+      "source": "openrouter",
+      "sources": {
+        "huggingface": "2026-06-02",
+        "nv_catalog": "2026-06-12",
+        "openrouter": "2026-05-31"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "mistralai/codestral-22b-instruct-v0.1",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "mistralai/mistral-7b-instruct-v0.3",
+      "gateway_created": null,
+      "detail": "mistralai/mistral-7b-instruct-v0.3",
+      "date": "2024-05-22",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-05-22"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "mistralai/mistral-large",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-02-26",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2024-02-26"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "mistralai/mistral-large-2-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "mistralai/mistral-nemotron",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-06-11",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2025-06-11"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "mistralai/mixtral-8x22b-v0.1",
+      "gateway_created": null,
+      "detail": "mistralai/mixtral-8x22b-v0.1",
+      "date": "2024-04-16",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-04-16"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "moonshotai/kimi-k2.6",
+      "gateway_created": null,
+      "detail": "moonshotai/kimi-k2.6",
+      "date": "2026-04-14",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-04-14",
+        "openrouter": "2026-04-20"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nv-mistralai/mistral-nemo-12b-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/ai-synthetic-video-detector",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/cosmos-reason2-8b",
+      "gateway_created": null,
+      "detail": "nvidia/cosmos-reason2-8b",
+      "date": "2025-12-12",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-12-12",
+        "nv_catalog": "2025-12-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/embed-qa-4",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/ising-calibration-1.5-31b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-07-23",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2026-07-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama-3.1-nemoguard-8b-content-safety",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemoguard-8b-content-safety",
+      "date": "2025-01-15",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-01-15",
+        "nv_catalog": "2025-01-16"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemoguard-8b-topic-control",
+      "date": "2025-01-15",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-01-15",
+        "nv_catalog": "2025-01-16"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-51b-instruct",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemotron-51b-instruct",
+      "date": "2024-09-22",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-09-22"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemotron-70b-instruct",
+      "date": "2024-10-12",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-10-12"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "date": "2025-03-16",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-03-16",
+        "nv_catalog": "2025-03-18"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+      "date": "2025-06-03",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-06-03",
+        "nv_catalog": "2025-06-03"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      "date": "2025-08-20",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-08-20",
+        "nv_catalog": "2025-10-28"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama-3.2-nv-embedqa-1b-v1",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+      "gateway_created": null,
+      "detail": "nvidia/llama-3.3-nemotron-super-49b-v1",
+      "date": "2025-03-16",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-03-16",
+        "nv_catalog": "2025-03-18"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-07-25",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2025-07-25"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/llama-nemotron-embed-1b-v2",
+      "gateway_created": null,
+      "detail": "nvidia/llama-nemotron-embed-1b-v2",
+      "date": "2025-10-16",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-10-16",
+        "nv_catalog": "2026-03-04"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama-nemotron-embed-vl-1b-v2",
+      "gateway_created": null,
+      "detail": "nvidia/llama-nemotron-embed-vl-1b-v2",
+      "date": "2025-12-03",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-12-03",
+        "nv_catalog": "2026-02-10"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/llama3-chatqa-1.5-70b",
+      "gateway_created": null,
+      "detail": "nvidia/llama3-chatqa-1.5-70b",
+      "date": "2024-04-28",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-04-28"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemoretriever-parse",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-03-06",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2025-03-06"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nemotron-3-embed-1b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-07-16",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2026-07-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-3-nano-30b-a3b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-12-14",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2025-12-15",
+        "openrouter": "2025-12-14"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "gateway_created": null,
+      "detail": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "date": "2026-04-20",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-04-20",
+        "nv_catalog": "2026-04-28"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-03-11",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2026-03-11",
+        "openrouter": "2026-03-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-3-ultra-550b-a55b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-06-04",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2026-06-04",
+        "openrouter": "2026-06-04"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-3.5-content-safety",
+      "gateway_created": null,
+      "detail": "nvidia/nemotron-3.5-content-safety",
+      "date": "2026-05-22",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-05-22",
+        "nv_catalog": "2026-06-02"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-08-11",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2026-08-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-4-340b-instruct",
+      "gateway_created": null,
+      "detail": "nvidia/nemotron-4-340b-instruct",
+      "date": "2024-06-13",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-06-13"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nemotron-4-340b-reward",
+      "gateway_created": null,
+      "detail": "nvidia/nemotron-4-340b-reward",
+      "date": "2024-06-13",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-06-13"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nemotron-mini-4b-instruct",
+      "gateway_created": null,
+      "detail": "nvidia/nemotron-mini-4b-instruct",
+      "date": "2024-08-21",
+      "source": "nv_catalog",
+      "sources": {
+        "huggingface": "2024-09-10",
+        "nv_catalog": "2024-08-21"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nemotron-nano-12b-v2-vl",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-10-28",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2025-10-28"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-nano-3-30b-a3b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nemotron-parse",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-10-28",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2025-10-28"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/neva-22b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nv-embed-v1",
+      "gateway_created": null,
+      "detail": "nvidia/nv-embed-v1",
+      "date": "2024-05-23",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-05-23",
+        "nv_catalog": "2024-06-07"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nv-embedcode-7b-v1",
+      "gateway_created": null,
+      "detail": "nvidia/nv-embedcode-7b-v1",
+      "date": "2025-03-17",
+      "source": "nv_catalog",
+      "sources": {
+        "huggingface": "2025-07-10",
+        "nv_catalog": "2025-03-17"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nv-embedqa-e5-v5",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2024-07-17",
+      "source": "nv_catalog",
+      "sources": {
+        "nv_catalog": "2024-07-17"
+      },
+      "drop_reason": "nv_catalog",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/nv-embedqa-mistral-7b-v2",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nvclip",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "nvidia/nvidia-nemotron-nano-9b-v2",
+      "gateway_created": null,
+      "detail": "nvidia/nvidia-nemotron-nano-9b-v2",
+      "date": "2025-08-12",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-08-12",
+        "nv_catalog": "2025-08-18"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/riva-translate-4b-instruct",
+      "gateway_created": null,
+      "detail": "nvidia/riva-translate-4b-instruct",
+      "date": "2025-06-09",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-06-09"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "nvidia/riva-translate-4b-instruct-v1.1",
+      "gateway_created": null,
+      "detail": "nvidia/riva-translate-4b-instruct-v1.1",
+      "date": "2025-11-05",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-11-05",
+        "nv_catalog": "2025-12-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/riva-translate-4b-instruct-v2",
+      "gateway_created": null,
+      "detail": "nvidia/riva-translate-4b-instruct-v2",
+      "date": "2026-04-15",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-04-15",
+        "nv_catalog": "2026-07-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "nvidia/vila",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "openai/gpt-oss-120b",
+      "gateway_created": null,
+      "detail": "openai/gpt-oss-120b",
+      "date": "2025-08-04",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-08-04",
+        "nv_catalog": "2025-08-05",
+        "openrouter": "2025-08-05"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "openai/gpt-oss-20b",
+      "gateway_created": null,
+      "detail": "openai/gpt-oss-20b",
+      "date": "2025-08-04",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2025-08-04",
+        "nv_catalog": "2025-08-05",
+        "openrouter": "2025-08-05"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "poolside/laguna-xs-2.1",
+      "gateway_created": null,
+      "detail": "poolside/laguna-xs-2.1",
+      "date": "2026-06-20",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-06-20",
+        "nv_catalog": "2026-07-15",
+        "openrouter": "2026-07-02"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "snowflake/arctic-embed-l",
+      "gateway_created": null,
+      "detail": "snowflake/arctic-embed-l",
+      "date": "2024-04-12",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-04-12"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "stepfun-ai/step-3.7-flash",
+      "gateway_created": null,
+      "detail": "stepfun-ai/step-3.7-flash",
+      "date": "2026-05-23",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-05-23",
+        "nv_catalog": "2026-05-29",
+        "openrouter": "2026-05-28"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "thinkingmachines/inkling",
+      "gateway_created": null,
+      "detail": "thinkingmachines/inkling",
+      "date": "2026-07-14",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2026-07-14",
+        "nv_catalog": "2026-07-16",
+        "openrouter": "2026-07-17"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "writer/palmyra-creative-122b",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "writer/palmyra-fin-70b-32k",
+      "gateway_created": null,
+      "detail": "writer/palmyra-fin-70b-32k",
+      "date": "2024-07-02",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-07-02"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "writer/palmyra-med-70b",
+      "gateway_created": null,
+      "detail": "writer/palmyra-med-70b",
+      "date": "2024-05-05",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-05-05"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "writer/palmyra-med-70b-32k",
+      "gateway_created": null,
+      "detail": "writer/palmyra-med-70b-32k",
+      "date": "2024-06-03",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-06-03"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "z-ai/glm-5.2",
+      "gateway_created": null,
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-06-16",
+      "source": "openrouter",
+      "sources": {
+        "nv_catalog": "2026-07-03",
+        "openrouter": "2026-06-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "zyphra/zamba2-7b-instruct",
+      "gateway_created": null,
+      "detail": "zyphra/zamba2-7b-instruct",
+      "date": "2024-10-10",
+      "source": "huggingface",
+      "sources": {
+        "huggingface": "2024-10-10"
+      },
+      "drop_reason": "huggingface",
+      "status": "dropped",
+      "keep": false
+    }
+  ],
+  "pending": [
+    "01-ai/yi-large",
+    "ai21labs/jamba-1.5-large-instruct",
+    "databricks/dbrx-instruct",
+    "google/codegemma-1.1-7b",
+    "ibm/granite-3.0-3b-a800m-instruct",
+    "ibm/granite-3.0-8b-instruct",
+    "ibm/granite-34b-code-instruct",
+    "ibm/granite-8b-code-instruct",
+    "meta/codellama-70b",
+    "meta/llama2-70b",
+    "microsoft/kosmos-2",
+    "mistralai/codestral-22b-instruct-v0.1",
+    "mistralai/mistral-large-2-instruct",
+    "nv-mistralai/mistral-nemo-12b-instruct",
+    "nvidia/ai-synthetic-video-detector",
+    "nvidia/embed-qa-4",
+    "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+    "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
+    "nvidia/llama-3.2-nv-embedqa-1b-v1",
+    "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+    "nvidia/nemotron-nano-3-30b-a3b",
+    "nvidia/neva-22b",
+    "nvidia/nv-embedqa-mistral-7b-v2",
+    "nvidia/nvclip",
+    "nvidia/vila",
+    "writer/palmyra-creative-122b"
+  ],
+  "dropped": [
+    "adept/fuyu-8b",
+    "aisingapore/sea-lion-7b-instruct",
+    "baai/bge-m3",
+    "bigcode/starcoder2-15b",
+    "deepseek-ai/deepseek-coder-6.7b-instruct",
+    "google/codegemma-7b",
+    "google/deplot",
+    "google/gemma-2b",
+    "google/gemma-3-12b-it",
+    "google/gemma-3-4b-it",
+    "google/recurrentgemma-2b",
+    "meta/llama-3.1-70b-instruct",
+    "meta/llama-3.1-8b-instruct",
+    "meta/llama-3.2-11b-vision-instruct",
+    "meta/llama-3.2-1b-instruct",
+    "meta/llama-3.2-3b-instruct",
+    "meta/llama-3.2-90b-vision-instruct",
+    "meta/llama-3.3-70b-instruct",
+    "meta/llama-guard-4-12b",
+    "microsoft/phi-3-vision-128k-instruct",
+    "microsoft/phi-3.5-moe-instruct",
+    "mistralai/mistral-7b-instruct-v0.3",
+    "mistralai/mistral-large",
+    "mistralai/mistral-nemotron",
+    "mistralai/mixtral-8x22b-v0.1",
+    "nvidia/llama-3.1-nemoguard-8b-content-safety",
+    "nvidia/llama-3.1-nemoguard-8b-topic-control",
+    "nvidia/llama-3.1-nemotron-51b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "nvidia/llama-3.1-nemotron-nano-8b-v1",
+    "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+    "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/llama3-chatqa-1.5-70b",
+    "nvidia/nemoretriever-parse",
+    "nvidia/nemotron-4-340b-instruct",
+    "nvidia/nemotron-4-340b-reward",
+    "nvidia/nemotron-mini-4b-instruct",
+    "nvidia/nv-embed-v1",
+    "nvidia/nv-embedcode-7b-v1",
+    "nvidia/nv-embedqa-e5-v5",
+    "nvidia/nvidia-nemotron-nano-9b-v2",
+    "nvidia/riva-translate-4b-instruct",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "snowflake/arctic-embed-l",
+    "writer/palmyra-fin-70b-32k",
+    "writer/palmyra-med-70b",
+    "writer/palmyra-med-70b-32k",
+    "zyphra/zamba2-7b-instruct"
+  ]
+}
