@@ -42,7 +42,7 @@ OUTPUT_PATH = os.path.join(HERE, "ollama_chat_results.json")
 # ===============================================================
 
 
-ENV_FILE = os.path.join(os.path.dirname(HERE), ".env")  # 專案根目錄，已 gitignore
+ENV_FILE = os.path.join(os.path.dirname(HERE), ".dev.vars")  # 專案根目錄，已 gitignore
 
 
 def load_env_file(path: str | None = None) -> None:

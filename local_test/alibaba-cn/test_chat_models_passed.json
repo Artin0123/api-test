@@ -1,0 +1,312 @@
+{
+  "collected_at": "2026-08-17T13:08:03.377656+00:00",
+  "endpoint": "https://gpt-load-production-737b.up.railway.app/proxy/alibaba-cn/chat/completions",
+  "total": 195,
+  "passed_count": 76,
+  "passed": [
+    {
+      "model": "deepseek-v4-pro-0813",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.8-2.4t-a95b",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.8-max",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-v4-flash-0731",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-flash-2026-07-15",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-flash",
+      "output": "493"
+    },
+    {
+      "model": "glm-5.2-fast-preview",
+      "output": "493"
+    },
+    {
+      "model": "MiniMax/MiniMax-M3",
+      "output": "493"
+    },
+    {
+      "model": "glm-5.2",
+      "output": "493"
+    },
+    {
+      "model": "kimi-k2.7-code",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-max-2026-06-08",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-plus-2026-05-26",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-plus",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-max-2026-05-17",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-max-preview",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-max-2026-05-20",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.7-max",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-plus-2026-04-20",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-27b",
+      "output": "493"
+    },
+    {
+      "model": "kimi-k2.6",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-max-preview",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-35b-a3b",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-flash-2026-04-16",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-flash",
+      "output": "493"
+    },
+    {
+      "model": "glm-5.1",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-plus-2026-04-02",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.6-plus",
+      "output": "493"
+    },
+    {
+      "model": "glm-5",
+      "output": "493"
+    },
+    {
+      "model": "qwen-flash-character-2026-02-26",
+      "output": "493"
+    },
+    {
+      "model": "MiniMax-M2.5",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-flash-2026-02-23",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-flash",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-122b-a10b",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-35b-a3b",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-27b",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-coder-next",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-397b-a17b",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-plus-2026-02-15",
+      "output": "493"
+    },
+    {
+      "model": "qwen3.5-plus",
+      "output": "493"
+    },
+    {
+      "model": "glm-4.7",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-max",
+      "output": "493"
+    },
+    {
+      "model": "kimi-k2.5",
+      "output": "493"
+    },
+    {
+      "model": "tongyi-xiaomi-analysis-flash",
+      "output": "17x29=493"
+    },
+    {
+      "model": "MiniMax-M2.1",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-vl-flash-2026-01-22",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-max-2026-01-23",
+      "output": "493"
+    },
+    {
+      "model": "qwen-flash-character",
+      "output": "Okay, I'll help you with that multiplication! 17 m"
+    },
+    {
+      "model": "qwen-flash",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-vl-plus-2025-12-19",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-v3.2",
+      "output": "493"
+    },
+    {
+      "model": "qwen-plus-2025-12-01",
+      "output": "493"
+    },
+    {
+      "model": "qwen-mt-lite",
+      "output": "17x29=493"
+    },
+    {
+      "model": "kimi-k2-thinking",
+      "output": "493"
+    },
+    {
+      "model": "qwen-mt-flash",
+      "output": "17x29=493"
+    },
+    {
+      "model": "qwen3-vl-flash",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-vl-flash-2025-10-15",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-coder-flash",
+      "output": "17 × 29 = 493"
+    },
+    {
+      "model": "qwen3-coder-plus-2025-09-23",
+      "output": "17 × 29 = 493"
+    },
+    {
+      "model": "qwen3-max-2025-09-23",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-vl-plus",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-vl-plus-2025-09-23",
+      "output": "493"
+    },
+    {
+      "model": "qwen-plus-2025-09-11",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-next-80b-a3b-thinking",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-next-80b-a3b-instruct",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-max-preview",
+      "output": "493"
+    },
+    {
+      "model": "qwen3-coder-plus",
+      "output": "17 × 29 = 493"
+    },
+    {
+      "model": "qwen3-coder-480b-a35b-instruct",
+      "output": "493"
+    },
+    {
+      "model": "qwen-mt-turbo",
+      "output": "493"
+    },
+    {
+      "model": "qwen-mt-plus",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-v3",
+      "output": "493"
+    },
+    {
+      "model": "qwen-plus-latest",
+      "output": "493"
+    },
+    {
+      "model": "qwen-long",
+      "output": "493"
+    },
+    {
+      "model": "qwen-max",
+      "output": "493"
+    },
+    {
+      "model": "qwen-turbo",
+      "output": "493"
+    }
+  ]
+}

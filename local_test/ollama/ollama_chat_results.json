@@ -1,0 +1,745 @@
+{
+  "meta": {
+    "base_url": "https://ollama.com",
+    "tags_url": "https://ollama.com/api/tags",
+    "chat_url": "https://ollama.com/v1/chat/completions",
+    "collected_at": "2026-08-17T13:33:54.402519+00:00",
+    "prompt": "Hello! Reply with a short answer.",
+    "system": "",
+    "max_tokens": 256,
+    "temperature": 0.6,
+    "concurrency": 2,
+    "timeout_secs": 30,
+    "stats": {
+      "total_models_in_tags": 19,
+      "selected_models": 19,
+      "results": 19,
+      "ok": 7,
+      "fail": 12,
+      "http_status_counts": {
+        "403": 12,
+        "200": 7
+      },
+      "family_counts": {
+        "kimi": {
+          "count": 3,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "kimi-k2.6",
+            "kimi-k2.7-code",
+            "kimi-k3"
+          ],
+          "subscription_models_count": 3
+        },
+        "deepseek": {
+          "count": 4,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "deepseek-v4-flash:0731",
+            "deepseek-v4-flash:preview",
+            "deepseek-v4-pro:0813",
+            "deepseek-v4-pro:preview"
+          ],
+          "subscription_models_count": 4
+        },
+        "nemotron": {
+          "count": 3,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "minimax": {
+          "count": 2,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "minimax-m2.7"
+          ],
+          "subscription_models_count": 1
+        },
+        "mistral": {
+          "count": 1,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "mistral-large-3:675b"
+          ],
+          "subscription_models_count": 1
+        },
+        "qwen": {
+          "count": 1,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "qwen3.5:397b"
+          ],
+          "subscription_models_count": 1
+        },
+        "glm": {
+          "count": 2,
+          "has_subscription_required": true,
+          "subscription_models": [
+            "glm-5.1",
+            "glm-5.2"
+          ],
+          "subscription_models_count": 2
+        },
+        "gpt": {
+          "count": 2,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        },
+        "gemma": {
+          "count": 1,
+          "has_subscription_required": false,
+          "subscription_models": [],
+          "subscription_models_count": 0
+        }
+      },
+      "subscription_required_families": [
+        "deepseek",
+        "glm",
+        "kimi",
+        "minimax",
+        "mistral",
+        "qwen"
+      ]
+    }
+  },
+  "results": [
+    {
+      "model": "kimi-k2.6",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "4764ecb21f85",
+        "modified_at": "2026-04-20T00:00:00Z",
+        "size": 595148192736,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:54.402665+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 30905747-6c31-458e-b140-92d1dcb10e2e)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "kimi-k2.7-code",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "1a7e88d8c572",
+        "modified_at": "2026-06-12T00:00:00Z",
+        "size": 595148192736,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:54.403276+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 36ced1f4-6f7a-4445-aac6-a2fe7f2968b8)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4-pro:0813",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "db976f1eacdd",
+        "modified_at": "2026-08-13T08:00:00-07:00",
+        "size": 892744322880,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:54.710221+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 92e5070d-185b-4804-82e5-5130f3da2d9d)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4-flash:preview",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "ac252c581d64",
+        "modified_at": "2026-04-24T00:00:00Z",
+        "size": 140000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:54.745766+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: a6b1a9e9-1361-428d-afaa-0f50b802b62a)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4-flash:0731",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "4de9bf66c0eb",
+        "modified_at": "2026-07-31T08:00:00-07:00",
+        "size": 166878536440,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:55.023498+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: fea6e34b-4845-4582-86ac-58df4cb551fe)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "nemotron-3-nano:30b",
+      "model_family": "nemotron",
+      "tag": {
+        "digest": "a4b4f1851393",
+        "modified_at": "2025-12-15T00:00:00Z",
+        "size": 32645090390,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:33:55.666670+00:00",
+      "response_json": {
+        "id": "chatcmpl-760",
+        "object": "chat.completion",
+        "created": 1786973635,
+        "model": "nemotron-3-nano:30b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello!",
+              "reasoning": "The user says: \"Hello! Reply with a short answer.\" They want a short answer. Probably something like \"Hi there!\" or \"Hello!\" Should be short. Probably just \"Hello!\" or \"Hi!\" Let's respond with a short answer. Probably \"Hello!\" is fine."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 25,
+          "completion_tokens": 63,
+          "total_tokens": 88
+        }
+      }
+    },
+    {
+      "model": "minimax-m3",
+      "model_family": "minimax",
+      "tag": {
+        "digest": "9ce5291d9c0e",
+        "modified_at": "2026-06-01T00:00:00Z",
+        "size": 0,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:33:55.916751+00:00",
+      "response_json": {
+        "id": "chatcmpl-680",
+        "object": "chat.completion",
+        "created": 1786973636,
+        "model": "minimax-m3",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you today?",
+              "reasoning": "The user is greeting me and asking for a short answer. I should respond in a friendly, brief manner.\n"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 184,
+          "completion_tokens": 33,
+          "total_tokens": 217
+        }
+      }
+    },
+    {
+      "model": "mistral-large-3:675b",
+      "model_family": "mistral",
+      "tag": {
+        "digest": "f7e3b2a16d5c",
+        "modified_at": "2025-12-02T00:00:00Z",
+        "size": 682000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:56.586113+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 669f337a-e245-44f4-b4b4-00143bec9be1)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "qwen3.5:397b",
+      "model_family": "qwen",
+      "tag": {
+        "digest": "b909ca2f1b7f",
+        "modified_at": "2026-02-16T00:00:00Z",
+        "size": 397000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:56.887403+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 58fda71a-c05f-410f-a7f6-3fb9aa8a941f)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "glm-5.2",
+      "model_family": "glm",
+      "tag": {
+        "digest": "f553240f6dc4",
+        "modified_at": "2026-06-16T08:00:00-07:00",
+        "size": 0,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:57.855274+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 2c302547-136e-42b0-8676-d4fc8faecf09)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "glm-5.1",
+      "model_family": "glm",
+      "tag": {
+        "digest": "882e35812821",
+        "modified_at": "2026-04-07T08:00:00-07:00",
+        "size": 1507728316928,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:57.934872+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: a0b6aef3-6842-4830-a844-b574b0355872)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "gpt-oss:120b",
+      "model_family": "gpt",
+      "tag": {
+        "digest": "d98fe6ba01e6",
+        "modified_at": "2025-08-05T00:00:00Z",
+        "size": 65290180781,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:33:58.165858+00:00",
+      "response_json": {
+        "id": "chatcmpl-582",
+        "object": "chat.completion",
+        "created": 1786973638,
+        "model": "gpt-oss:120b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you?",
+              "reasoning": "The user wants a short answer. Probably just \"Hi!\" or something. They said \"Hello! Reply with a short answer.\" So respond short."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 75,
+          "completion_tokens": 48,
+          "total_tokens": 123
+        }
+      }
+    },
+    {
+      "model": "kimi-k3",
+      "model_family": "kimi",
+      "tag": {
+        "digest": "d189309738f0",
+        "modified_at": "2026-07-27T08:00:00-07:00",
+        "size": 1560860324864,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:58.269486+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires both a Pro, Max, or Team plan and extra usage (it does not use included plan usage), upgrade for access: https://ollama.com/upgrade then add extra usage: https://ollama.com/settings (ref: e7da0212-cb35-4f15-9f87-d65e15ade70f)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "deepseek-v4-pro:preview",
+      "model_family": "deepseek",
+      "tag": {
+        "digest": "079ba36ea28c",
+        "modified_at": "2026-04-24T00:00:00Z",
+        "size": 1600000000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:33:58.581146+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: 61bef3e7-8cd4-4b41-88c2-5aa38553f417)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "gpt-oss:20b",
+      "model_family": "gpt",
+      "tag": {
+        "digest": "05afbac4bad6",
+        "modified_at": "2025-08-05T00:00:00Z",
+        "size": 13780162412,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:33:59.521450+00:00",
+      "response_json": {
+        "id": "chatcmpl-938",
+        "object": "chat.completion",
+        "created": 1786973639,
+        "model": "gpt-oss:20b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello!",
+              "reasoning": "User: \"Hello! Reply with a short answer.\" They want a short answer. Probably \"Hello!\" or \"Hi!\" But short answer. The instruction: \"Reply with a short answer.\" So just a short answer. Probably \"Hello!\" or \"Hi!\" Let's reply with \"Hello!\""
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 75,
+          "completion_tokens": 71,
+          "total_tokens": 146
+        }
+      }
+    },
+    {
+      "model": "minimax-m2.7",
+      "model_family": "minimax",
+      "tag": {
+        "digest": "d1008bea3761",
+        "modified_at": "2026-03-18T00:00:00Z",
+        "size": 480836588544,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 403,
+      "ok": false,
+      "collected_at": "2026-08-17T13:34:00.097295+00:00",
+      "response_json": {
+        "error": {
+          "message": "this model requires a subscription, upgrade for access: https://ollama.com/upgrade (ref: cd6d9f5f-a99f-4360-98c4-e3dbe7a20f8d)",
+          "type": "api_error",
+          "param": null,
+          "code": null
+        }
+      }
+    },
+    {
+      "model": "gemma4:31b",
+      "model_family": "gemma",
+      "tag": {
+        "digest": "221b330d11a8",
+        "modified_at": "2026-04-02T09:00:00-08:00",
+        "size": 62546177752,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:34:00.412111+00:00",
+      "response_json": {
+        "id": "chatcmpl-698",
+        "object": "chat.completion",
+        "created": 1786973641,
+        "model": "gemma4:31b",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you?"
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 21,
+          "completion_tokens": 9,
+          "total_tokens": 30
+        }
+      }
+    },
+    {
+      "model": "nemotron-3-ultra",
+      "model_family": "nemotron",
+      "tag": {
+        "digest": "4eecabff7a75",
+        "modified_at": "2026-06-04T00:00:00Z",
+        "size": 0,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:34:00.877527+00:00",
+      "response_json": {
+        "id": "chatcmpl-358",
+        "object": "chat.completion",
+        "created": 1786973640,
+        "model": "nemotron-3-ultra",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello! How can I help you today?",
+              "reasoning": "The user wants a short answer to \"Hello!\".\nA simple greeting back is appropriate."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 25,
+          "completion_tokens": 29,
+          "total_tokens": 54
+        }
+      }
+    },
+    {
+      "model": "nemotron-3-super",
+      "model_family": "nemotron",
+      "tag": {
+        "digest": "da11955bb451",
+        "modified_at": "2026-03-11T00:00:00Z",
+        "size": 230500000000,
+        "details": {
+          "parent_model": "",
+          "format": "",
+          "family": "",
+          "families": null,
+          "parameter_size": "",
+          "quantization_level": ""
+        }
+      },
+      "http_status": 200,
+      "ok": true,
+      "collected_at": "2026-08-17T13:34:02.261825+00:00",
+      "response_json": {
+        "id": "chatcmpl-968",
+        "object": "chat.completion",
+        "created": 1786973642,
+        "model": "nemotron-3-super",
+        "system_fingerprint": "fp_ollama",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Hello!",
+              "reasoning": "The user says: \"Hello! Reply with a short answer.\" So we need to reply with a short answer. Likely just \"Hello!\" or something short. Probably just \"Hi!\" We'll keep it short."
+            },
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 25,
+          "completion_tokens": 49,
+          "total_tokens": 74
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,3142 @@
+{
+  "collected_at": "2026-08-17T13:03:49.375746+00:00",
+  "provider": "alibaba",
+  "cutoff": "2025-08-17",
+  "within_days": 365,
+  "date_meaning": "earliest reliable source (not gateway)",
+  "stats": {
+    "total": 238,
+    "kept": 195,
+    "dropped": 43,
+    "pending": 75,
+    "status": {
+      "kept": 120,
+      "pending": 75,
+      "dropped": 43
+    },
+    "date_source": {
+      "openrouter": 51,
+      "changelog": 21,
+      "id_iso": 64,
+      "none": 98,
+      "id_yymm": 4
+    }
+  },
+  "models": [
+    {
+      "model": "deepseek-v4-pro-0813",
+      "gateway_created": "2026-08-14",
+      "detail": null,
+      "date": "2026-08-12",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-08-13",
+        "openrouter": "2026-08-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.8-2.4t-a95b",
+      "gateway_created": "2026-08-13",
+      "detail": null,
+      "date": "2026-08-12",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-08-13",
+        "openrouter": "2026-08-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-3.0-pro",
+      "gateway_created": "2026-08-13",
+      "detail": null,
+      "date": "2026-08-04",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-08-04"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-3.0",
+      "gateway_created": "2026-08-11",
+      "detail": null,
+      "date": "2026-08-04",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-08-04"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.8-max",
+      "gateway_created": "2026-08-07",
+      "detail": null,
+      "date": "2026-08-03",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-08-03",
+        "openrouter": "2026-08-03"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "deepseek-v4-flash-0731",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-07-31",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-08-01",
+        "openrouter": "2026-07-31"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-audio-3.0-asr-flash",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": "2026-07-30",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-07-30"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-flash-2026-07-15",
+      "gateway_created": "2026-07-27",
+      "detail": null,
+      "date": "2026-07-15",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-07-25",
+        "id_iso": "2026-07-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-flash",
+      "gateway_created": "2026-07-28",
+      "detail": null,
+      "date": "2026-07-25",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-07-25",
+        "openrouter": "2026-07-27",
+        "sibling_snapshot": "2026-07-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi/kimi-k3",
+      "gateway_created": "2026-08-10",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-07-16",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-07-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-text-embedding",
+      "gateway_created": "2026-07-15",
+      "detail": null,
+      "date": "2026-08-11",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-08-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-audio-3.0-realtime-flash",
+      "gateway_created": "2026-07-20",
+      "detail": null,
+      "date": "2026-08-10",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-08-10"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-audio-3.0-realtime-plus",
+      "gateway_created": "2026-07-20",
+      "detail": null,
+      "date": "2026-08-10",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-08-10"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "glm-5.2-fast-preview",
+      "gateway_created": "2026-07-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "kimi/kimi-k2.7-code-highspeed",
+      "gateway_created": "2026-08-10",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "xiaomi/mimo-v2.5-pro",
+      "gateway_created": "2026-07-10",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-04-22",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-04-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/MiniMax-M3",
+      "gateway_created": "2026-08-17",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-05-31",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-05-31"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "ZHIPU/GLM-5.2",
+      "gateway_created": "2026-08-17",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-06-16",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-08-10",
+        "openrouter": "2026-06-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-2.0-pro-2026-06-22",
+      "gateway_created": "2026-07-02",
+      "detail": null,
+      "date": "2026-06-22",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-06-25",
+        "id_iso": "2026-06-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "test-sre-gpu-auto-handle",
+      "gateway_created": "2026-06-22",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "fun-asr-flash-2026-06-15",
+      "gateway_created": "2026-06-17",
+      "detail": null,
+      "date": "2026-06-15",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-06-17",
+        "id_iso": "2026-06-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "glm-5.2",
+      "gateway_created": "2026-08-13",
+      "detail": null,
+      "date": "2026-06-16",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-06-26",
+        "openrouter": "2026-06-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi/kimi-k2.7-code",
+      "gateway_created": "2026-08-10",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-06-12",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-06-26",
+        "openrouter": "2026-06-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi-k2.7-code",
+      "gateway_created": "2026-07-27",
+      "detail": null,
+      "date": "2026-06-12",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-06-26",
+        "openrouter": "2026-06-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "sre-gpu-auto-handle",
+      "gateway_created": "2026-06-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-max-2026-06-08",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-06-08",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-06-10",
+        "id_iso": "2026-06-08"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-ocr",
+      "gateway_created": "2026-06-15",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-plus-2026-05-26",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-05-26",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-06-01",
+        "id_iso": "2026-05-26"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-plus",
+      "gateway_created": "2026-08-13",
+      "detail": null,
+      "date": "2026-06-01",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-06-01",
+        "openrouter": "2026-06-03",
+        "sibling_snapshot": "2026-05-26"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-max-2026-05-17",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-05-17",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-05-25",
+        "id_iso": "2026-05-17"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-max-preview",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-05-25",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-05-25"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "ZHIPU/GLM-5",
+      "gateway_created": "2026-05-25",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-02-11",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-max-2026-05-20",
+      "gateway_created": "2026-07-05",
+      "detail": null,
+      "date": "2026-05-20",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-05-21",
+        "id_iso": "2026-05-20"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.7-max",
+      "gateway_created": "2026-08-13",
+      "detail": null,
+      "date": "2026-05-21",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-05-21",
+        "openrouter": "2026-05-21",
+        "sibling_snapshot": "2026-06-08"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-livetranslate-flash-realtime-2026-05-19",
+      "gateway_created": "2026-05-19",
+      "detail": null,
+      "date": "2026-05-19",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-05-22",
+        "id_iso": "2026-05-19"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-livetranslate-flash-realtime",
+      "gateway_created": "2026-05-19",
+      "detail": null,
+      "date": "2026-05-22",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-05-22",
+        "sibling_snapshot": "2026-05-19"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "ZHIPU/GLM-5.1",
+      "gateway_created": "2026-05-19",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-04-07",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-05-27",
+        "openrouter": "2026-04-07"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi/kimi-k2.6",
+      "gateway_created": "2026-08-10",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-04-20",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-04-20"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "deepseek-v4-flash",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-04-24",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-05-11",
+        "openrouter": "2026-04-24"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "gateway_created": "2026-08-14",
+      "detail": null,
+      "date": "2026-04-24",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-05-11",
+        "openrouter": "2026-04-24"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-2.0-pro-2026-04-22",
+      "gateway_created": "2026-04-23",
+      "detail": null,
+      "date": "2026-04-22",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-04-23",
+        "id_iso": "2026-04-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-plus-2026-04-20",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-04-20",
+      "source": "id_iso",
+      "sources": {
+        "changelog": "2026-04-23",
+        "id_iso": "2026-04-20",
+        "openrouter": "2026-04-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-27b",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2026-04-23",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-23",
+        "openrouter": "2026-04-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi-k2.6",
+      "gateway_created": "2026-07-25",
+      "detail": null,
+      "date": "2026-04-20",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-04-20"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-max-preview",
+      "gateway_created": "2026-07-29",
+      "detail": null,
+      "date": "2026-04-20",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-20",
+        "openrouter": "2026-04-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-35b-a3b",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-04-16",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-16",
+        "openrouter": "2026-04-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-flash-2026-04-16",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-04-16",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-16",
+        "id_iso": "2026-04-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-flash",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": "2026-04-16",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-16",
+        "openrouter": "2026-04-27",
+        "sibling_snapshot": "2026-04-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "glm-5.1",
+      "gateway_created": "2026-07-26",
+      "detail": null,
+      "date": "2026-04-07",
+      "source": "openrouter",
+      "sources": {
+        "changelog": "2026-05-27",
+        "openrouter": "2026-04-07"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "vanchin/deepseek-v3.1-terminus",
+      "gateway_created": "2026-04-14",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-09-22",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "vanchin/deepseek-v3",
+      "gateway_created": "2026-04-14",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "vanchin/deepseek-r1",
+      "gateway_created": "2026-04-14",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-01-20",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-01-20"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "vanchin/deepseek-ocr",
+      "gateway_created": "2026-04-14",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "vanchin/deepseek-v3.2-think",
+      "gateway_created": "2026-04-14",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-plus-realtime-2026-03-15",
+      "gateway_created": "2026-04-17",
+      "detail": null,
+      "date": "2026-03-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-plus-realtime",
+      "gateway_created": "2026-04-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-plus-2026-03-15",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2026-03-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-plus",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-flash-realtime-2026-03-15",
+      "gateway_created": "2026-04-16",
+      "detail": null,
+      "date": "2026-03-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-flash-realtime",
+      "gateway_created": "2026-04-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-flash-2026-03-15",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-03-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-omni-flash",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-03-15"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-plus-2026-04-02",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-04-02",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-02",
+        "id_iso": "2026-04-02"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.6-plus",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-04-02",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-02",
+        "openrouter": "2026-04-02",
+        "sibling_snapshot": "2026-04-02"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "wan2.7-image-pro",
+      "gateway_created": "2026-06-05",
+      "detail": null,
+      "date": "2026-04-01",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "wan2.7-image",
+      "gateway_created": "2026-06-08",
+      "detail": null,
+      "date": "2026-04-01",
+      "source": "changelog",
+      "sources": {
+        "changelog": "2026-04-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/MiniMax-M2.7",
+      "gateway_created": "2026-08-17",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-03-18",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-03-18"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/speech-2.8-hd",
+      "gateway_created": "2026-03-20",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/speech-2.8-turbo",
+      "gateway_created": "2026-03-20",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/speech-02-turbo",
+      "gateway_created": "2026-03-20",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/speech-02-hd",
+      "gateway_created": "2026-03-20",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-deep-research-2025-12-15",
+      "gateway_created": "2026-03-19",
+      "detail": null,
+      "date": "2025-12-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-2.0-2026-03-03",
+      "gateway_created": "2026-03-03",
+      "detail": null,
+      "date": "2026-03-03",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-03-03"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-2.0-pro",
+      "gateway_created": "2026-03-03",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-06-22"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-2.0-pro-2026-03-03",
+      "gateway_created": "2026-03-03",
+      "detail": null,
+      "date": "2026-03-03",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-03-03"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-2.0",
+      "gateway_created": "2026-03-03",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-03-03"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-asr-flash-2026-02-10",
+      "gateway_created": "2026-03-03",
+      "detail": null,
+      "date": "2026-02-10",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-02-10"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "glm-5",
+      "gateway_created": "2026-07-29",
+      "detail": null,
+      "date": "2026-02-11",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-flash-character-2026-02-26",
+      "gateway_created": "2026-02-28",
+      "detail": null,
+      "date": "2026-02-26",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-02-26"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "MiniMax-M2.5",
+      "gateway_created": "2026-07-02",
+      "detail": null,
+      "date": "2026-02-12",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-flash-2026-02-23",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2026-02-23",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-02-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-flash",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-02-23"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-122b-a10b",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2026-02-25",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-25"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-35b-a3b",
+      "gateway_created": "2026-06-22",
+      "detail": null,
+      "date": "2026-02-25",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-25"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-27b",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2026-02-25",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-25"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-coder-next",
+      "gateway_created": "2026-03-02",
+      "detail": null,
+      "date": "2026-02-04",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-04"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-397b-a17b",
+      "gateway_created": "2026-07-31",
+      "detail": null,
+      "date": "2026-02-16",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-plus-2026-02-15",
+      "gateway_created": "2026-08-10",
+      "detail": null,
+      "date": "2026-02-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-02-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3.5-plus",
+      "gateway_created": "2026-08-14",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-04-20"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-asr-flash-realtime-2026-02-10",
+      "gateway_created": "2026-02-28",
+      "detail": null,
+      "date": "2026-02-10",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-02-10"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/MiniMax-M2.1",
+      "gateway_created": "2026-02-13",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-12-23",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-12-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "MiniMax/MiniMax-M2.5",
+      "gateway_created": "2026-08-17",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-02-12",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-02-12"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi/kimi-k2.5",
+      "gateway_created": "2026-02-13",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2026-01-27",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-01-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-vd-2026-01-26",
+      "gateway_created": "2026-02-10",
+      "detail": null,
+      "date": "2026-01-26",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-26"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-instruct-flash-2026-01-26",
+      "gateway_created": "2026-02-10",
+      "detail": null,
+      "date": "2026-01-26",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-26"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-instruct-flash",
+      "gateway_created": "2026-02-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-01-26"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-vc-2026-01-22",
+      "gateway_created": "2026-02-10",
+      "detail": null,
+      "date": "2026-01-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "glm-4.7",
+      "gateway_created": "2026-08-01",
+      "detail": null,
+      "date": "2025-12-22",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-12-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-max",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": "2025-09-23",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-23",
+        "sibling_snapshot": "2026-01-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-instruct-flash-realtime-2026-01-22",
+      "gateway_created": "2026-02-04",
+      "detail": null,
+      "date": "2026-01-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-instruct-flash-realtime",
+      "gateway_created": "2026-02-04",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-01-22"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-vd-realtime-2026-01-15",
+      "gateway_created": "2026-02-02",
+      "detail": null,
+      "date": "2026-01-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi-k2.5",
+      "gateway_created": "2026-08-06",
+      "detail": null,
+      "date": "2026-01-27",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2026-01-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "tongyi-xiaomi-analysis-flash",
+      "gateway_created": "2026-02-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "tongyi-xiaomi-analysis-pro",
+      "gateway_created": "2026-02-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "siliconflow/deepseek-v3.2",
+      "gateway_created": "2026-01-28",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-12-01",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "siliconflow/deepseek-v3.1-terminus",
+      "gateway_created": "2026-01-28",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-09-22",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "siliconflow/deepseek-v3-0324",
+      "gateway_created": "2026-01-28",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "siliconflow/deepseek-r1-0528",
+      "gateway_created": "2026-01-28",
+      "detail": "HTTP Error 401: Unauthorized",
+      "date": "2025-05-28",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-05-28"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "MiniMax-M2.1",
+      "gateway_created": "2026-03-16",
+      "detail": null,
+      "date": "2025-12-23",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-12-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-vl-flash-2026-01-22",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2026-01-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-max-2026-01-23",
+      "gateway_created": "2026-02-11",
+      "detail": null,
+      "date": "2026-01-23",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-vc-realtime-2026-01-15",
+      "gateway_created": "2026-01-17",
+      "detail": null,
+      "date": "2026-01-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-edit-max-2026-01-16",
+      "gateway_created": "2026-01-16",
+      "detail": null,
+      "date": "2026-01-16",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-edit-max",
+      "gateway_created": "2026-01-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-01-16"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-plus-2026-01-09",
+      "gateway_created": "2026-01-09",
+      "detail": null,
+      "date": "2026-01-09",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2026-01-09"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-flash-character",
+      "gateway_created": "2026-04-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-02-26"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-max-2025-12-30",
+      "gateway_created": "2025-12-30",
+      "detail": null,
+      "date": "2025-12-30",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-30"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-max",
+      "gateway_created": "2025-12-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-12-30"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-flash",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "z-image-turbo",
+      "gateway_created": "2025-12-19",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-vl-plus-2025-12-19",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2025-12-19",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-19"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-vd-realtime-2025-12-16",
+      "gateway_created": "2026-04-27",
+      "detail": null,
+      "date": "2025-12-16",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-16"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-edit-plus-2025-12-15",
+      "gateway_created": "2025-12-15",
+      "detail": null,
+      "date": "2025-12-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "deepseek-v3.2",
+      "gateway_created": "2026-07-31",
+      "detail": null,
+      "date": "2025-12-01",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-omni-flash-2025-12-01",
+      "gateway_created": "2026-01-16",
+      "detail": null,
+      "date": "2025-12-01",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-omni-flash-realtime-2025-12-01",
+      "gateway_created": "2026-01-16",
+      "detail": null,
+      "date": "2025-12-01",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-livetranslate-flash-2025-12-01",
+      "gateway_created": "2025-12-03",
+      "detail": null,
+      "date": "2025-12-01",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-livetranslate-flash",
+      "gateway_created": "2025-12-04",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-plus-2025-12-01",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": "2025-12-01",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-vc-realtime-2025-11-27",
+      "gateway_created": "2025-11-26",
+      "detail": null,
+      "date": "2025-11-27",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-11-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-flash-2025-11-27",
+      "gateway_created": "2025-11-26",
+      "detail": null,
+      "date": "2025-11-27",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-11-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-flash-realtime-2025-11-27",
+      "gateway_created": "2025-11-26",
+      "detail": null,
+      "date": "2025-11-27",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-11-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-plus-2025-11-05",
+      "gateway_created": "2025-11-25",
+      "detail": null,
+      "date": "2025-11-05",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-11-05"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-mt-lite",
+      "gateway_created": "2025-11-20",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-vl-ocr-2025-11-20",
+      "gateway_created": "2026-07-16",
+      "detail": null,
+      "date": "2025-11-20",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-11-20"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "kimi-k2-thinking",
+      "gateway_created": "2026-03-16",
+      "detail": null,
+      "date": "2025-11-06",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-11-06"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-mt-flash",
+      "gateway_created": "2025-11-06",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "gui-plus",
+      "gateway_created": "2025-11-05",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-edit-plus-2025-10-30",
+      "gateway_created": "2025-10-30",
+      "detail": null,
+      "date": "2025-10-30",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-10-30"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-image-edit-plus",
+      "gateway_created": "2025-11-24",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-12-15"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-deep-search-planning",
+      "gateway_created": "2025-10-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-asr-flash-realtime-2025-10-27",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": "2025-10-27",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-10-27"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-asr-flash-realtime",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-02-10"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-vl-flash",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2026-01-22"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-vl-flash-2025-10-15",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2025-10-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-10-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-flash",
+      "gateway_created": "2026-01-05",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-11-27"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-flash-2025-09-18",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": "2025-09-18",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-18"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-flash-realtime-2025-09-18",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": "2025-09-18",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-18"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-tts-flash-realtime",
+      "gateway_created": "2026-01-05",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-11-27"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-omni-flash-realtime",
+      "gateway_created": "2026-01-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-omni-flash",
+      "gateway_created": "2026-07-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-12-01"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-omni-flash-2025-09-15",
+      "gateway_created": "2025-10-27",
+      "detail": null,
+      "date": "2025-09-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-omni-flash-realtime-2025-09-15",
+      "gateway_created": "2025-10-27",
+      "detail": null,
+      "date": "2025-09-15",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-15"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-s2s-flash-realtime-2025-09-22",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": "2025-09-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-livetranslate-flash-realtime",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-09-22"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-livetranslate-flash-realtime-2025-09-22",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": "2025-09-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-22"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-turbo-2024-11-01",
+      "gateway_created": "2025-10-14",
+      "detail": null,
+      "date": "2024-11-01",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2024-11-01"
+      },
+      "drop_reason": "id_iso",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-plus-2025-01-25",
+      "gateway_created": "2025-10-14",
+      "detail": null,
+      "date": "2025-01-25",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-01-25"
+      },
+      "drop_reason": "id_iso",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwq-plus",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qvq-max",
+      "gateway_created": "2025-10-14",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-omni-turbo",
+      "gateway_created": "2026-01-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-plus-2025-04-28",
+      "gateway_created": "2025-10-14",
+      "detail": null,
+      "date": "2025-04-28",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-04-28"
+      },
+      "drop_reason": "id_iso",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-235b-a22b-instruct-2507",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2025-07-01",
+      "source": "id_yymm",
+      "sources": {
+        "id_yymm": "2025-07-01"
+      },
+      "drop_reason": "id_yymm",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-235b-a22b-thinking-2507",
+      "gateway_created": "2025-10-27",
+      "detail": null,
+      "date": "2025-07-01",
+      "source": "id_yymm",
+      "sources": {
+        "id_yymm": "2025-07-01",
+        "openrouter": "2025-07-25"
+      },
+      "drop_reason": "id_yymm",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-30b-a3b-thinking-2507",
+      "gateway_created": "2025-10-14",
+      "detail": null,
+      "date": "2025-07-01",
+      "source": "id_yymm",
+      "sources": {
+        "id_yymm": "2025-07-01",
+        "openrouter": "2025-08-28"
+      },
+      "drop_reason": "id_yymm",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2025-07-01",
+      "source": "id_yymm",
+      "sources": {
+        "id_yymm": "2025-07-01",
+        "openrouter": "2025-07-29"
+      },
+      "drop_reason": "id_yymm",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-coder-flash",
+      "gateway_created": "2026-02-03",
+      "detail": null,
+      "date": "2025-09-17",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-17"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-coder-plus-2025-09-23",
+      "gateway_created": "2025-12-03",
+      "detail": null,
+      "date": "2025-09-23",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-max-2025-09-23",
+      "gateway_created": "2026-02-26",
+      "detail": null,
+      "date": "2025-09-23",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-vl-plus",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-12-19"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-vl-plus-2025-09-23",
+      "gateway_created": "2026-07-03",
+      "detail": null,
+      "date": "2025-09-23",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen-plus-2025-09-11",
+      "gateway_created": "2025-09-12",
+      "detail": null,
+      "date": "2025-09-11",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-09-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-next-80b-a3b-thinking",
+      "gateway_created": "2026-08-12",
+      "detail": null,
+      "date": "2025-09-11",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-next-80b-a3b-instruct",
+      "gateway_created": "2026-07-02",
+      "detail": null,
+      "date": "2025-09-11",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-11"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-max-preview",
+      "gateway_created": "2026-07-06",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "deepseek-v3.1",
+      "gateway_created": "2026-06-22",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen3-coder-plus",
+      "gateway_created": "2026-07-29",
+      "detail": null,
+      "date": "2025-09-23",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-09-23",
+        "sibling_snapshot": "2025-09-23"
+      },
+      "drop_reason": null,
+      "status": "kept",
+      "keep": true
+    },
+    {
+      "model": "qwen3-coder-plus-2025-07-22",
+      "gateway_created": "2025-08-20",
+      "detail": null,
+      "date": "2025-07-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-07-22"
+      },
+      "drop_reason": "id_iso",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-plus-2025-07-14",
+      "gateway_created": "2026-05-25",
+      "detail": null,
+      "date": "2025-07-14",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-07-14"
+      },
+      "drop_reason": "id_iso",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-coder-480b-a35b-instruct",
+      "gateway_created": "2025-10-17",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-mt-turbo",
+      "gateway_created": "2025-10-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-mt-plus",
+      "gateway_created": "2025-10-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-tts-2025-05-22",
+      "gateway_created": "2025-11-13",
+      "detail": null,
+      "date": "2025-05-22",
+      "source": "id_iso",
+      "sources": {
+        "id_iso": "2025-05-22"
+      },
+      "drop_reason": "id_iso",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qvq-plus",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-32b",
+      "gateway_created": "2025-12-26",
+      "detail": null,
+      "date": "2025-04-28",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-04-28"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-30b-a3b",
+      "gateway_created": "2025-12-30",
+      "detail": null,
+      "date": "2025-04-28",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-04-28"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-235b-a22b",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": "2025-04-28",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-04-28"
+      },
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-14b",
+      "gateway_created": "2025-10-17",
+      "detail": null,
+      "date": "2025-04-28",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-04-28"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen3-8b",
+      "gateway_created": "2025-09-23",
+      "detail": null,
+      "date": "2025-04-28",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-04-28"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-v3",
+      "gateway_created": "2026-07-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "deepseek-r1-distill-llama-70b",
+      "gateway_created": "2025-09-09",
+      "detail": null,
+      "date": "2025-01-23",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-01-23"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-r1-distill-qwen-32b",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-r1-distill-qwen-14b",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-r1-distill-llama-8b",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-r1-distill-qwen-1.5b",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-r1-distill-qwen-7b",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "deepseek-r1",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": "2025-01-20",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-01-20"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen1.5-7b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-vl-ocr-latest",
+      "gateway_created": "2026-07-16",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-vl-ocr",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2025-11-20"
+      },
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-coder-plus-1106",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-coder-plus",
+      "gateway_created": "2025-07-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen2.5-1.5b-instruct",
+      "gateway_created": "2025-09-09",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen2.5-math-1.5b-instruct",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-turbo-0919",
+      "gateway_created": "2026-02-03",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen2.5-0.5b-instruct",
+      "gateway_created": "2025-09-09",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-math-plus",
+      "gateway_created": "2025-08-01",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-plus-latest",
+      "gateway_created": "2026-06-11",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-math-turbo",
+      "gateway_created": "2025-08-01",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-math-plus-latest",
+      "gateway_created": "2025-08-01",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-math-plus-0919",
+      "gateway_created": "2025-08-01",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-coder-turbo",
+      "gateway_created": "2025-08-01",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen2-1.5b-instruct",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen2-7b-instruct",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen2-57b-a14b-instruct",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen2-0.5b-instruct",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-long",
+      "gateway_created": "2026-07-10",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-vl-max",
+      "gateway_created": "2026-07-02",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-vl-plus",
+      "gateway_created": "2026-08-03",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen1.5-110b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "codeqwen1.5-7b-chat",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen1.5-0.5b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-1.8b-chat",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-1.8b-longcontext-chat",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-7b-chat",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-14b-chat",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-72b-chat",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-max-longcontext",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen1.5-72b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen1.5-1.8b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen1.5-32b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen1.5-14b-chat",
+      "gateway_created": "2026-03-31",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-max-1201",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-max-0107",
+      "gateway_created": "2024-04-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": "gateway_created",
+      "status": "dropped",
+      "keep": false
+    },
+    {
+      "model": "qwen-max",
+      "gateway_created": "2026-07-29",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {},
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-turbo",
+      "gateway_created": "2026-07-02",
+      "detail": null,
+      "date": null,
+      "source": null,
+      "sources": {
+        "sibling_snapshot": "2024-11-01"
+      },
+      "drop_reason": null,
+      "status": "pending",
+      "keep": true
+    },
+    {
+      "model": "qwen-plus",
+      "gateway_created": "2026-07-30",
+      "detail": null,
+      "date": "2025-02-01",
+      "source": "openrouter",
+      "sources": {
+        "openrouter": "2025-02-01",
+        "sibling_snapshot": "2025-12-01"
+      },
+      "drop_reason": "openrouter",
+      "status": "dropped",
+      "keep": false
+    }
+  ],
+  "pending": [
+    "glm-5.2-fast-preview",
+    "kimi/kimi-k2.7-code-highspeed",
+    "test-sre-gpu-auto-handle",
+    "sre-gpu-auto-handle",
+    "qwen3.5-ocr",
+    "vanchin/deepseek-v3",
+    "vanchin/deepseek-ocr",
+    "vanchin/deepseek-v3.2-think",
+    "qwen3.5-omni-plus-realtime",
+    "qwen3.5-omni-plus",
+    "qwen3.5-omni-flash-realtime",
+    "qwen3.5-omni-flash",
+    "MiniMax/speech-2.8-hd",
+    "MiniMax/speech-2.8-turbo",
+    "MiniMax/speech-02-turbo",
+    "MiniMax/speech-02-hd",
+    "qwen-image-2.0-pro",
+    "qwen-image-2.0",
+    "qwen3.5-flash",
+    "qwen3.5-plus",
+    "qwen3-tts-instruct-flash",
+    "qwen3-tts-instruct-flash-realtime",
+    "tongyi-xiaomi-analysis-flash",
+    "tongyi-xiaomi-analysis-pro",
+    "siliconflow/deepseek-v3-0324",
+    "qwen-image-edit-max",
+    "qwen-flash-character",
+    "qwen-image-max",
+    "qwen-flash",
+    "z-image-turbo",
+    "qwen3-livetranslate-flash",
+    "qwen-mt-lite",
+    "qwen-mt-flash",
+    "gui-plus",
+    "qwen-image-edit-plus",
+    "qwen-deep-search-planning",
+    "qwen3-asr-flash-realtime",
+    "qwen3-vl-flash",
+    "qwen3-tts-flash",
+    "qwen3-tts-flash-realtime",
+    "qwen3-omni-flash-realtime",
+    "qwen3-omni-flash",
+    "qwen3-livetranslate-flash-realtime",
+    "qwq-plus",
+    "qvq-max",
+    "qwen-omni-turbo",
+    "qwen3-vl-plus",
+    "qwen3-max-preview",
+    "deepseek-v3.1",
+    "qwen3-coder-480b-a35b-instruct",
+    "qwen-mt-turbo",
+    "qwen-mt-plus",
+    "deepseek-v3",
+    "qwen1.5-7b-chat",
+    "qwen-vl-ocr-latest",
+    "qwen2.5-1.5b-instruct",
+    "qwen2.5-math-1.5b-instruct",
+    "qwen-turbo-0919",
+    "qwen2.5-0.5b-instruct",
+    "qwen-plus-latest",
+    "qwen2-1.5b-instruct",
+    "qwen2-7b-instruct",
+    "qwen2-57b-a14b-instruct",
+    "qwen2-0.5b-instruct",
+    "qwen-long",
+    "qwen-vl-max",
+    "qwen-vl-plus",
+    "qwen1.5-110b-chat",
+    "qwen1.5-0.5b-chat",
+    "qwen1.5-72b-chat",
+    "qwen1.5-1.8b-chat",
+    "qwen1.5-32b-chat",
+    "qwen1.5-14b-chat",
+    "qwen-max",
+    "qwen-turbo"
+  ],
+  "dropped": [
+    "vanchin/deepseek-r1",
+    "siliconflow/deepseek-r1-0528",
+    "qwen-turbo-2024-11-01",
+    "qwen-plus-2025-01-25",
+    "qwen-plus-2025-04-28",
+    "qwen3-235b-a22b-instruct-2507",
+    "qwen3-235b-a22b-thinking-2507",
+    "qwen3-30b-a3b-thinking-2507",
+    "qwen3-30b-a3b-instruct-2507",
+    "qwen3-coder-plus-2025-07-22",
+    "qwen-plus-2025-07-14",
+    "qwen-tts-2025-05-22",
+    "qvq-plus",
+    "qwen3-32b",
+    "qwen3-30b-a3b",
+    "qwen3-235b-a22b",
+    "qwen3-14b",
+    "qwen3-8b",
+    "deepseek-r1-distill-llama-70b",
+    "deepseek-r1-distill-qwen-32b",
+    "deepseek-r1-distill-qwen-14b",
+    "deepseek-r1-distill-llama-8b",
+    "deepseek-r1-distill-qwen-1.5b",
+    "deepseek-r1-distill-qwen-7b",
+    "deepseek-r1",
+    "qwen-vl-ocr",
+    "qwen-coder-plus-1106",
+    "qwen-coder-plus",
+    "qwen-math-plus",
+    "qwen-math-turbo",
+    "qwen-math-plus-latest",
+    "qwen-math-plus-0919",
+    "qwen-coder-turbo",
+    "codeqwen1.5-7b-chat",
+    "qwen-1.8b-chat",
+    "qwen-1.8b-longcontext-chat",
+    "qwen-7b-chat",
+    "qwen-14b-chat",
+    "qwen-72b-chat",
+    "qwen-max-longcontext",
+    "qwen-max-1201",
+    "qwen-max-0107",
+    "qwen-plus"
+  ]
+}

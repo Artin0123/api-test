@@ -1,0 +1,164 @@
+{
+  "collected_at": "2026-08-17T13:17:12.368172+00:00",
+  "endpoint": "https://gpt-load-production-737b.up.railway.app/proxy/siliconflow-cn/chat/completions",
+  "total": 47,
+  "passed_count": 39,
+  "passed": [
+    {
+      "model": "meituan-longcat/LongCat-2.0",
+      "output": "493"
+    },
+    {
+      "model": "zai-org/GLM-5.2",
+      "output": "493"
+    },
+    {
+      "model": "moonshotai/Kimi-K2.7-Code",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-ai/DeepSeek-V4-Pro",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-ai/DeepSeek-V4-Flash",
+      "output": "493"
+    },
+    {
+      "model": "Pro/moonshotai/Kimi-K2.6",
+      "output": "493"
+    },
+    {
+      "model": "Pro/zai-org/GLM-5.1",
+      "output": "493"
+    },
+    {
+      "model": "nex-agi/Nex-N2-Pro",
+      "output": "493"
+    },
+    {
+      "model": "MiniMaxAI/MiniMax-M2.5",
+      "output": "493"
+    },
+    {
+      "model": "Pro/MiniMaxAI/MiniMax-M2.5",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-ai/DeepSeek-V3.2",
+      "output": "493"
+    },
+    {
+      "model": "Pro/deepseek-ai/DeepSeek-V3.2",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-ai/DeepSeek-V3.1-Terminus",
+      "output": "493 17 × 29 = 17 × (30 - 1) = (17 × 30) - (17 × 1)"
+    },
+    {
+      "model": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+      "output": "**493** **Calculation:** 17 × 29 = 17 × (30 − 1) ="
+    },
+    {
+      "model": "Qwen/Qwen3.6-35B-A3B",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3.6-27B",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3.5-122B-A10B",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3.5-35B-A3B",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3.5-27B",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3.5-9B",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3.5-4B",
+      "output": "493"
+    },
+    {
+      "model": "PaddlePaddle/PaddleOCR-VL-1.5",
+      "output": "67+"
+    },
+    {
+      "model": "stepfun-ai/Step-3.5-Flash",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-VL-32B-Instruct",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-VL-32B-Thinking",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-VL-8B-Instruct",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-VL-8B-Thinking",
+      "output": "To solve the multiplication problem $ 17 \\times 29"
+    },
+    {
+      "model": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-VL-30B-A3B-Thinking",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-Omni-30B-A3B-Thinking",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen3-Omni-30B-A3B-Captioner",
+      "output": "493"
+    },
+    {
+      "model": "deepseek-ai/DeepSeek-OCR",
+      "output": "Here is the expression: `17 \\times 29 = ?` To find"
+    },
+    {
+      "model": "inclusionAI/Ling-flash-2.0",
+      "output": "493"
+    },
+    {
+      "model": "inclusionAI/Ling-mini-2.0",
+      "output": "17 * 29 = 493."
+    },
+    {
+      "model": "tencent/Hunyuan-MT-7B",
+      "output": "17x29=<API> [Calculator(17*29)]->483 </API>"
+    },
+    {
+      "model": "ByteDance-Seed/Seed-OSS-36B-Instruct",
+      "output": "493"
+    },
+    {
+      "model": "THUDM/GLM-4-32B-0414",
+      "output": "493"
+    },
+    {
+      "model": "Qwen/Qwen2.5-72B-Instruct-128K",
+      "output": "493"
+    }
+  ]
+}

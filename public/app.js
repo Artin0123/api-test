@@ -2016,6 +2016,9 @@ function bindEvents() {
     renderDeadKeys();
   });
   dom.dkTableWrap.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest(".copy-btn");
+    if (copyBtn) return copyText(copyBtn.dataset.copyVal || "", copyBtn);
+
     const detailBtn = e.target.closest("[data-dk-detail]");
     if (detailBtn) {
       const rec = state.deadKeys.find(
