@@ -580,12 +580,33 @@ function normalizeErrorDetail(value) {
   return Object.keys(out).length ? out : null;
 }
 
-/** Reconcile the dead key list against one test run: every key that failed is
- *  recorded, every key that passed is dropped. The list therefore means "keys
- *  currently failing", not a permanent ledger — which is what lets us record any
- *  failure code, since a transient one (429, 500, 全网皆败) clears itself on the
- *  next run instead of parking a working key here forever. Removing the key from
- *  来源设定 stays a manual decision. */
+/** Providers store keys as a newline-separated string (normalizeKeys in app.js),
+ *  not an array. Union every card on this host so one upload cannot drop another
+ *  card's still-configured dead keys. */
+function collectConfiguredKeysForHost(settings, provider_host) {
+  const keys = new Set();
+  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
+  for (const p of providers) {
+    if (!p || typeof p.api_base !== "string" || typeof p.keys !== "string") continue;
+    try {
+      if (new URL(p.api_base.trim()).hostname !== provider_host) continue;
+    } catch {
+      continue;
+    }
+    for (const line of p.keys.split("\n")) {
+      const k = line.trim();
+      if (k) keys.add(k);
+    }
+  }
+  return keys;
+}
+
+/** Reconcile the dead key list against one test run and the current 来源设定.
+ *  The list means "keys currently failing in source", not a permanent ledger —
+ *  which is what lets us record any failure code, since a transient one (429,
+ *  500, 全网皆败) clears itself on the next successful run. A key dropped from
+ *  来源设定 is also dropped here (ghost cleanup). 来源设定 itself is never
+ *  rewritten by this path. */
 async function syncDeadKeysFromResults(
   kv,
   api_base,
@@ -603,47 +624,66 @@ async function syncDeadKeysFromResults(
   }
   if (!provider_host) return none;
 
-  let list = await readDeadKeys(kv);
-  let removed = 0;
-  let added = 0;
+  const [rawDeadKeys, rawSettings] = await Promise.all([
+    kv.get(DEAD_KEYS_KEY),
+    kv.get(SETTINGS_KEY),
+  ]);
+  let list = parseJsonOrNull(rawDeadKeys);
+  if (!Array.isArray(list)) list = [];
 
-  // 1. Keys that answered this run are not dead any more — drop them, manual or
-  //    auto alike, since the record now asserts something untrue.
+  // KV miss or corrupt JSON must not look like "source is empty" — that would
+  // wipe every dead key on this host. A real {providers:[]} is available and
+  // correctly means nothing is configured.
+  const settingsParsed = parseJsonOrNull(rawSettings);
+  const settingsAvailable =
+    !!rawSettings &&
+    !!settingsParsed &&
+    typeof settingsParsed === "object" &&
+    !Array.isArray(settingsParsed);
+  const configuredKeysForHost = settingsAvailable
+    ? collectConfiguredKeysForHost(settingsParsed, provider_host)
+    : null;
+
   const recovered = new Set(
     (Array.isArray(validKeys) ? validKeys : [])
       .filter((k) => typeof k === "string")
       .map((k) => k.trim())
       .filter(Boolean),
   );
-  if (recovered.size) {
-    const keep = [];
-    const dropped = [];
-    for (const r of list) {
-      if (r && r.provider_host === provider_host && recovered.has(r.api_key)) {
-        dropped.push(r);
-      } else {
-        keep.push(r);
-      }
-    }
-    // A dropped record may hold its group's only error_detail — hand it over,
-    // same as DELETE does.
-    rebalanceErrorDetail(dropped, keep);
-    if (dropped.length) {
-      list = keep;
-      removed = dropped.length;
-    }
-  }
 
-  // 2. Keys that failed get recorded. expired_at is stored as the calendar day at
-  //    midnight UTC — the exact shape manual entries use (toIsoDay in app.js) —
-  //    because the UI reads it as a date; the precise moment stays in created_at.
+  const keep = [];
+  const dropped = [];
+  for (const r of list) {
+    if (!r || r.provider_host !== provider_host) {
+      keep.push(r);
+      continue;
+    }
+    const key = typeof r.api_key === "string" ? r.api_key.trim() : "";
+    const isRecovered = key && recovered.has(key);
+    const isRemovedFromSettings =
+      settingsAvailable && key && !configuredKeysForHost.has(key);
+    if (isRecovered || isRemovedFromSettings) dropped.push(r);
+    else keep.push(r);
+  }
+  if (dropped.length) rebalanceErrorDetail(dropped, keep);
+
+  let listNext = keep;
+  const removed = dropped.length;
+  let added = 0;
+
+  // Keys that failed get recorded. expired_at is stored as the calendar day at
+  // midnight UTC — the exact shape manual entries use (toIsoDay in app.js) —
+  // because the UI reads it as a date; the precise moment stays in created_at.
   const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
-  const known = new Set(list.map((r) => r && r.api_key));
+  const known = new Set(listNext.map((r) => r && r.api_key));
 
   for (const rec of Array.isArray(invalidRecords) ? invalidRecords : []) {
     if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) continue;
     const api_key = rec.api_key.trim();
     if (known.has(api_key)) continue;
+    // Source is the unique standard: a key already gone from 来源设定 must not
+    // be re-recorded from a stale in-flight run.
+    if (settingsAvailable && !configuredKeysForHost.has(api_key)) continue;
 
     const error_code = normalizeErrorCode(rec.error_code);
     let error_detail = normalizeErrorDetail(rec.error_detail);
@@ -652,14 +692,14 @@ async function syncDeadKeysFromResults(
     }
     if (
       error_detail &&
-      list.some(
+      listNext.some(
         (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
       )
     ) {
       error_detail = null;
     }
 
-    list.push({
+    listNext.push({
       id: crypto.randomUUID(),
       provider_host,
       api_key,
@@ -672,7 +712,7 @@ async function syncDeadKeysFromResults(
     added++;
   }
 
-  if (added || removed) await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
+  if (added || removed) await kv.put(DEAD_KEYS_KEY, JSON.stringify(listNext));
   return { added, removed };
 }
 

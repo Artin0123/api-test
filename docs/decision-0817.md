@@ -1,4 +1,4 @@
-# 決策說明（最後更新 2026-08-16）
+# 決策說明（最後更新 2026-08-17）
 
 **本文持續維護**，記錄「失效密鑰分頁 + 錯誤訊息改造 + 單一 Key 連跑兩輪 + API 認證」及其後續調整中，每個決策的**背景、選項、取捨理由與實測依據**。改動這幾塊行為時請一併更新本文，並把檔名的日期後綴改成當次更新的日期。
 
@@ -148,25 +148,37 @@ Your account has been deactivated. Please contact support.
 - 表格欄位在 `<td>` 上設 `max-width` **無效**（auto table layout 會忽略），必須改設在內層元素上，才做得出單行 + `...` 省略。
 - 單列不再放刪除按鈕。改由工具列「批量删除」進入勾選模式（操作欄右側出現紅框半透明勾選框），勾至少一筆後按鈕變成「确认删除」，再以既有 modal 樣式二次確認。
 
-### 2.5 自動對帳：清單語意是「當前正在失敗」，不是永久帳本
+### 2.5 自動對帳：清單語意是「來源裡目前仍失敗的 Key」，不是永久帳本
 
-（2026-08-13 追加，commit `3dcc7d4`／`1bc79f5`。初版只有手動 CRUD，維護成本落在使用者身上。）
+（2026-08-13 追加，commit `3dcc7d4`／`1bc79f5`。初版只有手動 CRUD，維護成本落在使用者身上。2026-08-17 改為對帳時一併讀 `app_settings`，見下方「幽靈 Key」。）
 
-**決策**：每次 `POST /api/results` 都拿該次結果對帳一遍（`syncDeadKeysFromResults`）——`invalid_records` 裡的 Key 自動記入，`valid_keys` 裡的 Key 自動從該 `provider_host` 移除。
+**決策**：每次 `POST /api/results` 都拿該次結果對帳一遍（`syncDeadKeysFromResults`）——`invalid_records` 裡、且仍在來源設定中的 Key 自動記入；`valid_keys` 裡的 Key、以及已從該 host 所有卡片移除的 Key，自動從該 `provider_host` 刪掉。
 
-**關鍵在於這兩件事必須成對做**。只做「自動記入」的話，記錄什麼樣的失敗碼就變成一個危險的判斷：429 或 500 這種暫時性失敗會把一支好 Key 永久釘在清單上，於是只敢記 401/403。加上「自動移除」之後，任何失敗碼都可以記——判斷錯了，下一次跑成功就自我修正。清單因此不是歷史帳本，而是「上一次跑完之後，現在還在失敗的 Key」。
+**關鍵在於記入與移除必須成對做**。只做「自動記入」的話，記錄什麼樣的失敗碼就變成一個危險的判斷：429 或 500 這種暫時性失敗會把一支好 Key 永久釘在清單上，於是只敢記 401/403。加上「自動移除」之後，任何失敗碼都可以記——判斷錯了，下一次跑成功就自我修正。清單因此不是歷史帳本，而是「來源設定裡，上一次跑完之後現在還在失敗的 Key」。
 
 | 決策點 | 選擇 | 理由 |
 |---|---|---|
 | 移除範圍 | 連手動新增的記錄一起移除 | 該記錄現在斷言了一件不成立的事（這支 Key 是死的），來源是人或機器不影響它已經錯了 |
 | 是否連帶改 `来源设定` | 否，維持手動 | 從測試清單裡拿掉一支 Key 是使用者的決定，不該由一次測試結果代勞 |
 | 失敗時的處理 | `try/catch` 包住，只 `console.error` | 結果已經寫進 KV 了；對帳失敗若讓整個 `POST /api/results` 回錯，上傳端會以為整批結果掉了而重跑 |
-| 寫入時機 | 只在 `added \|\| removed` 時 `put`（`_worker.js:459`） | 穩定狀態下每日排程不會產生任何 dead-keys 寫入 |
+| 寫入時機 | 只在 `added \|\| removed` 時 `put`（`_worker.js:715`） | 穩定狀態下每日排程不會產生任何 dead-keys 寫入 |
 | `expired_at` 格式 | 當日 UTC 午夜（`toIsoDay` 的形狀） | UI 當日期讀；精確時刻另存在 `created_at` |
 
 **沿用既有規則**：`api_key` 全域去重（已在清單裡就跳過）、`error_detail` 依 `sameDedupGroup()` 只留一份、移除記錄時把 detail 交棒給同組下一筆——與 §2.2／§2.3 完全同一套邏輯，沒有第二份實作。取不到 `error_detail` 時退回 `{message: error_reason}`，確保 📋 至少有東西可看。
 
 **可觀測性**：handler 回傳 `dead_keys_added` / `dead_keys_removed`，Python 端印出來（`async_test_keys.py:988`）。舊版 worker 沒有這兩個欄位，取不到就只印上傳成功，不會炸。
+
+**幽靈 Key（2026-08-17）**
+
+來源裡刪掉一支失效 Key 之後，它不會再被送測，因此下次結果裡既不在 `valid_keys` 也不在 `invalid_records`。只依 `valid_keys` 刪除的話，這筆記錄會永遠留在 `dead_keys`。
+
+不採用「本次 `invalid_records` 覆蓋整個 host」：同 host 多家卡片（聚合閘道不同路徑）串行上傳時，後上傳的那家會把前一家仍在來源裡的失效 Key 當成幽靈清掉。
+
+**採用**：對帳時平行讀 `app_settings`，把該 host 所有卡片的 `keys`（換行字串，與 `normalizeKeys()` 同一形狀，不是 `api_keys[]`）聯集成 `configuredKeysForHost`。同 host 記錄若在本次 `valid_keys`、或不在這個聯集裡，才刪。卡片 A 上傳不會動到卡片 B 仍在來源中的 Key。`invalid_records` 裡已不在聯集的 Key 也不再新增，避免跑測中途改來源時把剛清掉的幽靈加回去。
+
+`app_settings` 缺失或 JSON 壞掉時，**不**把來源當成空的（否則會整 host 清空）；只做 `valid_keys` 恢復刪除，新增也不用聯集過濾。真正存成 `{providers:[]}` 才表示來源空了，該 host 的幽靈可以清。
+
+殘餘：該 host 只剩的那張卡被整張刪掉或 Key 全空時，Python 不會 `POST /api/results`，對帳不會跑，幽靈要等手動刪或同 host 還有別家上傳。
 
 ### 2.6 批次刪除：一次 KV 寫入
 
@@ -217,7 +229,7 @@ Your account has been deactivated. Please contact support.
 | 觸發 | 次數 |
 |---|---|
 | `POST /api/checkpoint` | 每 200 個任務 1 次 + 每個供應商結束 1 次 |
-| `POST /api/results` | 每個供應商 1 put + 1 delete，外加對帳的 1 get；清單有變動時再 1 put |
+| `POST /api/results` | 每個供應商 1 put + 1 delete，外加對帳的 2 get（`dead_keys` + `app_settings`）；清單有變動時再 1 put |
 | `POST /api/settings` | 使用者儲存時 1 put + N delete（僅清理已移除的供應商 checkpoint） |
 | dead-keys 增／改／刪 | 各 1 get + 1 put；批次刪除仍是 1 put，與筆數無關 |
 
@@ -229,6 +241,7 @@ Your account has been deactivated. Please contact support.
 - 來源設定頁：每次切換 1 次讀取。
 - 失效密鑰頁：首次載入 1 次，之後快取，只有「重新讀取」或整頁重載才會再讀。
 - **無任何輪詢**：全專案沒有 `setInterval`／visibilitychange 自動刷新，所有讀取都由使用者動作觸發。
+- **每日排程對帳**：每個供應商上傳結果時多讀 1 次 `app_settings`（與 `dead_keys` 平行）。10 個供應商 = 20 次讀取，可忽略。
 - **認證不佔用量**：session 驗證是純運算（HMAC），不讀 KV；`GET /api/results` 改為需認證後，讀取次數也沒有變化。
 
 **一個已知但不處理的點**
@@ -334,7 +347,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 
 ### 7.4 `dead_keys` 全量改寫：查證後維持現狀
 
-先前把它描述成「只增不縮、長期逼近 KV 單值上限」，**查證後這個說法不成立**。`syncDeadKeysFromResults` 用 `known` 集合跳過已存在的 `api_key`（`_worker.js:566`），既有記錄整筆略過，所以：
+先前把它描述成「只增不縮、長期逼近 KV 單值上限」，**查證後這個說法不成立**。`syncDeadKeysFromResults` 用 `known` 集合跳過已存在的 `api_key`（`_worker.js:678`），既有記錄整筆略過，所以：
 
 - 同一支 Key 每天重跑**不會**新增第二筆，`expired_at` 與 `created_at` 維持第一次失敗那天。
 - 清單規模的上限是「設定裡不重複的 Key 總數」，與天數無關。
@@ -373,6 +386,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 |---|---|
 | 錯誤解析／去重／單一 Key 兩輪 | Python 腳本對 mock 供應商（本機 aiohttp server）實跑，涵蓋 401 熔斷、flaky 模型第二輪救回、中斷續跑 |
 | dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、批次 DELETE 一次寫入、404／400 邊界 |
+| dead-keys 對帳（Plan B） | Node 腳本打本機 wrangler：恢復刪除、來源移除的幽靈刪除、同 host 另一張卡保留、停用卡的 Key 仍算在來源、不在來源的 `invalid_records` 不新增、設定缺失時不整 host 清空、他 host 不動、detail 交棒、無變動 0 寫入 |
 | 前端 | jsdom 驅動真實 `index.html` + `app.js`（mock 模式與登入模式），以及 agent-browser 實機 Chrome 檢查版面、RWD、無障礙名稱 |
 | API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
 | 設定版本號 | curl 打本機 wrangler，涵蓋首次寫入、重送舊版本得 409、跟上新版本、不帶版本放行（見 §7.3） |
@@ -399,7 +413,7 @@ Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pa
 | 每支 Key 的訊息 | 保留 | +1.7 KB／66 支 Key |
 | 正規化邏輯 | Python 與 JS 各一份 | 需手動同步，但漂移只影響外觀 |
 | dead_keys 儲存 | 單一 KV 陣列 | 無並發安全、每次全量改寫 |
-| dead_keys 語意 | 當前失敗清單，每次跑完對帳 | 一支 Key 可能今天進、明天出，不留失效歷史 |
+| dead_keys 語意 | 來源裡目前仍失敗的 Key，每次跑完對帳 | 一支 Key 可能今天進、明天出，不留失效歷史；該 host 已無卡片可上傳時幽靈仍要手動清 |
 | 對帳失敗 | 吞掉錯誤只記 log | 靜默失敗，要靠 `dead_keys_added/removed` 的輸出才看得出來 |
 | 樣本長度 | 各 2048 字元掐頭留尾 | 失控的長回應看不到中段 |
 | 單一 Key 測試 | 連跑兩輪 | 測試時間與請求數加倍 |
