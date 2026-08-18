@@ -1419,6 +1419,14 @@ function sortByProviderOrder(rows) {
     .map((x) => x.r);
 }
 
+/** 编号是筛选后、默认供应商顺序里的位置，跟着行走。若写成当下的 1..n，
+ *  点编号排序时数字栏不会变，看起来像没在排。 */
+function deadKeyIndexById(rows) {
+  const map = new Map();
+  sortByProviderOrder(rows).forEach((r, i) => map.set(r.id, i + 1));
+  return map;
+}
+
 /** Null dates/codes stay last in both directions. Negating the whole
  *  comparator for desc would flip them to the top. */
 function compareDeadKeyNullsLast(a, b, col) {
@@ -1459,14 +1467,19 @@ function compareDeadKey(a, b, col) {
   return 0;
 }
 
-/** Index desc reverses the whole provider-order list (not just host rank)
- *  so 编号 1 becomes the former last row. */
-function sortDeadKeyRows(rows) {
+function sortDeadKeyRows(rows, indexById) {
   const { col, dir } = state.dkSort;
   const desc = dir === "desc";
   if (col === "index") {
-    const ordered = sortByProviderOrder(rows);
-    return desc ? ordered.slice().reverse() : ordered;
+    return rows
+      .map((r, i) => ({ r, i }))
+      .sort((a, b) => {
+        const cmp =
+          (indexById.get(a.r.id) ?? 0) - (indexById.get(b.r.id) ?? 0);
+        if (cmp !== 0) return desc ? -cmp : cmp;
+        return a.i - b.i;
+      })
+      .map((x) => x.r);
   }
   return rows
     .map((r, i) => ({ r, i }))
@@ -1481,7 +1494,8 @@ function sortDeadKeyRows(rows) {
 }
 
 function visibleDeadKeys() {
-  return sortDeadKeyRows(filteredDeadKeys());
+  const filtered = filteredDeadKeys();
+  return sortDeadKeyRows(filtered, deadKeyIndexById(filtered));
 }
 
 function activeFilterCount() {
@@ -1503,7 +1517,9 @@ function renderDeadKeys() {
   dom.dkFilterCount.textContent = String(n);
   dom.dkFilterCount.classList.toggle("hidden", n === 0);
 
-  const rows = visibleDeadKeys();
+  const filtered = filteredDeadKeys();
+  const indexById = deadKeyIndexById(filtered);
+  const rows = sortDeadKeyRows(filtered, indexById);
   updateDkBulkBtn(rows.length);
   if (!rows.length) {
     dom.dkEmpty.textContent = state.deadKeys.length
@@ -1517,14 +1533,14 @@ function renderDeadKeys() {
   const scroller = dom.dkTableWrap.querySelector(".table-scroll");
   const scrollLeft = scroller ? scroller.scrollLeft : 0;
   dom.dkEmpty.classList.add("hidden");
-  dom.dkTableWrap.innerHTML = renderDeadKeysTable(rows);
+  dom.dkTableWrap.innerHTML = renderDeadKeysTable(rows, indexById);
   const next = dom.dkTableWrap.querySelector(".table-scroll");
   if (next) next.scrollLeft = scrollLeft;
   syncDkCheckAll(rows);
   dom.dkTableWrap.classList.remove("hidden");
 }
 
-function renderDeadKeysTable(rows) {
+function renderDeadKeysTable(rows, indexById) {
   const selecting = state.dkSelectMode;
   const body = rows
     .map((r, i) => {
@@ -1542,7 +1558,7 @@ function renderDeadKeysTable(rows) {
         : "";
       const numOrCheckCell = selecting
         ? `<td class="dk-check-col"><label class="dk-check-label"><input type="checkbox" class="dk-check" data-dk-check="${escAttr(r.id)}" aria-label="选中此记录"${checked} /></label></td>`
-        : `<td class="dk-check-col dk-num-cell">${i + 1}</td>`;
+        : `<td class="dk-check-col dk-num-cell">${indexById.get(r.id) ?? i + 1}</td>`;
       return `<tr>
       ${numOrCheckCell}
       <td class="dk-host-col"><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
