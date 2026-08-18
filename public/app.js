@@ -28,6 +28,7 @@ const state = {
   dkSelectMode: false, // bulk-selection mode active on dead keys tab
   dkSelected: new Set(), // set of dead key record ids checked in the table
   dkPendingDelete: null, // snapshot of ids currently being confirmed for deletion
+  dkSort: { col: "index", dir: "asc" },
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ const dom = {
   dkFilterPanel: $("dk-filter-panel"),
   dkFHost: $("dk-f-host"),
   dkFKey: $("dk-f-key"),
+  dkFCode: $("dk-f-code"),
   dkFFrom: $("dk-f-from"),
   dkFTo: $("dk-f-to"),
   dkFReset: $("dk-f-reset"),
@@ -1263,6 +1265,40 @@ function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
   if (selected && list.includes(selected)) select.value = selected;
 }
 
+// Empty <select> value is "all codes"; a second empty cannot mean "no code".
+const DK_CODE_NONE = "__none__";
+
+function fillCodeSelect() {
+  const selected = dom.dkFCode.value;
+  const codes = [];
+  let hasNone = false;
+  for (const r of state.deadKeys) {
+    if (!r) continue;
+    if (r.error_code == null) {
+      hasNone = true;
+      continue;
+    }
+    const n = Number(r.error_code);
+    if (!Number.isFinite(n)) continue;
+    if (!codes.includes(n)) codes.push(n);
+  }
+  codes.sort((a, b) => a - b);
+
+  const opts = [`<option value="">全部 Code</option>`];
+  for (const c of codes) {
+    opts.push(`<option value="${escAttr(String(c))}">${esc(String(c))}</option>`);
+  }
+  if (hasNone) {
+    opts.push(`<option value="${DK_CODE_NONE}">无 Code</option>`);
+  }
+  dom.dkFCode.innerHTML = opts.join("");
+  if (selected === DK_CODE_NONE && hasNone) {
+    dom.dkFCode.value = DK_CODE_NONE;
+  } else if (selected && codes.includes(Number(selected))) {
+    dom.dkFCode.value = selected;
+  }
+}
+
 function dkDateOf(rec) {
   const v = rec && typeof rec.expired_at === "string" ? rec.expired_at : "";
   return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : "";
@@ -1342,6 +1378,7 @@ async function loadDeadKeys(force = false) {
 function filteredDeadKeys() {
   const host = dom.dkFHost.value;
   const q = dom.dkFKey.value.trim().toLowerCase();
+  const code = dom.dkFCode.value;
   const from = dom.dkFFrom.value;
   const to = dom.dkFTo.value;
   // One bound alone stays open-ended; the same day twice narrows to that day.
@@ -1353,6 +1390,11 @@ function filteredDeadKeys() {
     if (!r) return false;
     if (host && r.provider_host !== host) return false;
     if (q && !String(r.api_key || "").toLowerCase().includes(q)) return false;
+    if (code === DK_CODE_NONE) {
+      if (r.error_code != null) return false;
+    } else if (code) {
+      if (Number(r.error_code) !== Number(code)) return false;
+    }
     if (lo || hi) {
       const d = dkDateOf(r);
       if (!d) return false;
@@ -1377,10 +1419,76 @@ function sortByProviderOrder(rows) {
     .map((x) => x.r);
 }
 
+/** Null dates/codes stay last in both directions. Negating the whole
+ *  comparator for desc would flip them to the top. */
+function compareDeadKeyNullsLast(a, b, col) {
+  if (col === "expired_at") {
+    const da = dkDateOf(a);
+    const db = dkDateOf(b);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return 0;
+  }
+  if (col === "code") {
+    const aNull = a.error_code == null;
+    const bNull = b.error_code == null;
+    if (aNull && bNull) return 0;
+    if (aNull) return 1;
+    if (bNull) return -1;
+    return 0;
+  }
+  return 0;
+}
+
+function compareDeadKey(a, b, col) {
+  if (col === "host") {
+    return String(a.provider_host || "").localeCompare(String(b.provider_host || ""));
+  }
+  if (col === "key") {
+    return String(a.api_key || "").localeCompare(String(b.api_key || ""));
+  }
+  if (col === "expired_at") {
+    const da = dkDateOf(a);
+    const db = dkDateOf(b);
+    return da < db ? -1 : da > db ? 1 : 0;
+  }
+  if (col === "code") {
+    return Number(a.error_code) - Number(b.error_code);
+  }
+  return 0;
+}
+
+/** Index desc reverses the whole provider-order list (not just host rank)
+ *  so 编号 1 becomes the former last row. */
+function sortDeadKeyRows(rows) {
+  const { col, dir } = state.dkSort;
+  const desc = dir === "desc";
+  if (col === "index") {
+    const ordered = sortByProviderOrder(rows);
+    return desc ? ordered.slice().reverse() : ordered;
+  }
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const nullCmp = compareDeadKeyNullsLast(a.r, b.r, col);
+      if (nullCmp !== 0) return nullCmp;
+      const cmp = compareDeadKey(a.r, b.r, col);
+      if (cmp !== 0) return desc ? -cmp : cmp;
+      return a.i - b.i;
+    })
+    .map((x) => x.r);
+}
+
+function visibleDeadKeys() {
+  return sortDeadKeyRows(filteredDeadKeys());
+}
+
 function activeFilterCount() {
   return [
     dom.dkFHost.value,
     dom.dkFKey.value.trim(),
+    dom.dkFCode.value,
     dom.dkFFrom.value,
     dom.dkFTo.value,
   ].filter(Boolean).length;
@@ -1389,12 +1497,13 @@ function activeFilterCount() {
 function renderDeadKeys() {
   fillHostSelect(dom.dkHost, { selected: dom.dkHost.value });
   fillHostSelect(dom.dkFHost, { includeAll: true, selected: dom.dkFHost.value });
+  fillCodeSelect();
 
   const n = activeFilterCount();
   dom.dkFilterCount.textContent = String(n);
   dom.dkFilterCount.classList.toggle("hidden", n === 0);
 
-  const rows = sortByProviderOrder(filteredDeadKeys());
+  const rows = visibleDeadKeys();
   updateDkBulkBtn(rows.length);
   if (!rows.length) {
     dom.dkEmpty.textContent = state.deadKeys.length
@@ -1404,8 +1513,13 @@ function renderDeadKeys() {
     dom.dkTableWrap.classList.add("hidden");
     return;
   }
+  // innerHTML 会换掉 .table-scroll，横滑位置要先记下再写回，否则点排序会跳回最左。
+  const scroller = dom.dkTableWrap.querySelector(".table-scroll");
+  const scrollLeft = scroller ? scroller.scrollLeft : 0;
   dom.dkEmpty.classList.add("hidden");
   dom.dkTableWrap.innerHTML = renderDeadKeysTable(rows);
+  const next = dom.dkTableWrap.querySelector(".table-scroll");
+  if (next) next.scrollLeft = scrollLeft;
   syncDkCheckAll(rows);
   dom.dkTableWrap.classList.remove("hidden");
 }
@@ -1431,12 +1545,12 @@ function renderDeadKeysTable(rows) {
         : `<td class="dk-check-col dk-num-cell">${i + 1}</td>`;
       return `<tr>
       ${numOrCheckCell}
-      <td><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
-      <td><div class="dk-key-line"><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code>${copyKeyBtn}</div></td>
-      <td class="dk-date-cell">${esc(dkDateOf(r) || "-")}</td>
-      <td>${r.error_code != null ? esc(r.error_code) : `<span class="na">-</span>`}</td>
-      <td><div class="dk-msg-line">${detailBtn}${preview}</div></td>
-      <td class="dk-actions">
+      <td class="dk-host-col"><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
+      <td class="dk-key-col"><div class="dk-key-line"><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code>${copyKeyBtn}</div></td>
+      <td class="dk-date-col dk-date-cell">${esc(dkDateOf(r) || "-")}</td>
+      <td class="dk-code-col">${r.error_code != null ? esc(r.error_code) : `<span class="na">-</span>`}</td>
+      <td class="dk-msg-col"><div class="dk-msg-line">${detailBtn}${preview}</div></td>
+      <td class="dk-edit-col dk-actions">
         <button class="btn btn-secondary btn-xs" type="button" title="编辑" aria-label="编辑" data-dk-edit="${escAttr(r.id)}">✏️</button>
       </td>
     </tr>`;
@@ -1445,24 +1559,32 @@ function renderDeadKeysTable(rows) {
 
   const numOrCheckHead = selecting
     ? `<th class="dk-check-col" scope="col"><label class="dk-check-label"><input type="checkbox" class="dk-check" data-dk-check-all aria-label="全选" /></label></th>`
-    : `<th class="dk-check-col" scope="col">编号</th>`;
+    : dkSortHead("index", "编号", "dk-check-col");
 
   return `
     <div class="table-scroll">
-      <table class="data-table">
+      <table class="data-table dk-table">
         <thead><tr>
           ${numOrCheckHead}
-          <th>域名供应商</th>
-          <th>KEY</th>
-          <th>失效时间</th>
-          <th>Code</th>
-          <th>错误讯息</th>
-          <th>编辑</th>
+          ${dkSortHead("host", "域名供应商", "dk-host-col")}
+          ${dkSortHead("key", "KEY", "dk-key-col")}
+          ${dkSortHead("expired_at", "失效时间", "dk-date-col")}
+          ${dkSortHead("code", "Code", "dk-code-col")}
+          <th class="dk-msg-col">错误讯息</th>
+          <th class="dk-edit-col">编辑</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>
   `;
+}
+
+function dkSortHead(col, label, extraClass) {
+  const cls = extraClass ? ` class="${extraClass}"` : "";
+  const active = state.dkSort.col === col;
+  const dir = active ? ` data-sort-dir="${state.dkSort.dir}"` : "";
+  const mark = active ? (state.dkSort.dir === "asc" ? "▲" : "▼") : "";
+  return `<th${cls} data-sort="${col}"${dir} scope="col">${label}<span class="sort-indicator">${mark}</span></th>`;
 }
 
 function toIsoDay(dateStr) {
@@ -1746,7 +1868,7 @@ function onDkCheckChange(e) {
   if (!box) return;
   if (box.checked) state.dkSelected.add(box.dataset.dkCheck);
   else state.dkSelected.delete(box.dataset.dkCheck);
-  const rows = sortByProviderOrder(filteredDeadKeys());
+  const rows = visibleDeadKeys();
   syncDkCheckAll(rows);
   updateDkBulkBtn(rows.length);
 }
@@ -2092,18 +2214,31 @@ function bindEvents() {
     const open = dom.dkFilterPanel.classList.toggle("hidden") === false;
     dom.dkFilterToggle.setAttribute("aria-expanded", String(open));
   });
-  [dom.dkFHost, dom.dkFFrom, dom.dkFTo].forEach((el) =>
+  [dom.dkFHost, dom.dkFCode, dom.dkFFrom, dom.dkFTo].forEach((el) =>
     el.addEventListener("change", renderDeadKeys),
   );
   dom.dkFKey.addEventListener("input", renderDeadKeys);
   dom.dkFReset.addEventListener("click", () => {
     dom.dkFHost.value = "";
     dom.dkFKey.value = "";
+    dom.dkFCode.value = "";
     dom.dkFFrom.value = "";
     dom.dkFTo.value = "";
     renderDeadKeys();
   });
   dom.dkTableWrap.addEventListener("click", (e) => {
+    const sortTh = e.target.closest("th[data-sort]");
+    if (sortTh) {
+      const col = sortTh.dataset.sort;
+      if (state.dkSort.col === col) {
+        state.dkSort.dir = state.dkSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.dkSort.col = col;
+        state.dkSort.dir = "asc";
+      }
+      renderDeadKeys();
+      return;
+    }
     const copyBtn = e.target.closest(".copy-btn");
     if (copyBtn) return copyText(copyBtn.dataset.copyVal || "", copyBtn);
 

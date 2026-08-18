@@ -437,6 +437,8 @@ a:hover {
     font-size: var(--text-sm);
 }
 
+/* 没有 column-gap。栏与栏之间的视觉间隔 = 本格 padding-right + 下一格 padding-left。
+ * 预设左右各 1rem，所以相邻两栏文字之间是 2rem，不是另有一份「栏间距」。 */
 .data-table th {
     background: var(--bg-3);
     padding: 0.65rem 1rem;
@@ -470,10 +472,20 @@ a:hover {
     color: var(--text);
 }
 
+/* Empty still occupies width so toggling ▲/▼ does not shift columns.
+ * 编号栏内容区要能放下：label + margin-left + width。
+ * 看起来偏低：▲ 的墨水在字框里偏下，vertical-align:middle 对的又是拉丁 x-height
+ * 中线，中文「编号」视觉中心更高。往上挪用 transform（负值往上），不要改 padding。 */
 .sort-indicator {
-    font-size: 0.7em;
-    margin-left: 0.2em;
+    display: inline-block;
+    width: 1rem;
+    margin-left: 0.6em;
+    font-size: 1em;
+    line-height: 1;
     color: var(--accent);
+    text-align: center;
+    vertical-align: middle;
+    transform: translateY(-0.1em);
 }
 
 /* ── Invalid key groups (collapsible) ─────────────────────────────────── */
@@ -1368,21 +1380,23 @@ code {
     justify-self: start;
 }
 
+/* 内层跟着格子走。改栏宽请改下面 .dk-host-col 的 width，不要改这里。 */
 .dk-host-cell {
     display: block;
-    max-width: 12rem;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+/* 同上：跟着 .dk-key-col 的 width。 */
 .dk-key-line {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.4rem;
     min-width: 0;
-    max-width: 14rem;
+    max-width: 100%;
 }
 
 .dk-key-cell {
@@ -1419,13 +1433,13 @@ code {
     white-space: nowrap;
 }
 
-/* max-width on a <td> is ignored under auto table layout, so cap the inner box */
+/* 错误讯息吃剩余栏宽时，内层也跟着撑满，避免再截成比栏更短。 */
 .dk-msg-line {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
-    max-width: 14rem;
+    max-width: 100%;
 }
 
 .dk-msg {
@@ -1434,6 +1448,8 @@ code {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
 }
 
 .dk-actions {
@@ -1442,15 +1458,78 @@ code {
     white-space: nowrap;
 }
 
+/* 全站 box-sizing:border-box，所以 width = 左内距 + 内容 + 右内距。
+ * 改 padding 或箭头槽时同步改 width，否则内容区被挤（或多出空白）。
+ * 编号：5rem = 1rem + 3.5rem + 0.5rem；3.5rem 要放下「编号」+ .sort-indicator。
+ *
+ * padding 简写是 上 右 下 左：
+ *   左 1rem = 「编号」到表格左边线（改到左边界的间距：改这一个值）
+ *   右 0.5rem = 「编号」到本格右缘；到「域名供应商」文字的间距还要加上
+ *              供应商栏的 padding-left（预设见上面 .data-table th/td 的 1rem）
+ *              → 文字间距 = 本格右 0.5rem + 下一格左 1rem = 1.5rem
+ *   只改这边的右值，或只改 .data-table th/td 的左值，都会改编号↔供应商的空隙。 */
 .data-table th.dk-check-col,
 .data-table td.dk-check-col {
-    width: 3.2rem;
-    min-width: 3.2rem;
-    max-width: 3.2rem;
-    text-align: center;
+    width: 5rem;
+    min-width: 5rem;
+    max-width: 5rem;
+    text-align: left;
     vertical-align: middle;
-    padding: 0.6rem 0.5rem;
+    padding: 0.6rem 0.6rem 0.6rem 1.2rem;
     box-sizing: border-box;
+}
+
+/* 只有失效密钥表用 fixed。
+ * 电脑随窗口变宽/变窄：只有没写 width 的那一栏会跟着伸缩（现在是错误讯息）。
+ * 其它栏写死 width，改其中一栏不必重算其余。
+ * min-width = 各固定栏 + 错误讯息下限，窄于这个值时表格比容器宽，走 .table-scroll 横滑，
+ * 而不是把 100% 硬塞进屏幕导致错误讯息和编辑叠在一起。 */
+.dk-table {
+    table-layout: fixed;
+    width: 100%;
+    min-width: 62rem;
+}
+
+.dk-table th,
+.dk-table td {
+    overflow: hidden;
+}
+
+.data-table th.dk-host-col,
+.data-table td.dk-host-col {
+    width: 14rem;
+}
+
+.data-table th.dk-key-col,
+.data-table td.dk-key-col {
+    width: 14rem;
+}
+
+.data-table th.dk-date-col,
+.data-table td.dk-date-col {
+    width: 8rem;
+}
+
+/* 够放「Code▲」；fixed 表里不要用 1%（会变成整表的 1%）。 */
+.data-table th.dk-code-col,
+.data-table td.dk-code-col {
+    width: 5rem;
+    white-space: nowrap;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+/* 唯一弹性栏：不设 width。min-width 是缩到多窄为止。 */
+.data-table th.dk-msg-col,
+.data-table td.dk-msg-col {
+    min-width: 10rem;
+}
+
+.data-table th.dk-edit-col,
+.data-table td.dk-edit-col {
+    width: 4.2rem;
+    padding-left: 0.5rem;
+    padding-right: 0.85rem;
 }
 
 .dk-num-cell {
@@ -1602,6 +1681,33 @@ code {
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+/* 平板：栏仍横滑（.table-scroll），先把供应商 / KEY 收一档。错误讯息仍是弹性栏。 */
+@media (max-width: 900px) {
+    .dk-table {
+        min-width: 58rem;
+    }
+
+    .data-table th.dk-host-col,
+    .data-table td.dk-host-col {
+        width: 10.5rem;
+    }
+
+    .data-table th.dk-key-col,
+    .data-table td.dk-key-col {
+        width: 10.5rem;
+    }
+
+    .data-table th.dk-date-col,
+    .data-table td.dk-date-col {
+        width: 8rem;
+    }
+
+    .data-table th.dk-msg-col,
+    .data-table td.dk-msg-col {
+        min-width: 8.5rem;
+    }
 }
 
 /* ── RWD ───────────────────────────────────────────────────────────────── */
@@ -1782,14 +1888,48 @@ code {
         grid-template-columns: 1fr;
     }
 
-    .dk-host-cell,
-    .dk-key-cell,
-    .dk-key-line {
-        max-width: 9rem;
+    .dk-table {
+        min-width: 56rem;
     }
 
-    .dk-msg-line {
-        max-width: 12rem;
+    .data-table th.dk-check-col,
+    .data-table td.dk-check-col {
+        width: 5rem;
+        padding: 0.5rem 0.5rem 0.5rem 1rem;
+    }
+
+    .data-table th.dk-host-col,
+    .data-table td.dk-host-col {
+        width: 10rem;
+    }
+
+    .data-table th.dk-key-col,
+    .data-table td.dk-key-col {
+        width: 10rem;
+    }
+
+    .data-table th.dk-date-col,
+    .data-table td.dk-date-col {
+        width: 8rem;
+    }
+
+    .data-table th.dk-code-col,
+    .data-table td.dk-code-col {
+        width: 5rem;
+        padding-left: 0.4rem;
+        padding-right: 0.4rem;
+    }
+
+    .data-table th.dk-msg-col,
+    .data-table td.dk-msg-col {
+        min-width: 10em;
+    }
+
+    .data-table th.dk-edit-col,
+    .data-table td.dk-edit-col {
+        width: 5rem;
+        padding-left: 0.4rem;
+        padding-right: 1rem;
     }
 
     .errdetail-row {
