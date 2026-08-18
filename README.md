@@ -6,6 +6,8 @@ Cloudflare Pages（存储设定与结果）+ GitHub Actions（定时执行）+ `
 
 架构与数据模型的背景说明见 [docs/SPEC-0813.md](./docs/SPEC-0813.md)（2026-08-13 封存的快照，不含失效密钥相关功能，以代码为准）。选型与取舍的理由见 [docs/decision-0816.md](./docs/decision-0816.md)。
 
+<img src="https://i.ibb.co/BVkvnvCW/Pix-Pin-2026-08-18-14-08-57.jpg" alt="Pix Pin 2026 08 18 14 08 57" border="0">
+
 ---
 
 ## 这个项目做什么
