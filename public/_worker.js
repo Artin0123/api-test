@@ -6,7 +6,7 @@
  *     app_settings               { providers[], github_url, discord_webhook_url }
  *     results:{fingerprint}      per-provider latest test results
  *     checkpoint:{fingerprint}   per-provider in-progress checkpoint
- *     dead_keys                  manually curated dead key records (array)
+ *     dead_keys                  synced dead key records (array)
  *
  * Secrets required:
  *   ADMIN_PASSWORD
@@ -31,7 +31,6 @@ const ROUTES = {
   "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
   "GET /api/dead-keys": handleGetDeadKeys,
-  "POST /api/dead-keys": handlePostDeadKey,
   "PUT /api/dead-keys": handlePutDeadKey,
   "DELETE /api/dead-keys": handleDeleteDeadKey,
   "GET /api/proxy/state": handleGetProxyState,
@@ -1125,7 +1124,7 @@ async function syncDeadKeysFromResults(
   let added = 0;
 
   // Keys that failed get recorded. expired_at is stored as the calendar day at
-  // midnight UTC — the exact shape manual entries use (toIsoDay in app.js) —
+  // midnight UTC — the same shape date-only edits use (toIsoDay in app.js) —
   // because the UI reads it as a date; the precise moment stays in created_at.
   const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
   const known = new Set();
@@ -1176,62 +1175,6 @@ async function handleGetDeadKeys(request, env) {
     return json({ error: "Unauthorized" }, 401);
   const kv = store(env);
   return json({ ok: true, dead_keys: await readDeadKeys(kv) });
-}
-
-async function handlePostDeadKey(request, env) {
-  if (!(await requireAuth(request, env)))
-    return json({ error: "Unauthorized" }, 401);
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid JSON" }, 400);
-  }
-
-  const api_key = typeof body.api_key === "string" ? body.api_key.trim() : "";
-  if (!api_key) return json({ error: "api_key required" }, 400);
-
-  const provider_host =
-    typeof body.provider_host === "string" ? body.provider_host.trim() : "";
-  if (!provider_host) return json({ error: "provider_host required" }, 400);
-
-  const kv = store(env);
-  const list = await readDeadKeys(kv);
-
-  // Key dedup is global (not per host): the earliest record wins, nothing is overwritten.
-  if (list.some((r) => r && r.api_key === api_key)) {
-    return json({ error: "api_key already recorded", duplicated: true }, 409);
-  }
-
-  const error_code = normalizeErrorCode(body.error_code);
-  let error_detail = normalizeErrorDetail(body.error_detail);
-
-  if (
-    error_detail &&
-    list.some(
-      (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
-    )
-  ) {
-    error_detail = null;
-  }
-
-  const record = {
-    id: crypto.randomUUID(),
-    provider_host,
-    api_key,
-    expired_at:
-      typeof body.expired_at === "string" && body.expired_at.trim()
-        ? body.expired_at.trim()
-        : null,
-    error_code,
-    error_detail,
-    created_at: new Date().toISOString(),
-  };
-
-  list.push(record);
-  await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
-  return json({ ok: true, record });
 }
 
 async function handlePutDeadKey(request, env, url) {
@@ -1417,14 +1360,14 @@ const CALLER_CREDENTIAL_HEADERS = new Set([
 // malformed body, charges every key it touches — the daily test result puts
 // those keys back (see recoverKeysFromResults) and the card shows the counters.
 
-/** Head/tail mask for keys. Keep this function in sync with the identically
- *  named one in `app.js` (same threshold, same separators): a 9-character key
- *  would otherwise reveal 8 of its 9 characters (4+4). */
+/** Head/tail mask for keys: left 6 + 1..3 asterisks + right 3 (<=9 shown as-is).
+ *  Keep this function identical to the one in `app.js`. */
 function maskKey(key) {
   const s = String(key || "");
   if (!s) return "";
-  if (s.length < 16) return `${s.slice(0, 1)}***${s.slice(-1)}`;
-  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+  if (s.length <= 9) return s;
+  const stars = "*".repeat(Math.min(s.length - 9, 3));
+  return `${s.slice(0, 6)}${stars}${s.slice(-3)}`;
 }
 
 /** cf-aig-metadata travels as an HTTP header, so its value must be ASCII only.

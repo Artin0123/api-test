@@ -244,18 +244,10 @@
                         <div>
                             <h2>失效密钥</h2>
                             <p class="muted">
-                                手动记录已失效的 Key、失效时间与供应商回传的错误讯息。
+                                自动记录已失效的 Key、失效时间与供应商回传的错误讯息。
                             </p>
                         </div>
                         <div class="panel-head-actions">
-                            <button
-                                id="dk-bulk-del-btn"
-                                class="btn btn-danger-solid"
-                                type="button"
-                                aria-pressed="false"
-                            >
-                                删除密钥
-                            </button>
                             <button
                                 id="dk-refresh-btn"
                                 class="btn btn-secondary"
@@ -266,73 +258,12 @@
                         </div>
                     </div>
 
-                    <div class="dk-toolbar">
-                        <div class="dk-add-row">
-                            <select
-                                id="dk-host"
-                                class="input-select"
-                                aria-label="域名供应商"
-                            ></select>
-                            <input
-                                type="text"
-                                id="dk-key"
-                                class="input-text"
-                                placeholder="API Key"
-                                autocomplete="off"
-                                spellcheck="false"
-                            />
-                            <input
-                                type="date"
-                                id="dk-expired"
-                                class="input-text"
-                                aria-label="失效时间"
-                            />
-                            <button
-                                id="dk-add-btn"
-                                class="btn btn-primary"
-                                type="button"
-                            >
-                                新增
-                            </button>
-                        </div>
-                        <div class="dk-toolbar-actions">
-                            <button
-                                id="dk-filter-toggle"
-                                class="btn btn-ghost btn-sm dk-filter-btn"
-                                type="button"
-                                aria-expanded="false"
-                            >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    width="14"
-                                    height="14"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    fill="none"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
-                                    <polygon
-                                        points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"
-                                    ></polygon>
-                                </svg>
-                                筛选
-                                <span
-                                    id="dk-filter-count"
-                                    class="badge hidden"
-                                ></span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <p id="dk-form-error" class="form-error" role="alert"></p>
-
-                    <div id="dk-filter-panel" class="dk-filter-panel hidden">
-                        <label class="field">
+                    <div id="dk-filter-panel" class="dk-filter-panel">
+                        <label class="field dk-filter-field--host">
                             <span class="field-label">供应商域名</span>
                             <select id="dk-f-host" class="input-select"></select>
                         </label>
-                        <label class="field">
+                        <label class="field dk-filter-field--key">
                             <span class="field-label">Key 搜寻</span>
                             <input
                                 type="text"
@@ -342,29 +273,113 @@
                                 autocomplete="off"
                             />
                         </label>
-                        <label class="field">
+                        <label class="field dk-filter-field--code">
                             <span class="field-label">错误代码</span>
                             <select id="dk-f-code" class="input-select"></select>
                         </label>
-                        <label class="field">
-                            <span class="field-label">失效时间（起）</span>
-                            <input
-                                type="date"
-                                id="dk-f-from"
-                                class="input-text"
-                            />
-                        </label>
-                        <label class="field">
-                            <span class="field-label">失效时间（迄）</span>
-                            <input type="date" id="dk-f-to" class="input-text" />
-                        </label>
-                        <button
-                            id="dk-f-reset"
-                            class="btn btn-ghost btn-sm"
-                            type="button"
-                        >
-                            清除筛选
-                        </button>
+                        <div class="field dk-filter-field--date">
+                            <label class="field-label" for="dk-f-from">失效时间（起）</label>
+                            <div class="dk-date-wrap">
+                                <input
+                                    type="text"
+                                    id="dk-f-from"
+                                    class="input-text dk-date-input"
+                                    inputmode="numeric"
+                                    maxlength="10"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
+                                <input
+                                    type="date"
+                                    class="dk-date-picker"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                />
+                                <button
+                                    type="button"
+                                    class="dk-date-btn"
+                                    aria-label="选择起始日期"
+                                    title="选择日期"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        width="15"
+                                        height="15"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        fill="none"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        aria-hidden="true"
+                                    >
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="field dk-filter-field--date">
+                            <label class="field-label" for="dk-f-to">失效时间（迄）</label>
+                            <div class="dk-date-wrap">
+                                <input
+                                    type="text"
+                                    id="dk-f-to"
+                                    class="input-text dk-date-input"
+                                    inputmode="numeric"
+                                    maxlength="10"
+                                    autocomplete="off"
+                                    spellcheck="false"
+                                />
+                                <input
+                                    type="date"
+                                    class="dk-date-picker"
+                                    tabindex="-1"
+                                    aria-hidden="true"
+                                />
+                                <button
+                                    type="button"
+                                    class="dk-date-btn"
+                                    aria-label="选择结束日期"
+                                    title="选择日期"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        width="15"
+                                        height="15"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        fill="none"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        aria-hidden="true"
+                                    >
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="dk-filter-actions">
+                            <button
+                                id="dk-bulk-del-btn"
+                                class="btn btn-danger"
+                                type="button"
+                                aria-pressed="false"
+                            >
+                                删除密钥
+                            </button>
+                            <button
+                                id="dk-f-reset"
+                                class="btn btn-secondary"
+                                type="button"
+                            >
+                                清除筛选
+                            </button>
+                        </div>
                     </div>
 
                     <div id="dk-loading" class="state-card">读取中...</div>

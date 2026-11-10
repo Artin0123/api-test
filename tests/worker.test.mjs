@@ -598,7 +598,7 @@ test("a retryable failure moves to the next key and counts against the first", a
   );
 
   const keys = await getKeyRows(env, fp);
-  const bad = keys.find((k) => k.masked === "b***d");
+  const bad = keys.find((k) => k.masked === "bad");
   assert.equal(bad.fail_count, 1);
   assert.equal(bad.disabled, false);
 });
@@ -706,8 +706,8 @@ test("a daily result that lists a key as valid clears its proxy ledger", async (
   assert.deepEqual(
     keys.map((k) => [k.masked, k.fail_count, k.disabled]),
     [
-      ["k***1", 0, false],
-      ["k***2", 1, true],
+      ["k1", 0, false],
+      ["k2", 1, true],
     ],
   );
 });
@@ -746,7 +746,10 @@ test("retries stop at four upstream calls and the fifth key is untouched", async
 
 test("proxy state masks every key and never leaks plaintext", async () => {
   const env = makeEnv();
-  const p = provider({ alias: "openai", keys: "sk-aaaaaaaaaaaa1111\nsk-bbbbbbbbbbbb2222\nabcdefghi" });
+  const p = provider({
+    alias: "openai",
+    keys: "sk-aaaaaaaaaaaa1111\n123456789012\n12345678901\n1234567890\nabcdefghi",
+  });
   await postSettings(env, [p]);
 
   const response = await request(env, "/api/proxy/state", {
@@ -755,16 +758,21 @@ test("proxy state masks every key and never leaks plaintext", async () => {
   const text = await response.text();
   assert.equal(response.status, 200);
   assert.ok(!text.includes("sk-aaaaaaaaaaaa1111"));
-  assert.ok(!text.includes("sk-bbbbbbbbbbbb2222"));
+  assert.ok(!text.includes("123456789012"));
+  assert.ok(!text.includes("12345678901"));
+  assert.ok(!text.includes("1234567890"));
   const data = JSON.parse(text);
   const found = data.providers[0];
-  assert.equal(found.keys_total, 3);
-  assert.equal(found.keys_available, 3);
+  assert.equal(found.keys_total, 5);
+  assert.equal(found.keys_available, 5);
   assert.equal(found.proxy_url, "/proxy/openai");
   assert.equal(found.sample_path, "/chat/completions");
-  assert.equal(found.keys[0].masked, "sk-a***1111");
-  // A 9-character key must not show 8 of its 9 characters.
-  assert.equal(found.keys[2].masked, "a***i");
+  assert.equal(found.keys[0].masked, "sk-aaa***111");
+  assert.equal(found.keys[1].masked, "123456***012");
+  assert.equal(found.keys[2].masked, "123456**901");
+  assert.equal(found.keys[3].masked, "123456*890");
+  // Exactly 9 characters are displayed directly without masking.
+  assert.equal(found.keys[4].masked, "abcdefghi");
 });
 
 test("a failed manual test charges the key and can disable it", async () => {
@@ -912,7 +920,7 @@ test("removing a key or changing api_base prunes key_state without resetting cou
     .run();
   await postSettings(env, [{ ...first, keys: "k2" }]);
   const after = await getKeyRows(env, fp);
-  assert.deepEqual(after.map((k) => k.masked), ["k***2"]);
+  assert.deepEqual(after.map((k) => k.masked), ["k2"]);
 
   const moved = { ...first, api_base: `${upstreamBase()}/v2` };
   await postSettings(env, [moved]);
@@ -1200,4 +1208,56 @@ test("gateway mode builds the custom-provider URL and writes ASCII metadata", as
   assert.equal(metadata, JSON.stringify({ key: "sk-a-1234", provider: "openai" }));
   // eslint-disable-next-line no-control-regex
   assert.ok(/^[\x20-\x7e]*$/.test(metadata));
+});
+
+test("POST /api/dead-keys is removed while GET/PUT/DELETE remain active", async () => {
+  const env = makeEnv();
+  const postRes = await request(env, "/api/dead-keys", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_host: "api.example.com", api_key: "sk-dead1" }),
+  });
+  assert.equal(postRes.status, 404);
+
+  await postSettings(env, [provider({ keys: "sk-dead1\nsk-good1" })]);
+  const syncRes = await request(env, "/api/results", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider_type: "openai",
+      api_base: `${upstreamBase()}/v1`,
+      valid_keys: ["sk-good1"],
+      invalid_records: [{ api_key: "sk-dead1", error_code: 401, error_reason: "invalid" }],
+      proven_working_models: ["gpt-4o"],
+      failed_models: [],
+    }),
+  });
+  assert.equal(syncRes.status, 200);
+
+  const list = await asJson(
+    await request(env, "/api/dead-keys", { headers: adminHeaders() }),
+  );
+  assert.equal(list.status, 200);
+  assert.equal(list.data.dead_keys.length, 1);
+  const id = list.data.dead_keys[0].id;
+
+  const putRes = await asJson(
+    await request(env, `/api/dead-keys?id=${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ error_code: 403 }),
+    }),
+  );
+  assert.equal(putRes.status, 200);
+  assert.equal(putRes.data.record.error_code, 403);
+
+  const delRes = await asJson(
+    await request(env, "/api/dead-keys", {
+      method: "DELETE",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id] }),
+    }),
+  );
+  assert.equal(delRes.status, 200);
+  assert.equal(delRes.data.dead_keys.length, 0);
 });

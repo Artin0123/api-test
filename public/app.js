@@ -36,6 +36,7 @@ const state = {
   proxy: null,
   proxySelected: null,
   proxyBusy: false,
+  proxyPlainKeys: new Map(), // fp -> plaintext keys from settings for copy buttons
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -125,21 +126,13 @@ const dom = {
 
   // dead keys tab
   dkRefreshBtn: $("dk-refresh-btn"),
-  dkHost: $("dk-host"),
-  dkKey: $("dk-key"),
-  dkExpired: $("dk-expired"),
-  dkAddBtn: $("dk-add-btn"),
   dkBulkDelBtn: $("dk-bulk-del-btn"),
-  dkFilterToggle: $("dk-filter-toggle"),
-  dkFilterCount: $("dk-filter-count"),
-  dkFilterPanel: $("dk-filter-panel"),
   dkFHost: $("dk-f-host"),
   dkFKey: $("dk-f-key"),
   dkFCode: $("dk-f-code"),
   dkFFrom: $("dk-f-from"),
   dkFTo: $("dk-f-to"),
   dkFReset: $("dk-f-reset"),
-  dkFormError: $("dk-form-error"),
   dkLoading: $("dk-loading"),
   dkError: $("dk-error"),
   dkEmpty: $("dk-empty"),
@@ -363,14 +356,14 @@ function splitModels(raw) {
     .filter(Boolean);
 }
 
-/** Head/tail mask for keys. Keep this function in sync with the identically
- *  named one in `_worker.js` (same threshold, same separators): a 9-character
- *  key would otherwise reveal 8 of its 9 characters (4+4). */
+/** Head/tail mask for keys: left 6 + 1..3 asterisks + right 3 (<=9 shown as-is).
+ *  Keep this function identical to the one in `_worker.js`. */
 function maskKey(key) {
   const s = String(key || "");
   if (!s) return "";
-  if (s.length < 16) return `${s.slice(0, 1)}***${s.slice(-1)}`;
-  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+  if (s.length <= 9) return s;
+  const stars = "*".repeat(Math.min(s.length - 9, 3));
+  return `${s.slice(0, 6)}${stars}${s.slice(-3)}`;
 }
 
 /** Multiset diff of two newline lists: duplicated keys are counted, so removing
@@ -491,6 +484,7 @@ async function logout() {
   state.settings = null;
   state.deadKeys = [];
   state.deadKeysLoaded = false;
+  state.proxyPlainKeys.clear();
   sessionEnded();
   dom.authInput.value = "";
 }
@@ -1234,6 +1228,39 @@ function selectedProxyProvider() {
   return providers.find((p) => p.fp === state.proxySelected) || providers[0] || null;
 }
 
+async function syncProxyPlainKeys(proxyProviders) {
+  if (MOCK) return;
+
+  const buildMap = async (forceReload = false) => {
+    if (!state.settings || forceReload) {
+      const d = await api("/api/settings", { auth: true });
+      state.settings = d.settings || {};
+      applySettingsToUI();
+    }
+    const map = new Map();
+    for (const p of state.settings.providers || []) {
+      if (!p || !p.provider_type || !p.api_base) continue;
+      const payload = fingerprintPayload(p);
+      let fp = state.fpCache.get(payload);
+      if (!fp) {
+        fp = await sha256(payload);
+        state.fpCache.set(payload, fp);
+      }
+      map.set(fp, splitKeyLines(p.keys));
+    }
+    return map;
+  };
+
+  let map = await buildMap(false);
+  const stale = (proxyProviders || []).some((pp) => {
+    const list = map.get(pp.fp);
+    if (!list || list.length !== (pp.keys || []).length) return true;
+    return (pp.keys || []).some((k, i) => maskKey(list[i]) !== k.masked);
+  });
+  if (stale) map = await buildMap(true);
+  state.proxyPlainKeys = map;
+}
+
 async function loadProxyState() {
   dom.proxyLoading.classList.remove("hidden");
   dom.proxyError.classList.add("hidden");
@@ -1250,6 +1277,7 @@ async function loadProxyState() {
       data = mockProxyState(mock.settings || {});
     } else {
       data = await api("/api/proxy/state", { auth: true });
+      await syncProxyPlainKeys(data.providers || []);
     }
     state.proxy = data;
     const providers = data.providers || [];
@@ -1266,10 +1294,28 @@ async function loadProxyState() {
 }
 
 function mockProxyState(settings) {
+  state.proxyPlainKeys.clear();
   const providers = (settings.providers || []).map((p, i) => {
+    const fp = `mock-${i}`;
     const keys = splitKeyLines(p.keys);
+    state.proxyPlainKeys.set(fp, keys);
+    const keyEntries = keys.map((key, ki) => {
+      const disabled = keys.length > 1 && ki === keys.length - 1;
+      return {
+        id: i * 100 + ki + 1,
+        masked: maskKey(key),
+        disabled,
+        fail_count: disabled ? 3 : 0,
+        last_used_at: disabled
+          ? Date.now() - 3 * 3600 * 1000
+          : ki === 0
+            ? Date.now() - 25 * 1000
+            : null,
+        synced: true,
+      };
+    });
     return {
-      fp: `mock-${i}`,
+      fp,
       alias: p.alias || "",
       host: extractHost(p.api_base),
       provider_type: p.provider_type || "openai",
@@ -1284,16 +1330,9 @@ function mockProxyState(settings) {
       test_model: "",
       logs_url: "",
       models: splitModels(p.models),
-      keys_total: keys.length,
-      keys_available: keys.length,
-      keys: keys.map((key, ki) => ({
-        id: i * 100 + ki + 1,
-        masked: maskKey(key),
-        disabled: false,
-        fail_count: 0,
-        last_used_at: null,
-        synced: true,
-      })),
+      keys_total: keyEntries.length,
+      keys_available: keyEntries.filter((k) => !k.disabled).length,
+      keys: keyEntries,
     };
   });
   return {
@@ -1309,8 +1348,22 @@ function mockProxyState(settings) {
 
 function proxyTimeLabel(ms) {
   if (!ms) return "从未";
+  const ts = Number(ms);
+  if (!Number.isFinite(ts)) return "—";
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (diffSec < 60) return "60 秒前";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} 小时前`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay} 天前`;
+}
+
+function proxyTimeTitle(ms) {
+  if (!ms) return "";
   const d = new Date(Number(ms));
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 }
 
 function renderProxyState(data) {
@@ -1404,13 +1457,21 @@ function renderProxyToolbar() {
   // Two separate spans so the healthy and unhealthy counts can carry their own
   // colour without colouring the whole line. The old "可用 x / y" slash is gone:
   // 有效 x 無效 y says both numbers in words.
-  const okSpan = document.createElement("span");
-  okSpan.className = "proxy-summary-ok";
-  okSpan.textContent = `有效 ${available}`;
-  const failSpan = document.createElement("span");
-  failSpan.className = "proxy-summary-fail";
-  failSpan.textContent = `无效 ${Math.max(total - available, 0)}`;
-  dom.proxySummary.replaceChildren(okSpan, failSpan);
+  const makeSummaryItem = (cls, label, count) => {
+    const wrap = document.createElement("span");
+    wrap.className = cls;
+    const textSpan = document.createElement("span");
+    textSpan.textContent = label;
+    const numSpan = document.createElement("span");
+    numSpan.className = "proxy-summary-num";
+    numSpan.textContent = String(count);
+    wrap.append(textSpan, numSpan);
+    return wrap;
+  };
+  dom.proxySummary.replaceChildren(
+    makeSummaryItem("proxy-summary-ok", "有效", available),
+    makeSummaryItem("proxy-summary-fail", "无效", Math.max(total - available, 0)),
+  );
   dom.proxyUrl.textContent = url || "（尚未设定转发别名）";
   dom.proxyUrl.dataset.copyVal = url;
   // Nothing to copy without an alias, so the field must not look clickable.
@@ -1467,31 +1528,40 @@ function renderProxyKeyCards() {
   }
   dom.proxyKeyEmpty.classList.add("hidden");
   const canAct = enabled && !!p.test_model;
+  const plainList = state.proxyPlainKeys.get(p.fp) || [];
   dom.proxyKeyGrid.innerHTML = keys
-    .map((k) => {
+    .map((k, ki) => {
       const id = k.id == null ? "" : String(k.id);
       const mask = esc(k.masked || "");
-      // Green / amber, the same pairing .provider-card uses for 启用 / 停用,
-      // so "正常" stops looking like an unknown state.
-      const badge = k.disabled
-        ? `<span class="badge badge-warn">已禁用</span>`
-        : `<span class="badge badge-ok">正常</span>`;
+      const candidate = plainList[ki] || "";
+      const rawKey = candidate && maskKey(candidate) === k.masked ? candidate : "";
+      const copyBtn = rawKey
+        ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rawKey)}">${COPY_ICON_SVG}</button>`
+        : "";
       const recover = k.disabled
         ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${enabled && id ? "" : " disabled"}>恢复</button>`
         : "";
+      const stateTag = k.disabled
+        ? `<span class="proxy-key-state-tag">失效</span>`
+        : "";
+      const timeTitle = proxyTimeTitle(k.last_used_at);
+      const timeAttr = timeTitle ? ` title="${escAttr(timeTitle)}"` : "";
       return `
         <article class="proxy-key-card${k.disabled ? " proxy-key-card--disabled" : ""}" data-key-id="${escAttr(id)}">
           <div class="proxy-key-card-head">
             <code class="proxy-key-mask" title="${mask}">${mask}</code>
-            ${badge}
+            ${copyBtn}
           </div>
           <div class="proxy-key-card-meta">
-            <span>连续失败 <strong>${Number(k.fail_count || 0)}</strong></span>
-            <span>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
+            <span>失败 <strong>${Number(k.fail_count || 0)}</strong></span>
+            <span${timeAttr}>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
           </div>
           <div class="proxy-key-card-actions">
-            <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${canAct && id ? "" : " disabled"}>测试</button>
-            ${recover}
+            <div class="proxy-key-card-btns">
+              <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${canAct && id ? "" : " disabled"}>测试</button>
+              ${recover}
+            </div>
+            ${stateTag}
           </div>
           <div class="proxy-test-result" data-proxy-result="${escAttr(id)}"></div>
         </article>`;
@@ -2142,12 +2212,10 @@ function detailMessage(detail) {
 
 async function loadDeadKeys(force = false) {
   dom.dkError.classList.add("hidden");
-  dom.dkFormError.textContent = "";
-  // Default to today so the native picker shows a real date instead of the
-  // browser's own locale placeholder. Only on (re)load — doing it in
-  // renderDeadKeys would refill the field on every filter keystroke, undoing a
-  // date the user just cleared to type a different one.
-  if (!dom.dkExpired.value) dom.dkExpired.value = todayISO();
+  // Filter panel stays visible at all times, so keep default options populated
+  // even while loading or when a request fails.
+  fillHostSelect(dom.dkFHost, { includeAll: true, selected: dom.dkFHost.value });
+  fillCodeSelect();
 
   if (state.deadKeysLoaded && !force) {
     renderDeadKeys();
@@ -2188,12 +2256,144 @@ async function loadDeadKeys(force = false) {
   }
 }
 
+function parseFilterDate(value) {
+  const m = /^(\d{4})[\/-](\d{2})[\/-](\d{2})$/.exec(
+    String(value || "").trim(),
+  );
+  if (!m) return "";
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== mo - 1 ||
+    dt.getUTCDate() !== d
+  ) {
+    return "";
+  }
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+function formatDateFilterInput(raw, caret, inputType) {
+  const deleting = inputType === "deleteContentBackward";
+  if (!deleting) {
+    if (/^(\d{4})[\/-]$/.test(raw)) {
+      const value = `${raw.slice(0, 4)}/`;
+      return { value, caret: value.length };
+    }
+    const shortMonth = /^(\d{4})[\/-](\d)[\/-]$/.exec(raw);
+    if (shortMonth) {
+      const value = `${shortMonth[1]}/0${shortMonth[2]}/`;
+      return { value, caret: value.length };
+    }
+    const fullMonth = /^(\d{4})[\/-](\d{2})[\/-]$/.exec(raw);
+    if (fullMonth) {
+      const value = `${fullMonth[1]}/${fullMonth[2]}/`;
+      return { value, caret: value.length };
+    }
+  }
+
+  const digitsBefore = raw.slice(0, caret).replace(/\D/g, "").length;
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  let value = digits;
+  if (digits.length > 6) {
+    value = `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6)}`;
+  } else if (digits.length > 4) {
+    value = `${digits.slice(0, 4)}/${digits.slice(4)}`;
+  }
+
+  let nextCaret = 0;
+  let seen = 0;
+  while (nextCaret < value.length && seen < digitsBefore) {
+    if (/\d/.test(value[nextCaret])) seen++;
+    nextCaret++;
+  }
+  if (!deleting && value[nextCaret] === "/") nextCaret++;
+  return { value, caret: nextCaret };
+}
+
+function bindDateFilterInput(input) {
+  const wrap = input.closest(".dk-date-wrap");
+  const picker = wrap ? wrap.querySelector(".dk-date-picker") : null;
+  const btn = wrap ? wrap.querySelector(".dk-date-btn") : null;
+
+  const sync = (markIncomplete = false) => {
+    const v = input.value.trim();
+    const parsed = parseFilterDate(v);
+    const bad = markIncomplete ? !!v && !parsed : v.length === 10 && !parsed;
+    input.classList.toggle("is-invalid", bad);
+    if (picker) picker.value = parsed;
+  };
+
+  const handleInput = (e) => {
+    if (e && e.isComposing) return;
+    const caret = input.selectionStart ?? input.value.length;
+    const next = formatDateFilterInput(
+      input.value,
+      caret,
+      e ? e.inputType : "",
+    );
+    if (input.value !== next.value) {
+      input.value = next.value;
+      try {
+        input.setSelectionRange(next.caret, next.caret);
+      } catch {}
+    }
+    sync(false);
+    renderDeadKeys();
+  };
+
+  input.addEventListener("input", handleInput);
+  input.addEventListener("compositionend", () => handleInput(null));
+  input.addEventListener("blur", () => {
+    const m = /^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/.exec(
+      input.value.trim(),
+    );
+    if (m) {
+      input.value = `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
+    }
+    sync(true);
+    renderDeadKeys();
+  });
+
+  if (picker) {
+    picker.addEventListener("change", () => {
+      input.value = picker.value ? picker.value.replace(/-/g, "/") : "";
+      sync(false);
+      renderDeadKeys();
+    });
+  }
+
+  if (btn && picker) {
+    btn.addEventListener("click", () => {
+      sync(false);
+      if (typeof picker.showPicker === "function") {
+        try {
+          picker.showPicker();
+          return;
+        } catch {}
+      }
+      picker.focus();
+      picker.click();
+    });
+  }
+}
+
+function resetDateFilterInput(input) {
+  input.value = "";
+  input.classList.remove("is-invalid");
+  const wrap = input.closest(".dk-date-wrap");
+  const picker = wrap ? wrap.querySelector(".dk-date-picker") : null;
+  if (picker) picker.value = "";
+}
+
 function filteredDeadKeys() {
   const host = dom.dkFHost.value;
   const q = dom.dkFKey.value.trim().toLowerCase();
   const code = dom.dkFCode.value;
-  const from = dom.dkFFrom.value;
-  const to = dom.dkFTo.value;
+  const from = parseFilterDate(dom.dkFFrom.value);
+  const to = parseFilterDate(dom.dkFTo.value);
   // One bound alone stays open-ended; the same day twice narrows to that day.
   const swap = from && to && from > to;
   const lo = swap ? to : from;
@@ -2311,24 +2511,9 @@ function visibleDeadKeys() {
   return sortDeadKeyRows(filtered, deadKeyIndexById(filtered));
 }
 
-function activeFilterCount() {
-  return [
-    dom.dkFHost.value,
-    dom.dkFKey.value.trim(),
-    dom.dkFCode.value,
-    dom.dkFFrom.value,
-    dom.dkFTo.value,
-  ].filter(Boolean).length;
-}
-
 function renderDeadKeys() {
-  fillHostSelect(dom.dkHost, { selected: dom.dkHost.value });
   fillHostSelect(dom.dkFHost, { includeAll: true, selected: dom.dkFHost.value });
   fillCodeSelect();
-
-  const n = activeFilterCount();
-  dom.dkFilterCount.textContent = String(n);
-  dom.dkFilterCount.classList.toggle("hidden", n === 0);
 
   const filtered = filteredDeadKeys();
   const indexById = deadKeyIndexById(filtered);
@@ -2418,59 +2603,6 @@ function dkSortHead(col, label, extraClass) {
 
 function toIsoDay(dateStr) {
   return dateStr ? `${dateStr}T00:00:00.000Z` : null;
-}
-
-async function addDeadKey() {
-  dom.dkFormError.textContent = "";
-  const provider_host = dom.dkHost.value.trim();
-  const api_key = dom.dkKey.value.trim();
-  if (!provider_host) {
-    dom.dkFormError.textContent = "请先在「来源设定」新增服务商，或选择域名";
-    return;
-  }
-  if (!api_key) {
-    dom.dkFormError.textContent = "请输入 API Key";
-    return;
-  }
-
-  const payload = {
-    provider_host,
-    api_key,
-    expired_at: toIsoDay(dom.dkExpired.value),
-  };
-
-  dom.dkAddBtn.disabled = true;
-  try {
-    if (MOCK) {
-      if (state.deadKeys.some((r) => r && r.api_key === api_key)) {
-        throw new Error("api_key already recorded");
-      }
-      state.deadKeys.push({
-        id: crypto.randomUUID(),
-        ...payload,
-        error_code: null,
-        error_detail: null,
-        created_at: new Date().toISOString(),
-      });
-    } else {
-      const d = await api("/api/dead-keys", {
-        method: "POST",
-        auth: true,
-        body: payload,
-      });
-      if (d.record) state.deadKeys.push(d.record);
-    }
-    dom.dkKey.value = "";
-    dom.dkExpired.value = todayISO();
-    renderDeadKeys();
-  } catch (err) {
-    dom.dkFormError.textContent =
-      err.message === "api_key already recorded"
-        ? "此 Key 已记录过，保留最早的那一笔"
-        : err.message;
-  } finally {
-    dom.dkAddBtn.disabled = false;
-  }
 }
 
 function openDkEdit(id) {
@@ -2992,6 +3124,10 @@ function bindEvents() {
   dom.proxyTestActive.addEventListener("click", () => runProxyBatch("active"));
   dom.proxyTestDisabled.addEventListener("click", () => runProxyBatch("disabled"));
   dom.proxyKeyGrid.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest(".copy-btn");
+    if (copyBtn) {
+      return copyText(copyBtn.dataset.copyVal || "", copyBtn);
+    }
     const testBtn = e.target.closest("[data-proxy-test]");
     if (testBtn) {
       return testProxyKey(testBtn.dataset.fp, testBtn.dataset.proxyTest);
@@ -3099,25 +3235,19 @@ function bindEvents() {
 
   // Dead keys tab
   dom.dkRefreshBtn.addEventListener("click", () => loadDeadKeys(true));
-  dom.dkAddBtn.addEventListener("click", addDeadKey);
   dom.dkBulkDelBtn.addEventListener("click", onDkBulkDelClick);
-  dom.dkKey.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") addDeadKey();
-  });
-  dom.dkFilterToggle.addEventListener("click", () => {
-    const open = dom.dkFilterPanel.classList.toggle("hidden") === false;
-    dom.dkFilterToggle.setAttribute("aria-expanded", String(open));
-  });
-  [dom.dkFHost, dom.dkFCode, dom.dkFFrom, dom.dkFTo].forEach((el) =>
+  [dom.dkFHost, dom.dkFCode].forEach((el) =>
     el.addEventListener("change", renderDeadKeys),
   );
+  bindDateFilterInput(dom.dkFFrom);
+  bindDateFilterInput(dom.dkFTo);
   dom.dkFKey.addEventListener("input", renderDeadKeys);
   dom.dkFReset.addEventListener("click", () => {
     dom.dkFHost.value = "";
     dom.dkFKey.value = "";
     dom.dkFCode.value = "";
-    dom.dkFFrom.value = "";
-    dom.dkFTo.value = "";
+    resetDateFilterInput(dom.dkFFrom);
+    resetDateFilterInput(dom.dkFTo);
     renderDeadKeys();
   });
   dom.dkTableWrap.addEventListener("click", (e) => {

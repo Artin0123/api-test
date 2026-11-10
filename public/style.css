@@ -1338,6 +1338,7 @@ a:hover {
 .alert {
     border-radius: var(--radius-sm);
     padding: 0.85rem 1.1rem;
+    margin-bottom: 1rem;
     font-size: var(--text-sm);
 }
 
@@ -1421,61 +1422,10 @@ code {
 }
 
 /* ── Dead keys tab ─────────────────────────────────────────────────────── */
-.dk-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    flex-wrap: nowrap;
-    margin-bottom: 0.85rem;
-}
-
-.dk-add-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex: 1;
-    min-width: 0;
-    flex-wrap: nowrap;
-}
-
-.dk-add-row .input-select {
-    width: auto;
-    min-width: 8rem;
-    flex-shrink: 1;
-}
-
-.dk-add-row .input-text[type="text"] {
-    flex: 1 1 8rem;
-    min-width: 0;
-}
-
-.dk-add-row .input-text[type="date"] {
-    width: auto;
-    flex-shrink: 0;
-}
-
-.dk-add-row .btn {
-    flex-shrink: 0;
-}
-
-.dk-toolbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex-shrink: 0;
-}
-
-.dk-filter-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-
 .dk-filter-panel {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-    align-items: end;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
     gap: 1rem;
     padding: 1rem 1.1rem;
     margin-bottom: 1rem;
@@ -1484,8 +1434,94 @@ code {
     border-radius: var(--radius-sm);
 }
 
-.dk-filter-panel .btn {
-    justify-self: start;
+.dk-filter-field--host {
+    flex: 1 1 10.5rem;
+    min-width: 0;
+}
+
+.dk-filter-field--key {
+    flex: 2.5 1 17rem;
+    min-width: 0;
+}
+
+.dk-filter-field--code {
+    flex: 0.7 1 8.5rem;
+    min-width: 0;
+}
+
+.dk-filter-field--date {
+    flex: 0 0 auto;
+}
+
+.dk-date-wrap {
+    position: relative;
+    width: 8.75rem;
+    max-width: 100%;
+}
+
+.dk-date-input {
+    padding: 0 2.15rem 0 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.dk-date-input.is-invalid {
+    border-color: var(--fail);
+}
+
+.dk-date-picker {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.dk-date-btn {
+    position: absolute;
+    top: 50%;
+    right: 0.15rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition:
+        color 0.15s,
+        background 0.15s;
+}
+
+.dk-date-btn:hover {
+    color: var(--text);
+    background: var(--bg-3);
+}
+
+.dk-date-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.dk-filter-actions {
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.dk-filter-actions .btn {
+    flex-shrink: 0;
 }
 
 /* 内层跟着格子走。改栏宽请改下面 .dk-host-col 的 width，不要改这里。 */
@@ -1823,23 +1859,25 @@ code {
    The provider itself is a <select>, not a card: per-provider cards turned into
    very tall columns once a provider had more than a handful of keys.
 
-   The toolbar is deliberately *not* a surface of its own — it sits straight on
-   the panel with only vertical spacing, so the tab reads as one page instead of
-   a panel inside a panel. The key cards below still borrow .provider-card
-   (bg-2 / radius / ~1.1rem padding) and the empty state borrows .state-card;
-   those two are the only surfaces, and new pieces here should reuse them rather
-   than invent a third. */
+   The toolbar sits inside a framed surface matching .proxy-key-card
+   (bg-2 / border / --radius) with inner padding so its controls stay clearly
+   separated from the outer frame, while the empty state reuses .state-card. */
 .proxy-toolbar {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
+    padding: 1.25rem;
     margin-bottom: 1rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
 }
 
 .proxy-summary {
     display: flex;
     align-items: baseline;
-    gap: 0.75rem;
+    gap: 2.4rem;
+    font-variant-numeric: tabular-nums;
     /* One step above the 14px body text and bold: these two counts are the answer
        the page exists to give, so they read as a statement, not as a caption —
        without turning into a second heading. */
@@ -1851,13 +1889,27 @@ code {
 /* The two counts say different things, so they get different colours instead of
    one muted sentence. The numbers themselves are enough; no slash, no separator.
    These take the soft pair, not --ok/--fail: at 16px bold the vivid badge
-   colours turn into a traffic light, and the point here is a calm readout. */
+   colours turn into a traffic light, and the point here is a calm readout.
+   Each item keeps a 2-space minimum gap before a right-aligned 3-digit slot;
+   4+ digits grow rightwards while keeping the 8-space gap before 无效. */
+.proxy-summary-ok,
+.proxy-summary-fail {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.6rem;
+}
+
 .proxy-summary-ok {
     color: var(--ok-soft);
 }
 
 .proxy-summary-fail {
     color: var(--fail-soft);
+}
+
+.proxy-summary-num {
+    min-width: 3ch;
+    text-align: right;
 }
 
 .proxy-toolbar-row {
@@ -2025,11 +2077,16 @@ code {
     border-radius: var(--radius);
 }
 
-/* Disabled keys are a colour swap on the existing border, the same move
-   .provider-card--selected makes with the accent. The card is NOT dimmed: the
-   恢复 button is the reason the row is still on screen. */
+/* Match .provider-card--disabled and .provider-card-state-tag in 来源设定. */
 .proxy-key-card--disabled {
-    border-color: var(--warn);
+    opacity: 0.5;
+    filter: grayscale(1);
+}
+
+.proxy-key-state-tag {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text);
 }
 
 .proxy-key-card-head {
@@ -2075,7 +2132,15 @@ code {
 .proxy-key-card-actions {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.proxy-key-card-btns {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 0.5rem;
 }
 
@@ -2238,6 +2303,10 @@ code {
         padding: 1rem;
     }
 
+    .proxy-toolbar {
+        padding: 1rem;
+    }
+
     .proxy-toolbar-row {
         flex-direction: column;
         align-items: stretch;
@@ -2310,38 +2379,16 @@ code {
         flex: none;
     }
 
-    /* Dead keys: stack the add form; keep filter + bulk-delete on one row */
-    .dk-toolbar {
-        flex-direction: column;
-        align-items: stretch;
-        flex-wrap: wrap;
+    /* Dead keys: stack full-width filters and keep date fields compact */
+    .dk-filter-field--host,
+    .dk-filter-field--key,
+    .dk-filter-field--code {
+        flex: 1 1 100%;
     }
 
-    .dk-toolbar-actions {
-        width: 100%;
-    }
-
-    .dk-toolbar-actions .btn {
-        flex: 1;
-        min-height: 2.6rem;
-    }
-
-    .dk-add-row {
-        flex-direction: column;
-        align-items: stretch;
-        flex-wrap: wrap;
-    }
-
-    .dk-add-row .input-select,
-    .dk-add-row .input-text[type="text"],
-    .dk-add-row .input-text[type="date"] {
-        width: 100%;
-        min-width: 0;
-        flex: none;
-    }
-
-    .dk-filter-panel {
-        grid-template-columns: 1fr;
+    .dk-filter-actions .btn {
+        padding: 0.5rem 0.9rem;
+        font-size: var(--text-xs);
     }
 
     .dk-table {

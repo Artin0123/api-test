@@ -65,3 +65,54 @@ test("proxy assets referenced by the page exist in style.css", () => {
     assert.ok(css.includes(`.${cls}`), `style.css is missing .${cls}`);
   }
 });
+
+test("dead keys filter panel is always visible without manual add row or toggle", () => {
+  const filterMatch = html.match(/<div\s+id="dk-filter-panel"\s+class="([^"]+)"/);
+  assert.ok(filterMatch, "dk-filter-panel markup not found");
+  assert.ok(
+    !filterMatch[1].split(/\s+/).includes("hidden"),
+    "dk-filter-panel must not start hidden",
+  );
+  for (const removedId of [
+    "dk-host",
+    "dk-key",
+    "dk-expired",
+    "dk-add-btn",
+    "dk-filter-toggle",
+    "dk-filter-count",
+    "dk-form-error",
+  ]) {
+    assert.ok(!html.includes(`id="${removedId}"`), `index.html still has #${removedId}`);
+    assert.ok(!app.includes(`"${removedId}"`), `app.js still references #${removedId}`);
+  }
+  for (const dateId of ["dk-f-from", "dk-f-to"]) {
+    const tag = html.match(new RegExp(`<input[^>]*\\bid="${dateId}"[^>]*>`));
+    assert.ok(tag, `#${dateId} input not found`);
+    assert.match(tag[0], /\btype="text"/, `#${dateId} must be type="text" to hide yyyy/mm/dd`);
+    assert.doesNotMatch(tag[0], /\bplaceholder=/, `#${dateId} must not have a placeholder`);
+  }
+  const actionsBlock = html.match(/<div\s+class="dk-filter-actions">([\s\S]*?)<\/div>/);
+  assert.ok(actionsBlock, "dk-filter-actions container not found inside filter panel");
+  const delIdx = actionsBlock[1].indexOf('id="dk-bulk-del-btn"');
+  const resetIdx = actionsBlock[1].indexOf('id="dk-f-reset"');
+  assert.ok(delIdx >= 0 && resetIdx > delIdx, "dk-bulk-del-btn must sit left of dk-f-reset");
+  const resetBtn = actionsBlock[1].match(/<button[\s\S]*?id="dk-f-reset"[\s\S]*?>/);
+  assert.ok(resetBtn, "dk-f-reset button not found");
+  assert.match(resetBtn[0], /\bbtn-secondary\b/, "dk-f-reset must use btn-secondary");
+  assert.doesNotMatch(resetBtn[0], /\bbtn-(?:ghost|sm)\b/, "dk-f-reset must match normal button styling");
+  const delBtn = actionsBlock[1].match(/<button[\s\S]*?id="dk-bulk-del-btn"[\s\S]*?>/);
+  assert.ok(delBtn, "dk-bulk-del-btn button not found");
+  assert.match(delBtn[0], /\bbtn-danger\b/, "dk-bulk-del-btn must use btn-danger");
+  assert.doesNotMatch(delBtn[0], /\bbtn-danger-solid\b/, "dk-bulk-del-btn must not use btn-danger-solid");
+});
+
+test("proxy toolbar keeps an outer frame with inner spacing", () => {
+  const css = read("style.css");
+  const block = css.match(/\.proxy-toolbar\s*\{([^}]+)\}/);
+  assert.ok(block, ".proxy-toolbar rule not found");
+  assert.match(block[1], /\bborder\s*:/, ".proxy-toolbar needs a border");
+  assert.match(block[1], /\bpadding\s*:/, ".proxy-toolbar needs inner padding");
+  assert.ok(css.includes(".proxy-key-card-btns"), "style.css is missing .proxy-key-card-btns");
+  assert.ok(css.includes(".proxy-key-state-tag"), "style.css is missing .proxy-key-state-tag");
+  assert.ok(css.includes(".proxy-summary-num"), "style.css is missing .proxy-summary-num");
+});
