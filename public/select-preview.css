@@ -1,0 +1,201 @@
+.preview-shell {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 3.5rem;
+}
+
+.preview-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.75rem;
+}
+
+.preview-header h1 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+}
+
+.preview-header .muted {
+    max-width: 48rem;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.preview-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.preview-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.preview-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.preview-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.preview-card-head h2 {
+    font-size: 1rem;
+    font-weight: 650;
+    margin-bottom: 0.25rem;
+}
+
+.preview-card-head .muted {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    max-width: 56rem;
+}
+
+.preview-panel {
+    margin-bottom: 0;
+}
+
+/* Variant triggers & menus */
+.custom-select--ghost .custom-select-trigger {
+    background: transparent;
+    border-color: transparent;
+}
+
+.custom-select--ghost .custom-select-trigger:hover:not(:disabled) {
+    background: var(--bg-3);
+    border-color: var(--border);
+}
+
+.custom-select--underline .custom-select-trigger {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    padding-left: 0.25rem;
+    padding-right: 0.35rem;
+}
+
+.custom-select--underline .custom-select-trigger:hover:not(:disabled) {
+    border-bottom-color: var(--text-muted);
+}
+
+.custom-select--underline .custom-select-trigger:focus-visible,
+.custom-select--underline .custom-select-trigger[aria-expanded="true"] {
+    box-shadow: none;
+    border-bottom: 2px solid var(--accent);
+}
+
+.custom-select--elevated .custom-select-trigger {
+    background: var(--bg-3);
+    border-color: var(--border);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .custom-select--elevated .custom-select-trigger {
+    box-shadow: 0 1px 3px rgba(26, 31, 54, 0.08);
+}
+
+.custom-select--outline .custom-select-trigger {
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+}
+
+.custom-select--outline .custom-select-trigger:hover:not(:disabled) {
+    border-color: var(--accent-h);
+}
+
+.custom-select--pill .custom-select-trigger {
+    border-radius: 999px;
+    padding-left: 1.05rem;
+    padding-right: 0.95rem;
+}
+
+.custom-select-menu--pill {
+    border-radius: var(--radius);
+}
+
+/* Experimental CSS-only base-select */
+@supports (appearance: base-select) {
+    .preview-base-select,
+    .preview-base-select::picker(select) {
+        appearance: base-select;
+    }
+
+    .preview-base-select {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--bg-3);
+        background-image: none;
+        padding: 0 0.85rem 0 0.9rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        width: 100%;
+        min-width: 0;
+    }
+
+    .preview-base-select::picker-icon {
+        color: var(--text-muted);
+        transition: rotate 0.15s;
+    }
+
+    .preview-base-select:open::picker-icon {
+        rotate: 180deg;
+    }
+
+    .preview-base-select::picker(select) {
+        box-sizing: border-box;
+        width: anchor-size(width);
+        max-width: anchor-size(width);
+        margin-top: 4px;
+        padding: 0.3rem;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+        color: var(--text);
+        max-height: 16rem;
+        overflow-y: auto;
+    }
+
+    .preview-base-select option {
+        display: block;
+        padding: 0.45rem 0.65rem;
+        border-radius: calc(var(--radius-sm) - 2px);
+        font-size: var(--text-sm);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 100%;
+    }
+
+    .preview-base-select option:hover {
+        background: var(--bg-3);
+    }
+
+    .preview-base-select option:checked {
+        background: rgba(99, 102, 241, 0.15);
+        color: var(--accent-h);
+        font-weight: 600;
+    }
+
+    .preview-base-select option::checkmark {
+        display: none;
+    }
+}

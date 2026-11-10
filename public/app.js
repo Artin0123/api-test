@@ -374,6 +374,21 @@ function maskKey(key) {
   return `${s.slice(0, 6)}${stars}${s.slice(-3)}`;
 }
 
+/** Mobile head/tail mask for dead keys: left 6 + 1..3 asterisks + right 1 (<=7 shown as-is). */
+function maskKeyMobile(key) {
+  const s = String(key || "");
+  if (!s) return "";
+  if (s.length <= 7) return s;
+  const stars = "*".repeat(Math.min(s.length - 7, 3));
+  return `${s.slice(0, 6)}${stars}${s.slice(-1)}`;
+}
+
+function dkKeyHtml(key) {
+  const raw = String(key || "");
+  if (!raw) return "";
+  return `<span class="dk-key-desktop">${esc(maskKey(raw))}</span><span class="dk-key-mobile">${esc(maskKeyMobile(raw))}</span>`;
+}
+
 /** Multiset diff of two newline lists: duplicated keys are counted, so removing
  *  one copy of a key that appears twice reports exactly one removal. */
 function diffKeyLines(oldText, newText) {
@@ -530,6 +545,7 @@ function openModal(overlay, initialFocusEl = null) {
 
 function closeModal(overlay) {
   if (!overlay) return;
+  closeOpenCustomSelect();
   overlay.classList.add("hidden");
   const idx = state.modalStack.indexOf(overlay);
   if (idx >= 0) state.modalStack.splice(idx, 1);
@@ -538,6 +554,295 @@ function closeModal(overlay) {
     typeof document.activeElement.blur === "function"
   ) {
     document.activeElement.blur();
+  }
+}
+
+// ── Desktop flat custom select (mobile/touch keeps native <select>) ───────
+const desktopSelectMql =
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(min-width: 641px) and (hover: hover) and (pointer: fine)")
+    : null;
+let activeCustomSelect = null;
+
+function isDesktopCustomSelect() {
+  return !!(desktopSelectMql && desktopSelectMql.matches);
+}
+
+function createSelectArrowSvg() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("class", "custom-select-arrow");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  const poly = document.createElementNS(ns, "polyline");
+  poly.setAttribute("points", "6 9 12 15 18 9");
+  svg.appendChild(poly);
+  return svg;
+}
+
+function syncCustomSelect(select) {
+  const ui = select && select._customUi;
+  if (!ui) return;
+  const opts = Array.from(select.options || []);
+  const selectedOpt =
+    (select.selectedIndex >= 0 && opts[select.selectedIndex]) ||
+    opts.find((o) => o.selected) ||
+    opts[0] ||
+    null;
+  const label = selectedOpt ? selectedOpt.textContent || "" : "";
+  ui.valueEl.textContent = label;
+  ui.trigger.title = label;
+  ui.trigger.disabled = !!select.disabled;
+  ui.wrap.classList.toggle("is-disabled", !!select.disabled);
+  if (activeCustomSelect === select) {
+    renderCustomSelectMenu(select);
+  }
+}
+
+function setCustomMenuActive(select, nextIdx) {
+  const ui = select && select._customUi;
+  if (!ui) return;
+  const items = Array.from(ui.menu.querySelectorAll(".custom-select-option"));
+  if (!items.length) {
+    ui.activeIndex = -1;
+    return;
+  }
+  const bounded = Math.max(0, Math.min(nextIdx, items.length - 1));
+  ui.activeIndex = bounded;
+  items.forEach((item, idx) => {
+    item.classList.toggle("is-active", idx === bounded);
+  });
+  const activeItem = items[bounded];
+  if (activeItem && typeof activeItem.scrollIntoView === "function") {
+    activeItem.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function moveCustomMenuActive(select, step) {
+  const ui = select && select._customUi;
+  if (!ui) return;
+  const opts = Array.from(select.options || []);
+  if (!opts.length) return;
+  let idx = ui.activeIndex;
+  for (let i = 0; i < opts.length; i++) {
+    idx = (idx + step + opts.length) % opts.length;
+    if (!opts[idx].disabled) {
+      setCustomMenuActive(select, idx);
+      return;
+    }
+  }
+}
+
+function positionCustomSelectMenu(select) {
+  const ui = select && select._customUi;
+  if (!ui) return;
+  const rect = ui.trigger.getBoundingClientRect();
+  const gap = 4;
+  const margin = 12;
+  const spaceBelow = window.innerHeight - rect.bottom - margin;
+  const spaceAbove = rect.top - margin;
+  const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+  const maxH = Math.max(120, Math.min(256, openUp ? spaceAbove - gap : spaceBelow - gap));
+
+  ui.menu.style.width = `${rect.width}px`;
+  ui.menu.style.left = `${rect.left}px`;
+  ui.menu.style.maxHeight = `${maxH}px`;
+
+  if (openUp) {
+    const measured = Math.min(ui.menu.scrollHeight || maxH, maxH);
+    ui.menu.style.top = `${Math.max(margin, rect.top - gap - measured)}px`;
+  } else {
+    ui.menu.style.top = `${rect.bottom + gap}px`;
+  }
+}
+
+function renderCustomSelectMenu(select) {
+  const ui = select && select._customUi;
+  if (!ui) return;
+  const opts = Array.from(select.options || []);
+  ui.menu.replaceChildren();
+  opts.forEach((opt, idx) => {
+    const li = document.createElement("li");
+    li.className = "custom-select-option";
+    li.setAttribute("role", "option");
+    li.dataset.index = String(idx);
+    const label = opt.textContent || "";
+    li.textContent = label;
+    li.title = opt.title || label;
+    const isSelected = idx === select.selectedIndex;
+    li.classList.toggle("is-selected", isSelected);
+    li.setAttribute("aria-selected", String(isSelected));
+    if (opt.disabled) {
+      li.classList.add("is-disabled");
+      li.setAttribute("aria-disabled", "true");
+    }
+    ui.menu.appendChild(li);
+  });
+  const initialIdx =
+    select.selectedIndex >= 0
+      ? select.selectedIndex
+      : opts.findIndex((o) => !o.disabled);
+  setCustomMenuActive(select, initialIdx);
+}
+
+function closeOpenCustomSelect({ restoreFocus = false } = {}) {
+  const select = activeCustomSelect;
+  if (!select || !select._customUi) return false;
+  const ui = select._customUi;
+  activeCustomSelect = null;
+  ui.menu.classList.add("hidden");
+  ui.trigger.setAttribute("aria-expanded", "false");
+  if (restoreFocus && typeof ui.trigger.focus === "function") {
+    ui.trigger.focus();
+  }
+  return true;
+}
+
+function openCustomSelectMenu(select) {
+  if (!select || !select._customUi || select.disabled || !isDesktopCustomSelect()) return;
+  if (activeCustomSelect === select) {
+    closeOpenCustomSelect();
+    return;
+  }
+  closeOpenCustomSelect();
+  activeCustomSelect = select;
+  const ui = select._customUi;
+  renderCustomSelectMenu(select);
+  ui.menu.classList.remove("hidden");
+  positionCustomSelectMenu(select);
+  ui.trigger.setAttribute("aria-expanded", "true");
+  if (ui.activeIndex >= 0) {
+    setCustomMenuActive(select, ui.activeIndex);
+  }
+}
+
+function commitCustomSelectIndex(select, idx) {
+  const opts = Array.from(select.options || []);
+  const opt = opts[idx];
+  if (!opt || opt.disabled) return;
+  const changed = select.selectedIndex !== idx;
+  select.selectedIndex = idx;
+  syncCustomSelect(select);
+  closeOpenCustomSelect({ restoreFocus: true });
+  if (changed) {
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
+
+function enhanceSelect(select) {
+  if (!select || select._customUi) return;
+  const parent = select.parentNode;
+  if (!parent) return;
+
+  const wrap = document.createElement("div");
+  wrap.className = "custom-select";
+  wrap.dataset.enhanced = "1";
+  parent.insertBefore(wrap, select);
+  wrap.appendChild(select);
+  select.classList.add("custom-select-native");
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "custom-select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const valueEl = document.createElement("span");
+  valueEl.className = "custom-select-value";
+  trigger.append(valueEl, createSelectArrowSvg());
+  wrap.appendChild(trigger);
+
+  const menu = document.createElement("ul");
+  menu.className = "custom-select-menu hidden";
+  menu.setAttribute("role", "listbox");
+  document.body.appendChild(menu);
+
+  select._customUi = { wrap, trigger, valueEl, menu, activeIndex: -1 };
+  syncCustomSelect(select);
+
+  trigger.addEventListener("click", (e) => {
+    e.preventDefault();
+    openCustomSelectMenu(select);
+  });
+
+  trigger.addEventListener("keydown", (e) => {
+    if (!isDesktopCustomSelect()) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (activeCustomSelect !== select) {
+        openCustomSelectMenu(select);
+      } else {
+        moveCustomMenuActive(select, e.key === "ArrowDown" ? 1 : -1);
+      }
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      if (activeCustomSelect === select) {
+        e.preventDefault();
+        const idx = select._customUi.activeIndex;
+        if (idx >= 0) commitCustomSelectIndex(select, idx);
+        else closeOpenCustomSelect({ restoreFocus: true });
+      }
+      return;
+    }
+    if (e.key === "Tab" && activeCustomSelect === select) {
+      closeOpenCustomSelect();
+    }
+  });
+
+  menu.addEventListener("click", (e) => {
+    const li = e.target.closest(".custom-select-option");
+    if (!li) return;
+    const idx = Number(li.dataset.index);
+    if (Number.isInteger(idx)) commitCustomSelectIndex(select, idx);
+  });
+
+  const label = select.closest("label.field");
+  if (label) {
+    label.addEventListener("click", (e) => {
+      if (!isDesktopCustomSelect()) return;
+      if (e.target.closest(".custom-select")) return;
+      e.preventDefault();
+      if (!trigger.disabled) trigger.focus();
+    });
+  }
+
+  const observer = new MutationObserver(() => syncCustomSelect(select));
+  observer.observe(select, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["disabled"],
+  });
+}
+
+function initCustomSelects() {
+  document.querySelectorAll("select.input-select").forEach(enhanceSelect);
+  document.addEventListener("click", (e) => {
+    if (!activeCustomSelect || !activeCustomSelect._customUi) return;
+    const { trigger, menu } = activeCustomSelect._customUi;
+    if (trigger.contains(e.target) || menu.contains(e.target)) return;
+    closeOpenCustomSelect();
+  });
+  window.addEventListener("resize", () => closeOpenCustomSelect());
+  window.addEventListener(
+    "scroll",
+    (e) => {
+      if (!activeCustomSelect || !activeCustomSelect._customUi) return;
+      if (activeCustomSelect._customUi.menu.contains(e.target)) return;
+      closeOpenCustomSelect();
+    },
+    true,
+  );
+  if (desktopSelectMql && typeof desktopSelectMql.addEventListener === "function") {
+    desktopSelectMql.addEventListener("change", () => closeOpenCustomSelect());
   }
 }
 
@@ -560,6 +865,7 @@ function toggleMobileMenu(force) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
+  closeOpenCustomSelect();
   dom.tabBtns.forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name),
   );
@@ -1044,6 +1350,7 @@ function openEditor(index = -1) {
     const p = ((state.settings || {}).providers || [])[index] || {};
     dom.editorTitle.textContent = "编辑服务商";
     dom.edProviderType.value = p.provider_type || "openai";
+    syncCustomSelect(dom.edProviderType);
     dom.edApiBase.value = p.api_base || "";
     dom.edKeys.value = p.keys || "";
     dom.edModels.value = p.models || "";
@@ -1056,6 +1363,7 @@ function openEditor(index = -1) {
   } else {
     dom.editorTitle.textContent = "新增服务商";
     dom.edProviderType.value = "openai";
+    syncCustomSelect(dom.edProviderType);
     dom.edApiBase.value = "";
     dom.edKeys.value = "";
     dom.edModels.value = "";
@@ -1558,12 +1866,11 @@ function renderProxyState(data) {
     // The menu answers two questions at once — which provider, and what API it
     // speaks. The format used to be a separate pill under the select; folding it
     // into the option text keeps one row and makes each choice self-describing.
-    const name = p.alias || p.host;
-    const format = String(p.provider_type || "").trim();
-    opt.textContent = format ? `${name} - ${format}` : name;
+    opt.textContent = providerFormatLabel(p, p.host);
     if (p._uiKey === state.proxySelected) opt.selected = true;
     dom.proxyProvider.appendChild(opt);
   }
+  syncCustomSelect(dom.proxyProvider);
 
   dom.proxyEmpty.classList.add("hidden");
   dom.proxyToolbar.classList.remove("hidden");
@@ -1605,6 +1912,7 @@ function renderProxyModelSelect(p) {
   // No saved choice yet: default to the first model. The save button still has to
   // be pressed before the test buttons treat it as the chosen probe model.
   dom.proxyTestModel.value = saved || models[0];
+  syncCustomSelect(dom.proxyTestModel);
 }
 
 let proxySaveModelTimer = null;
@@ -2436,6 +2744,51 @@ function providerHosts() {
   return hosts;
 }
 
+function providerDisplayName(p, fallbackHost = "") {
+  const host = (p && p.host) || extractHost(p && p.api_base) || fallbackHost;
+  return String((p && p.alias) || "").trim() || host;
+}
+
+function providerFormatLabel(p, fallbackHost = "") {
+  const name = providerDisplayName(p, fallbackHost);
+  const format = String((p && p.provider_type) || "").trim();
+  return format ? `${name} - ${format}` : name;
+}
+
+function dkProvidersByHost(host) {
+  if (!host) return [];
+  return ((state.settings || {}).providers || []).filter(
+    (p) => p && extractHost(p.api_base) === host,
+  );
+}
+
+function dkProviderLabel(host) {
+  const h = String(host || "");
+  if (!h) return "";
+  const matches = dkProvidersByHost(h);
+  if (!matches.length) return h;
+  const labels = [];
+  for (const p of matches) {
+    const lbl = providerDisplayName(p, h);
+    if (lbl && !labels.includes(lbl)) labels.push(lbl);
+  }
+  return labels.join(" / ") || h;
+}
+
+function dkProviderTitle(host) {
+  const h = String(host || "");
+  if (!h) return "";
+  const label = dkProviderLabel(h);
+  const matches = dkProvidersByHost(h);
+  if (!matches.length) return h;
+  const bases = [
+    ...new Set(
+      matches.map((p) => String(p.api_base || "").trim()).filter(Boolean),
+    ),
+  ];
+  return bases.length ? `${label}\n${bases.join("\n")}` : label;
+}
+
 /** Host dropdowns always mirror state.settings.providers, plus any host already
  *  recorded in dead_keys (a provider may have been deleted after the fact). */
 function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
@@ -2445,11 +2798,16 @@ function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
   }
 
   const opts = [];
-  if (includeAll) opts.push(`<option value="">全部域名</option>`);
+  if (includeAll) opts.push(`<option value="">全部供应商</option>`);
   else if (!list.length) opts.push(`<option value="">（尚无服务商）</option>`);
-  for (const h of list) opts.push(`<option value="${escAttr(h)}">${esc(h)}</option>`);
+  for (const h of list) {
+    opts.push(
+      `<option value="${escAttr(h)}" title="${escAttr(dkProviderTitle(h))}">${esc(dkProviderLabel(h))}</option>`,
+    );
+  }
   select.innerHTML = opts.join("");
   if (selected && list.includes(selected)) select.value = selected;
+  syncCustomSelect(select);
 }
 
 // Empty <select> value is "all codes"; a second empty cannot mean "no code".
@@ -2484,6 +2842,7 @@ function fillCodeSelect() {
   } else if (selected && codes.includes(Number(selected))) {
     dom.dkFCode.value = selected;
   }
+  syncCustomSelect(dom.dkFCode);
 }
 
 function dkDateOf(rec) {
@@ -2779,7 +3138,9 @@ function compareDeadKeyNullsLast(a, b, col) {
 
 function compareDeadKey(a, b, col) {
   if (col === "host") {
-    return String(a.provider_host || "").localeCompare(String(b.provider_host || ""));
+    return dkProviderLabel(a.provider_host).localeCompare(
+      dkProviderLabel(b.provider_host),
+    );
   }
   if (col === "key") {
     return String(a.api_key || "").localeCompare(String(b.api_key || ""));
@@ -2874,8 +3235,8 @@ function renderDeadKeysTable(rows, indexById) {
         : `<td class="dk-check-col dk-num-cell">${indexById.get(r.id) ?? i + 1}</td>`;
       return `<tr>
       ${numOrCheckCell}
-      <td class="dk-host-col"><span class="dk-host-cell" title="${escAttr(r.provider_host || "")}">${esc(r.provider_host || "")}</span></td>
-      <td class="dk-key-col"><div class="dk-key-line"><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${esc(r.api_key || "")}</code>${copyKeyBtn}</div></td>
+      <td class="dk-host-col"><span class="dk-host-cell" title="${escAttr(dkProviderTitle(r.provider_host))}">${esc(dkProviderLabel(r.provider_host))}</span></td>
+      <td class="dk-key-col"><div class="dk-key-line"><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${dkKeyHtml(r.api_key)}</code>${copyKeyBtn}</div></td>
       <td class="dk-date-col dk-date-cell">${esc(dkDateOf(r) || "-")}</td>
       <td class="dk-code-col">${r.error_code != null ? esc(r.error_code) : `<span class="na">-</span>`}</td>
       <td class="dk-msg-col"><div class="dk-msg-line">${detailBtn}${preview}</div></td>
@@ -2895,7 +3256,7 @@ function renderDeadKeysTable(rows, indexById) {
       <table class="data-table dk-table">
         <thead><tr>
           ${numOrCheckHead}
-          ${dkSortHead("host", "域名供应商", "dk-host-col")}
+          ${dkSortHead("host", "供应商", "dk-host-col")}
           ${dkSortHead("key", "KEY", "dk-key-col")}
           ${dkSortHead("expired_at", "失效时间", "dk-date-col")}
           ${dkSortHead("code", "Code", "dk-code-col")}
@@ -3068,8 +3429,8 @@ function openDkConfirm() {
   dom.dkConfirmList.innerHTML = recs
     .map(
       (r) => `<li>
-      <span class="dk-confirm-key">${esc(r.api_key || "")}</span>
-      <span class="dk-confirm-host">${esc(r.provider_host || "")}</span>
+      <span class="dk-confirm-key">${dkKeyHtml(r.api_key)}</span>
+      <span class="dk-confirm-host">${esc(dkProviderLabel(r.provider_host))}</span>
     </li>`,
     )
     .join("");
@@ -3358,6 +3719,7 @@ async function sha256(str) {
 
 // ── Events ────────────────────────────────────────────────────────────────
 function bindEvents() {
+  initCustomSelects();
   // Auth
   dom.authBtn.addEventListener("click", login);
   dom.authInput.addEventListener("keydown", (e) => {
@@ -3635,6 +3997,8 @@ function bindEvents() {
     dom.dkFHost.value = "";
     dom.dkFKey.value = "";
     dom.dkFCode.value = "";
+    syncCustomSelect(dom.dkFHost);
+    syncCustomSelect(dom.dkFCode);
     resetDateFilterInput(dom.dkFFrom);
     resetDateFilterInput(dom.dkFTo);
     renderDeadKeys();
@@ -3661,7 +4025,11 @@ function bindEvents() {
         (r) => r && r.id === detailBtn.dataset.dkDetail,
       );
       if (rec)
-        openErrorDetail(rec.error_code, detailFor(rec), rec.provider_host || "");
+        openErrorDetail(
+          rec.error_code,
+          detailFor(rec),
+          dkProviderLabel(rec.provider_host),
+        );
       return;
     }
     const editBtn = e.target.closest("[data-dk-edit]");
@@ -3718,6 +4086,11 @@ function bindEvents() {
   ]);
 
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && activeCustomSelect) {
+      e.preventDefault();
+      closeOpenCustomSelect({ restoreFocus: true });
+      return;
+    }
     const activeOverlay = topOpenModal();
     if (!activeOverlay) return;
     if (e.key === "Escape") {

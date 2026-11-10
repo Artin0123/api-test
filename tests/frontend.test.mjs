@@ -141,3 +141,27 @@ test("async tab loaders guard stale requests and proxy batch keeps key results",
   assert.match(app, /loadProxyState\(\{\s*preserveResults:\s*true\s*\}\)/);
   assert.match(app, /clearProxyNotice\(\{\s*keepGlobal:\s*true\s*\}\)/);
 });
+
+test("dead keys provider labels, responsive key masking, and flat desktop select rules stay intact", () => {
+  const css = read("style.css");
+  assert.ok(!html.includes("供应商域名"), "index.html should use 供应商 instead of 供应商域名");
+  assert.ok(!html.includes("域名供应商"), "index.html should use 供应商 instead of 域名供应商");
+  assert.ok(!app.includes("域名供应商"), "app.js should use 供应商 instead of 域名供应商");
+  assert.ok(!app.includes("全部域名"), "app.js should use 全部供应商 instead of 全部域名");
+
+  assert.match(app, /function maskKeyMobile\(/);
+  assert.match(app, /function dkProviderLabel\([\s\S]*?providerDisplayName\(/);
+  assert.match(app, /dk-key-desktop/);
+  assert.match(app, /dk-key-mobile/);
+  assert.ok(css.includes(".custom-select-trigger"), "style.css is missing .custom-select-trigger");
+  assert.ok(css.includes(".custom-select-menu"), "style.css is missing .custom-select-menu");
+  const mobileBlock = css.slice(css.indexOf("@media (max-width: 640px)"));
+  assert.match(mobileBlock, /\.dk-key-desktop\s*\{\s*display:\s*none/s);
+  assert.match(mobileBlock, /\.dk-key-mobile\s*\{\s*display:\s*inline/s);
+
+  const previewHtml = read("select-preview.html");
+  const previewJs = read("select-preview.js");
+  assert.ok(!/<script(?![^>]*\bsrc=)/i.test(previewHtml), "no inline <script> in select-preview.html");
+  assert.ok(!/\sstyle="/i.test(previewHtml), 'no style="" attribute in select-preview.html');
+  assert.ok(!/\sstyle="/i.test(previewJs), 'select-preview.js must not build style="" attributes');
+});

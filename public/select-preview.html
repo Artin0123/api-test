@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-TW" data-theme="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+        />
+        <title>下拉選單樣式比較預覽 — API Key Tester</title>
+        <script src="/boot.js"></script>
+        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href="/select-preview.css" />
+    </head>
+    <body>
+        <main class="preview-shell">
+            <header class="preview-header">
+                <div>
+                    <h1>下拉選單樣式比較預覽</h1>
+                    <p class="muted">
+                        測試項目包含超長供應商名稱（例如
+                        <code>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</code>），可直接點擊展開比較「閉合框對齊」、「展開選單寬度」與「桌機平面質感」。
+                    </p>
+                </div>
+                <div class="preview-header-actions">
+                    <button
+                        id="preview-theme-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        切換淺色 / 深色
+                    </button>
+                    <a href="/?mock" class="btn btn-primary">返回主頁 (?mock)</a>
+                </div>
+            </header>
+
+            <section class="preview-grid">
+                <!-- 1 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 1：乾淨平面（桌機自訂固定寬彈窗 ＋ 手機原生）</h2>
+                            <p class="muted">
+                                <strong>目前主站已套用基準。</strong>桌機使用 <code>--bg-3</code> 乾淨平面底與固定寬度（<code>17rem</code>），展開選單與按鈕同寬且選項過長自動 <code>...</code>（懸停顯示完整名稱）；手機／觸控維持裝置原生彈窗。
+                            </p>
+                        </div>
+                        <span class="badge badge-ok">推薦預設</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-custom-select" data-variant="flat">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 2 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 2：乾淨平面 — 純原生 &lt;select&gt;（僅改閉合框）</h2>
+                            <p class="muted">
+                                閉合框同樣為 <code>--bg-3</code> 平面與 <code>17rem</code> 固定寬度（過長顯示 <code>...</code>），但點擊仍打開瀏覽器原生彈窗；可對比看看原生彈窗在有超長項目時會自動撐寬、對不上按鈕右緣的差異。
+                            </p>
+                        </div>
+                        <span class="badge">純原生對照</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 3 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 3：極簡幽靈平面（Minimal Ghost）</h2>
+                            <p class="muted">
+                                預設幾乎無外框、與工具列面板融為一體，滑鼠懸停或展開時才亮出柔和底色與外框，視覺負擔最輕。
+                            </p>
+                        </div>
+                        <span class="badge">低干擾</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-custom-select" data-variant="ghost">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 4 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 4：極簡底線風（Minimal Underline）</h2>
+                            <p class="muted">
+                                拿掉上左右框線，只保留乾淨底線與聚焦時的主色底線強調，風格清爽俐落、像表單列標籤。
+                            </p>
+                        </div>
+                        <span class="badge">線條簡潔</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-custom-select" data-variant="underline">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 5 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 5：卡片微浮起（Soft Elevated）</h2>
+                            <p class="muted">
+                                以 <code>--bg-3</code> 搭配極細頂部微高光與柔和外陰影，讓選單像一顆微微浮在面板上的平面按鍵，完全擺脫內陷感。
+                            </p>
+                        </div>
+                        <span class="badge">按鍵層次</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-custom-select" data-variant="elevated">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 6 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 6：高對比實框描邊（Crisp Outline）</h2>
+                            <p class="muted">
+                                採用清晰實框描邊與內凹主底色對比，與左側輸入框區隔明確，選取項目邊界最容易一眼辨識。
+                            </p>
+                        </div>
+                        <span class="badge">邊界明確</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-custom-select" data-variant="outline">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 7 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 7：膠囊圓角風（Rounded Pill）</h2>
+                            <p class="muted">
+                                全圓角膠囊外觀，和頁面上既有的狀態徽章（<code>.badge</code>）呼應，視覺更柔和輕巧。
+                            </p>
+                        </div>
+                        <span class="badge">圓角膠囊</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-custom-select" data-variant="pill">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+
+                <!-- 8 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 8：現代原生 CSS 實驗語法（<code>appearance: base-select</code>）</h2>
+                            <p class="muted">
+                                免任何 JS，純靠最新 Chromium（135+）支援的 <code>::picker(select)</code> 將原生彈窗鎖成與按鈕等寬、平面且支援 <code>...</code> 省略號；在尚未支援的瀏覽器（如 Firefox / Safari）會自動安全退回樣式 2。
+                            </p>
+                        </div>
+                        <span class="badge badge-warn">Chromium 135+</span>
+                    </div>
+                    <div class="dk-filter-panel preview-panel">
+                        <label class="field dk-filter-field--host">
+                            <span class="field-label">供应商</span>
+                            <select class="input-select preview-base-select">
+                                <option value="">全部供应商</option>
+                                <option value="1">dashscope - openai</option>
+                                <option value="2" selected>very-long-custom-api-gateway-provider-endpoint.example.com - anthropic</option>
+                                <option value="3">generativelanguage.googleapis.com - gemini</option>
+                            </select>
+                        </label>
+                        <label class="field dk-filter-field--key">
+                            <span class="field-label">Key 搜寻</span>
+                            <input type="text" class="input-text" placeholder="模糊匹配" />
+                        </label>
+                        <button type="button" class="btn btn-secondary">清除筛选</button>
+                    </div>
+                </article>
+            </section>
+        </main>
+
+        <script src="/select-preview.js"></script>
+    </body>
+</html>

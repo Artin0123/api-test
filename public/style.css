@@ -844,11 +844,150 @@ a:focus-visible,
 .input-select {
     cursor: pointer;
     appearance: none;
+    background-color: var(--bg-3);
     background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238892a4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 1rem center;
-    background-size: 1.2em;
-    padding-right: 2.5rem;
+    background-position: right 0.85rem center;
+    background-size: 1.15em;
+    padding: 0 2.4rem 0 0.9rem;
+    line-height: calc(var(--control-h) - 2px);
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.input-select:hover:not(:disabled) {
+    border-color: var(--text-muted);
+}
+
+/* ── Desktop flat select enhancement (mobile/touch keeps native <select>) ── */
+.custom-select {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.custom-select-trigger,
+.custom-select-menu {
+    display: none;
+}
+
+@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
+    .custom-select[data-enhanced="1"] .custom-select-native {
+        display: none;
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        width: 100%;
+        min-width: 0;
+        height: var(--control-h);
+        padding: 0 0.85rem 0 0.9rem;
+        background: var(--bg-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: var(--text-sm);
+        cursor: pointer;
+        transition:
+            border-color 0.15s,
+            box-shadow 0.15s,
+            background-color 0.15s;
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger:hover:not(:disabled) {
+        border-color: var(--text-muted);
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger:focus-visible,
+    .custom-select[data-enhanced="1"] .custom-select-trigger[aria-expanded="true"] {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+
+    .custom-select-value {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    .custom-select-arrow {
+        flex-shrink: 0;
+        color: var(--text-muted);
+        transition: transform 0.15s;
+    }
+
+    .custom-select-trigger[aria-expanded="true"] .custom-select-arrow {
+        transform: rotate(180deg);
+    }
+
+    .custom-select-menu {
+        display: block;
+        position: fixed;
+        z-index: 200;
+        list-style: none;
+        margin: 0;
+        padding: 0.3rem;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+        max-height: 16rem;
+        overflow-y: auto;
+    }
+
+    .custom-select-option {
+        padding: 0.45rem 0.65rem;
+        border-radius: calc(var(--radius-sm) - 2px);
+        font-size: var(--text-sm);
+        line-height: 1.45;
+        color: var(--text);
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: background-color 0.1s;
+    }
+
+    .custom-select-option:hover,
+    .custom-select-option.is-active {
+        background: var(--bg-3);
+    }
+
+    .custom-select-option.is-selected {
+        background: rgba(99, 102, 241, 0.15);
+        color: var(--accent-h);
+        font-weight: 600;
+    }
+
+    .custom-select-option.is-disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+}
+
+[data-theme="light"] .custom-select-menu {
+    box-shadow: 0 8px 20px rgba(26, 31, 54, 0.12);
+}
+
+[data-theme="light"] .custom-select-option.is-selected {
+    color: var(--accent);
 }
 
 /* ── Lined editor (textarea with line numbers) ─────────────────────────── */
@@ -1398,18 +1537,20 @@ code {
 }
 
 .dk-filter-field--host {
-    flex: 1 1 10.5rem;
+    flex: 0 0 17rem;
     min-width: 0;
+    max-width: 100%;
 }
 
 .dk-filter-field--key {
-    flex: 2.5 1 17rem;
+    flex: 1 1 12rem;
     min-width: 0;
 }
 
 .dk-filter-field--code {
-    flex: 0.7 1 8.5rem;
+    flex: 0 0 8.25rem;
     min-width: 0;
+    max-width: 100%;
 }
 
 .dk-filter-field--date {
@@ -1523,6 +1664,10 @@ code {
     min-width: 0;
 }
 
+.dk-key-mobile {
+    display: none;
+}
+
 .btn-icon {
     display: inline-flex;
     align-items: center;
@@ -1577,7 +1722,7 @@ code {
  *
  * padding 简写是 上 右 下 左：
  *   左 1rem = 「编号」到表格左边线（改到左边界的间距：改这一个值）
- *   右 0.5rem = 「编号」到本格右缘；到「域名供应商」文字的间距还要加上
+ *   右 0.5rem = 「编号」到本格右缘；到「供应商」文字的间距还要加上
  *              供应商栏的 padding-left（预设见上面 .data-table th/td 的 1rem）
  *              → 文字间距 = 本格右 0.5rem + 下一格左 1rem = 1.5rem
  *   只改这边的右值，或只改 .data-table th/td 的左值，都会改编号↔供应商的空隙。 */
@@ -1600,7 +1745,7 @@ code {
 .dk-table {
     table-layout: fixed;
     width: 100%;
-    min-width: 62rem;
+    min-width: 58.5rem;
 }
 
 .dk-table th,
@@ -1615,7 +1760,7 @@ code {
 
 .data-table th.dk-key-col,
 .data-table td.dk-key-col {
-    width: 14rem;
+    width: 10.5rem;
 }
 
 .data-table th.dk-date-col,
@@ -1944,7 +2089,8 @@ code {
    third of the row. `flex: none` plus an explicit width matter for the group's
    intrinsic size: with a shrinkable flex-basis the group measured only the
    select's text width and wrapped its last two buttons onto a second line. */
-.proxy-model-select {
+.proxy-model-select,
+.proxy-model-group > .custom-select {
     flex: none;
     width: 15rem;
     max-width: 100%;
@@ -2260,7 +2406,8 @@ code {
         align-self: flex-start;
     }
 
-    .proxy-model-select {
+    .proxy-model-select,
+    .proxy-model-group > .custom-select {
         flex: none;
         width: 100%;
     }
@@ -2287,7 +2434,7 @@ code {
     }
 
     .dk-table {
-        min-width: 56rem;
+        min-width: 49.25rem;
     }
 
     .data-table th.dk-check-col,
@@ -2298,12 +2445,20 @@ code {
 
     .data-table th.dk-host-col,
     .data-table td.dk-host-col {
-        width: 10rem;
+        width: 7.5rem;
     }
 
     .data-table th.dk-key-col,
     .data-table td.dk-key-col {
-        width: 10rem;
+        width: 8.75rem;
+    }
+
+    .dk-key-desktop {
+        display: none;
+    }
+
+    .dk-key-mobile {
+        display: inline;
     }
 
     .data-table th.dk-date-col,
