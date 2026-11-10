@@ -165,3 +165,16 @@ test("dead keys provider labels, responsive key masking, and flat desktop select
   assert.ok(!/\sstyle="/i.test(previewHtml), 'no style="" attribute in select-preview.html');
   assert.ok(!/\sstyle="/i.test(previewJs), 'select-preview.js must not build style="" attributes');
 });
+
+test("proxy toolbar places recover-all button next to test-disabled and scopes by fp", () => {
+  const groupMatch = html.match(/<div\s+class="proxy-model-group">([\s\S]*?)<\/div>/);
+  assert.ok(groupMatch, "proxy-model-group not found");
+  const testDisabledIdx = groupMatch[1].indexOf('id="proxy-test-disabled"');
+  const recoverAllIdx = groupMatch[1].indexOf('id="proxy-recover-all"');
+  assert.ok(
+    testDisabledIdx >= 0 && recoverAllIdx > testDisabledIdx,
+    "proxy-recover-all must sit right after proxy-test-disabled",
+  );
+  assert.match(app, /async function recoverAllProxyKeys\(/);
+  assert.match(app, /body:\s*\{\s*fp:\s*currentProvider\.fp,\s*all:\s*true\s*\}/);
+});

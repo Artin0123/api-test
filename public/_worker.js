@@ -2251,8 +2251,28 @@ async function handleProxyRecover(request, env) {
   } catch {
     return json({ error: "Invalid JSON" }, 400);
   }
-  const id = Number(body.id);
   const fp = typeof body.fp === "string" ? body.fp.trim() : "";
+
+  if (body.all === true) {
+    if (!fp) {
+      return json({ error: "fp required" }, 400);
+    }
+    await ensureSchemaFor(env.DB);
+    const result = await env.DB.prepare(
+      "UPDATE key_state SET disabled = 0, fail_count = 0, updated_at = ? " +
+        "WHERE fp = ? AND disabled = 1 RETURNING id",
+    )
+      .bind(Date.now(), fp)
+      .all();
+    const ids = (result.results || []).map((r) => r.id);
+    return json({
+      ok: true,
+      recovered: ids.length,
+      ids,
+    });
+  }
+
+  const id = Number(body.id);
   if (!Number.isInteger(id) || !fp) {
     return json({ error: "id and fp required" }, 400);
   }

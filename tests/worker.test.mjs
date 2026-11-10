@@ -1261,3 +1261,72 @@ test("POST /api/dead-keys is removed while GET/PUT/DELETE remain active", async 
   assert.equal(delRes.status, 200);
   assert.equal(delRes.data.dead_keys.length, 0);
 });
+
+test("POST /api/proxy/recover with all:true recovers only disabled keys of the target provider", async () => {
+  const env = makeEnv();
+  const pA = provider({ alias: "prov-a", api_base: `${upstreamBase()}/a/v1`, keys: "ka1\nka2\nka3" });
+  const pB = provider({ alias: "prov-b", api_base: `${upstreamBase()}/b/v1`, keys: "kb1\nkb2" });
+  await postSettings(env, [pA, pB]);
+  const fpA = await fingerprintOf(env, pA);
+  const fpB = await fingerprintOf(env, pB);
+
+  // Seed rows via first proxy request per provider, then mark specific rows disabled/failed in D1.
+  await proxy(env, "/proxy/prov-a/chat/completions");
+  await proxy(env, "/proxy/prov-b/chat/completions");
+  const now = Date.now();
+  await env.DB.prepare("UPDATE key_state SET disabled = 1, fail_count = 3 WHERE fp = ? AND api_key IN ('ka1', 'ka2')").bind(fpA).run();
+  await env.DB.prepare("UPDATE key_state SET disabled = 0, fail_count = 1 WHERE fp = ? AND api_key = 'ka3'").bind(fpA).run();
+  await env.DB.prepare("UPDATE key_state SET disabled = 1, fail_count = 3 WHERE fp = ? AND api_key = 'kb1'").bind(fpB).run();
+  await env.DB.prepare("UPDATE key_state SET disabled = 0, fail_count = 2, updated_at = ? WHERE fp = ? AND api_key = 'kb2'").bind(now, fpB).run();
+
+  const badReq = await asJson(
+    await request(env, "/api/proxy/recover", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    }),
+  );
+  assert.equal(badReq.status, 400);
+
+  const recRes = await asJson(
+    await request(env, "/api/proxy/recover", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp: fpA, all: true }),
+    }),
+  );
+  assert.equal(recRes.status, 200);
+  assert.equal(recRes.data.ok, true);
+  assert.equal(recRes.data.recovered, 2);
+  assert.equal(recRes.data.ids.length, 2);
+
+  const keysA = await getKeyRows(env, fpA);
+  assert.deepEqual(
+    keysA.map((k) => [k.masked, k.fail_count, k.disabled]),
+    [
+      ["ka1", 0, false],
+      ["ka2", 0, false],
+      ["ka3", 1, false], // active key with fail_count=1 is untouched
+    ],
+  );
+
+  const keysB = await getKeyRows(env, fpB);
+  assert.deepEqual(
+    keysB.map((k) => [k.masked, k.fail_count, k.disabled]),
+    [
+      ["kb1", 3, true], // other provider's disabled key is untouched
+      ["kb2", 2, false],
+    ],
+  );
+
+  const second = await asJson(
+    await request(env, "/api/proxy/recover", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp: fpA, all: true }),
+    }),
+  );
+  assert.equal(second.status, 200);
+  assert.equal(second.data.recovered, 0);
+  assert.deepEqual(second.data.ids, []);
+});

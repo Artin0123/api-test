@@ -187,6 +187,7 @@ const dom = {
   proxySaveModel: $("proxy-save-model"),
   proxyTestActive: $("proxy-test-active"),
   proxyTestDisabled: $("proxy-test-disabled"),
+  proxyRecoverAll: $("proxy-recover-all"),
   proxyLogs: $("proxy-logs"),
   proxyKeyGrid: $("proxy-key-grid"),
 };
@@ -1965,10 +1966,22 @@ function renderProxyToolbar() {
   dom.proxySaveModel.disabled = !enabled || !hasModels;
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
+  const hasDisabledKeys = (p.keys || []).some((k) => k.disabled && k.id != null);
   const canTest = enabled && hasKeys && !!p.test_model;
   for (const btn of [dom.proxyTestActive, dom.proxyTestDisabled]) {
-    btn.disabled = !canTest;
+    btn.disabled = !canTest || state.proxyBusy;
     btn.title = !p.test_model ? "请先选择并保存测试模型" : "";
+  }
+  dom.proxyRecoverAll.disabled = !enabled || !hasDisabledKeys || state.proxyBusy;
+  if (!state.proxy || !state.proxy.proxy_enabled) {
+    dom.proxyRecoverAll.title =
+      (state.proxy && state.proxy.proxy_message) || "转发功能目前停用";
+  } else if (p.enabled === false) {
+    dom.proxyRecoverAll.title = "此服务商已停用";
+  } else if (!hasDisabledKeys) {
+    dom.proxyRecoverAll.title = "当前供应商没有已失效的密钥";
+  } else {
+    dom.proxyRecoverAll.title = "恢复当前供应商下的所有失效密钥";
   }
   renderProxyLogsLink();
 }
@@ -2208,6 +2221,7 @@ function proxyActionButtons() {
   return [
     dom.proxyTestActive,
     dom.proxyTestDisabled,
+    dom.proxyRecoverAll,
     dom.proxySaveModel,
     dom.proxyRefreshBtn,
     dom.proxyProvider,
@@ -2349,6 +2363,86 @@ async function recoverProxyKey(fp, id) {
   } finally {
     state.proxyRecoveringKeys.delete(token);
     updateProxyCardButtonsDisabled();
+  }
+}
+
+async function recoverAllProxyKeys() {
+  if (state.proxyBusy) return;
+  const currentProvider = selectedProxyProvider();
+  if (!currentProvider) return;
+  const enabled =
+    !!(state.proxy && state.proxy.proxy_enabled) &&
+    currentProvider.enabled !== false;
+  if (!enabled) return;
+
+  const disabledKeys = (currentProvider.keys || []).filter(
+    (k) => k.disabled && k.id != null,
+  );
+  if (!disabledKeys.length) {
+    setProxyNotice("当前供应商没有已失效的密钥。", "info");
+    return;
+  }
+  if (
+    !confirm(
+      `确定恢复当前供应商下的全部 ${disabledKeys.length} 把失效密钥？恢复后会重新参与轮用。`,
+    )
+  ) {
+    return;
+  }
+
+  const targetUiKey = currentProvider._uiKey;
+  state.proxyBusy = true;
+  proxyActionButtons().forEach((b) => {
+    b.disabled = true;
+  });
+  updateProxyCardButtonsDisabled();
+
+  let recoveredCount = 0;
+  try {
+    if (!MOCK) {
+      const res = await api("/api/proxy/recover", {
+        method: "POST",
+        auth: true,
+        body: { fp: currentProvider.fp, all: true },
+      });
+      recoveredCount = Number(res.recovered ?? disabledKeys.length);
+    } else if (currentProvider._mockKey) {
+      const override = mockOverrideForProvider(
+        currentProvider,
+        currentProvider._mockKey,
+      );
+      (currentProvider.keys || []).forEach((k, ki) => {
+        if (!k.disabled || k.id == null) return;
+        const rawKey = (currentProvider._mockPlainKeys || [])[ki] || "";
+        if (!rawKey) return;
+        const prev = override.keys.get(rawKey) || {};
+        override.keys.set(rawKey, { ...prev, disabled: false, fail_count: 0 });
+        recoveredCount++;
+      });
+    }
+    const store = state.proxyLastResults.get(targetUiKey);
+    if (store) {
+      for (const k of disabledKeys) store.delete(String(k.id));
+    }
+  } catch (err) {
+    setProxyNotice(`恢复失败：${err.message}`, "error");
+    return;
+  } finally {
+    state.proxyBusy = false;
+    dom.proxyRefreshBtn.disabled = false;
+    dom.proxyProvider.disabled = false;
+    renderProxyToolbar();
+    updateProxyCardButtonsDisabled();
+  }
+
+  const loaded = await loadProxyState({ preserveResults: true });
+  if (loaded) {
+    setProxyNotice(
+      recoveredCount > 0
+        ? `已恢复当前供应商的 ${recoveredCount} 把失效密钥。`
+        : "当前供应商没有需要恢复的失效密钥。",
+      "info",
+    );
   }
 }
 
@@ -3825,6 +3919,7 @@ function bindEvents() {
   dom.proxySaveModel.addEventListener("click", saveProxyTestModel);
   dom.proxyTestActive.addEventListener("click", () => runProxyBatch("active"));
   dom.proxyTestDisabled.addEventListener("click", () => runProxyBatch("disabled"));
+  dom.proxyRecoverAll.addEventListener("click", recoverAllProxyKeys);
   dom.proxyKeyGrid.addEventListener("click", (e) => {
     const copyBtn = e.target.closest(".copy-btn");
     if (copyBtn) {
