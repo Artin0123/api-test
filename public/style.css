@@ -38,6 +38,10 @@
     /* line number gutter text */
     --radius: 10px;
     --radius-sm: 6px;
+    /* Height of one single-line control. Single-line inputs and the small
+       toolbar buttons that sit beside them both take this value, so a row of
+       search box + buttons reads as one band instead of stepping in size. */
+    --control-h: 2.5rem;
 }
 
 /* Light theme overrides */
@@ -755,23 +759,26 @@ a:hover {
     gap: 0.5rem;
 }
 
-.field-label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-}
-
-.field-label-row .field-label {
-    flex: 1;
-    min-width: 0;
-}
-
 .custom-headers-container {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+}
+
+/* An empty row container is still a flex child, so it claimed a gap on each
+   side and pushed the add button 1rem below the label instead of 0.5rem. */
+.custom-headers-container:empty {
+    display: none;
+}
+
+/* Sits under the header rows, or right under the label when there are none.
+   align-self keeps it on the left edge at its own width: a column flexbox
+   stretches its children, which would turn the button into a full-width bar.
+   The margin gives the rows above it the same 0.75rem breathing room the
+   search row gets from the key editor (.field gap's 0.5rem plus 0.25rem). */
+.add-header-btn {
+    align-self: flex-start;
+    margin-top: 0.25rem;
 }
 
 .custom-header-row {
@@ -799,6 +806,14 @@ a:hover {
     transition:
         border-color 0.15s,
         box-shadow 0.15s;
+}
+
+/* Pinned so single-line inputs have one exact height on every platform; the
+   toolbar buttons beside them match it through --control-h. Leaving the height
+   to padding + the font's normal line box made it font-dependent (40.8px here,
+   40.0px elsewhere) and the buttons could never line up reliably. */
+.input-text {
+    height: var(--control-h);
 }
 
 .input-text:focus,
@@ -899,6 +914,13 @@ a:hover {
 
 .modal-editor-box--sm {
     height: 7rem;
+}
+
+/* The search row above the key editor belongs to it, so they need more air
+   than the .field gap alone (0.5rem + 0.25rem here = 0.75rem). Same rhythm as
+   the header rows and their add button below. */
+.keys-editor {
+    margin-top: 0.25rem;
 }
 
 .json-status {
@@ -1237,8 +1259,11 @@ a:hover {
 
 .btn.btn-danger-icon {
     flex-shrink: 0;
-    width: 2.2rem;
-    height: 2.2rem;
+    /* Square, and as tall as the header inputs it deletes: a 2.2rem block sat
+       visibly lower than the 2.5rem row it belongs to. Same token as the
+       inputs, so both sides of the row stay level at every breakpoint. */
+    width: var(--control-h);
+    height: var(--control-h);
     padding: 0;
     background: transparent;
     color: var(--fail);
@@ -2201,8 +2226,13 @@ code {
         flex-wrap: wrap;
     }
 
+    /* Basis 0, not 50%: with a 50% basis the two inputs plus the square delete
+       button only just fit, so the button claiming --control-h instead of its
+       old 2.2rem pushed it onto a line of its own. Basis 0 lets the inputs
+       share whatever the button leaves and keeps the row one band at every
+       width. */
     .custom-header-row .input-text {
-        flex: 1 1 calc(50% - 1.6rem);
+        flex: 1 1 0;
     }
 
     .modal-footer {
@@ -2228,6 +2258,14 @@ code {
     align-items: center;
     flex-wrap: wrap;
     gap: 0.5rem;
+}
+
+/* "排序" / "导出" / "+ 添加请求头" stand in the same band as a single-line
+   input (beside it, or under the rows it adds), so they take the same height —
+   .btn-xs alone is a 26px strip and looked like a different size class. */
+.keys-toolbar .btn,
+.add-header-btn {
+    min-height: var(--control-h);
 }
 
 .keys-search {

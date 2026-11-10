@@ -625,7 +625,9 @@
                             id="ed-keys-search-results"
                             class="keys-search-results hidden"
                         ></div>
-                        <div class="lined-editor modal-editor-box">
+                        <div
+                            class="lined-editor modal-editor-box keys-editor"
+                        >
                             <div class="line-nums" aria-hidden="true"></div>
                             <textarea
                                 id="ed-keys"
@@ -680,25 +682,23 @@
                     </label>
 
                     <div class="field">
-                        <div class="field-label-row">
-                            <span class="field-label">
-                                Headers
-                                <small class="muted"
-                                    >选填，附加的请求头</small
-                                >
-                            </span>
-                            <button
-                                id="ed-add-header-btn"
-                                class="btn btn-secondary btn-xs"
-                                type="button"
+                        <span class="field-label">
+                            Headers
+                            <small class="muted"
+                                >选填，附加的请求头</small
                             >
-                                + 添加请求头
-                            </button>
-                        </div>
+                        </span>
                         <div
                             id="ed-headers-container"
                             class="custom-headers-container"
                         ></div>
+                        <button
+                            id="ed-add-header-btn"
+                            class="btn btn-secondary btn-xs add-header-btn"
+                            type="button"
+                        >
+                            + 添加请求头
+                        </button>
                     </div>
 
                     <label class="field">
