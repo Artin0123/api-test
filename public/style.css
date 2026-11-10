@@ -36,11 +36,16 @@
 
     --line-num: #4a5270;
     /* line number gutter text */
+    /* Occurrence marks in the keys textarea. Translucent on purpose: the text on
+       top of the mark keeps the textarea's own colour, so the mark has to be
+       strong enough to read as orange and dark enough to keep the glyphs legible
+       — amber (#f59e0b) came out brown against --bg-2, this orange does not. */
+    --mark-keys: rgba(234, 88, 12, 0.55);
     --radius: 10px;
     --radius-sm: 6px;
     /* Height of one single-line control. Single-line inputs and the small
        toolbar buttons that sit beside them both take this value, so a row of
-       search box + buttons reads as one band instead of stepping in size. */
+       input + buttons reads as one band instead of stepping in size. */
     --control-h: 2.5rem;
 }
 
@@ -55,6 +60,7 @@
     --text-muted: #5a6384;
     --line-num: #8a93aa;
     /* line number gutter text — light mode */
+    --mark-keys: rgba(234, 88, 12, 0.45);
     --shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
 }
 
@@ -2252,12 +2258,89 @@ code {
         gap: 0.4rem;
     }
 }
-/* ── Key editor toolbar / search ────────────────────────────────────────── */
+/* ── Key editor toolbar ─────────────────────────────────────────────────── */
 .keys-toolbar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    /* Same 0.75rem as the gap above and below the row (the .field gap plus the
+       0.25rem the toolbar and the editor each add), so the label, the search box,
+       the buttons and the editor read as one evenly spaced block. */
+    gap: 0.75rem;
+    /* Additive over the .field row gap, exactly like .keys-editor below. */
+    margin-top: 0.25rem;
+}
+
+/* Takes the leftover width of the band; min-width is what makes the row wrap on
+   a narrow screen instead of squeezing the box down to a few characters. The
+   wrapper owns the width now, because the clear button has to sit inside the
+   box's right end and an absolutely positioned child of the input is impossible. */
+.keys-search-wrap {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 10rem;
+}
+
+.keys-search-wrap .keys-search {
+    /* Room for the clear button, so a long query never runs underneath it. */
+    padding-right: 2.4rem;
+}
+
+/* Chrome/Safari draw their own clear × inside a type="search" input; ours does
+   the same job and sits where that × used to be. */
+.keys-search::-webkit-search-cancel-button,
+.keys-search::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
+}
+
+.keys-search-clear {
+    position: absolute;
+    top: 50%;
+    right: 0.3rem;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    /* Square, like the marks it clears: a rounded icon button read as a
+       different, softer control than the rest of the band. */
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    /* Dimmed while there is nothing to clear, so an empty box does not offer a
+       dead control, but it never appears and disappears under the cursor. */
+    color: var(--text-muted);
+    opacity: 0.45;
+    cursor: default;
+    transition:
+        color 0.15s,
+        opacity 0.15s,
+        background 0.15s;
+}
+
+.keys-search-clear.is-active {
+    opacity: 1;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.keys-search-clear.is-active:hover {
+    background: var(--bg-3);
+}
+
+/* Below 640px the band cannot hold the box and both buttons — it comes up a few
+   pixels short and pushes 导出 onto a row of its own, which reads as a mistake.
+   Giving the box the whole row instead makes the wrap deliberate: the box, then
+   the two buttons side by side. */
+@media (max-width: 640px) {
+    .keys-search-wrap {
+        flex: 1 1 100%;
+    }
 }
 
 /* "排序" / "导出" / "+ 添加请求头" stand in the same band as a single-line
@@ -2267,34 +2350,67 @@ code {
 .add-header-btn {
     min-height: var(--control-h);
 }
-
-.keys-search {
-    flex: 1;
-    min-width: 10rem;
+/* Occurrence marks for the keys textarea. A <textarea> cannot colour part of
+   its own text, so the marks live in a layer of identical text sitting behind
+   it: the textarea keeps its normal colour on a transparent background and the
+   layer's own glyphs are transparent, so only the <mark> backgrounds show
+   through. The layer is sized and positioned onto the textarea from JS (it
+   cannot be sized in CSS: the textarea's client box shrinks when its scrollbar
+   appears, and the two must wrap at the same width). */
+.keys-editor {
+    position: relative;
 }
 
-.keys-search-results {
-    max-height: 7.5rem;
-    overflow-y: auto;
-    padding: 0.4rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg);
-    font-family: var(--mono);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
+/* Both the gutter and the textarea paint above the layer, so a horizontally
+   scrolled mark can never show up in the gutter. */
+.keys-editor .line-nums {
+    position: relative;
+    z-index: 1;
 }
 
-.keys-search-results .hit {
-    color: var(--text);
+.keys-editor .lined-textarea {
+    position: relative;
+    z-index: 2;
 }
 
-.line-nums span.hit {
-    color: var(--warn);
-    font-weight: 700;
+/* Outer box: clips, never moves. Its own overflow keeps the cut on the textarea's
+   padding box — the same edge the textarea cuts its own text at — while
+   .keys-highlight-inner below it carries the marks and is translated to follow
+   the scroll. Clipping and moving cannot share one box: a clip region travels
+   with its own transform, which would cut away the lines that just scrolled in. */
+.keys-highlight {
+    position: absolute;
+    z-index: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    pointer-events: none;
+    user-select: none;
+    background: transparent;
+    color: transparent;
+}
+
+.keys-highlight-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* The typography and the padding are copied from the textarea by JS on
+       every sync; only the properties that never change live here. */
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.keys-highlight mark {
+    background: var(--mark-keys);
+    color: transparent;
+    /* Square on purpose: a rounded band reads as a decorative tag, while the
+       browser's own find highlight — the thing this stands in for — is a plain
+       rectangle. */
+    border-radius: 0;
+    /* Vertical padding only: it deepens the band to something closer to the
+       line box without touching the line's height or the horizontal run, which
+       keeping the glyphs over the mark depends on. */
+    padding: 0.22em 0;
 }
 
 /* ── In-place delete confirmation (no modal, CSP-safe class toggle) ─────── */

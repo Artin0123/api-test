@@ -53,7 +53,11 @@ test("proxy assets referenced by the page exist in style.css", () => {
     "proxy-key-card",
     "proxy-test-result",
     "keys-toolbar",
-    "keys-search-results",
+    "keys-search",
+    "keys-search-wrap",
+    "keys-search-clear",
+    "keys-highlight",
+    "keys-highlight-inner",
     "editor-confirm",
   ]) {
     assert.ok(css.includes(`.${cls}`), `style.css is missing .${cls}`);

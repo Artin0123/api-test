@@ -597,15 +597,45 @@
                             <small class="muted">一行一个</small></label
                         >
                         <div class="keys-toolbar">
-                            <input
-                                type="search"
-                                id="ed-keys-search"
-                                class="input-text keys-search"
-                                placeholder="搜索密钥，结果以遮挡显示"
-                                aria-label="搜索密钥"
-                                spellcheck="false"
-                                autocomplete="off"
-                            />
+                            <div class="keys-search-wrap">
+                                <input
+                                    type="search"
+                                    id="ed-keys-search"
+                                    class="input-text keys-search"
+                                    placeholder="搜索密钥，标橘色"
+                                    aria-label="搜索密钥"
+                                    spellcheck="false"
+                                    autocomplete="off"
+                                />
+                                <!-- Clear button, drawn as the backspace key it does
+                                     the work of: a pentagon pointing left with an
+                                     × in it. Sits inside the box's right end, so
+                                     the browser's own search × is switched off in
+                                     style.css — two clear buttons would overlap. -->
+                                <button
+                                    id="ed-keys-search-clear"
+                                    class="keys-search-clear"
+                                    type="button"
+                                    aria-label="清除搜索"
+                                    title="清除搜索"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        width="20"
+                                        height="20"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        fill="none"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        aria-hidden="true"
+                                    >
+                                        <polygon points="21 5 21 19 8 19 2 12 8 5"></polygon>
+                                        <line x1="11.5" y1="9.5" x2="16.5" y2="14.5"></line>
+                                        <line x1="16.5" y1="9.5" x2="11.5" y2="14.5"></line>
+                                    </svg>
+                                </button>
+                            </div>
                             <button
                                 id="ed-sort-keys-btn"
                                 class="btn btn-secondary btn-xs"
@@ -621,14 +651,26 @@
                                 导出
                             </button>
                         </div>
-                        <div
-                            id="ed-keys-search-results"
-                            class="keys-search-results hidden"
-                        ></div>
-                        <div
-                            class="lined-editor modal-editor-box keys-editor"
-                        >
+                        <div class="lined-editor modal-editor-box keys-editor">
                             <div class="line-nums" aria-hidden="true"></div>
+                            <!-- Marks every occurrence of what is in the search
+                                 box above, or — while that box is empty — of
+                                 whatever is selected in the textarea below.
+                                 Square-edged on purpose: it stands in for the
+                                 browser's own find highlight, which is a plain
+                                 rectangle. Painted behind the textarea: the
+                                 textarea keeps its own colour on a transparent
+                                 background, so only the mark backgrounds show. Two
+                                 boxes on purpose — the outer one clips and stays
+                                 put, the inner one carries the marks and is
+                                 translated to follow the textarea's scroll. -->
+                            <div
+                                id="ed-keys-highlight"
+                                class="keys-highlight"
+                                aria-hidden="true"
+                            >
+                                <div class="keys-highlight-inner"></div>
+                            </div>
                             <textarea
                                 id="ed-keys"
                                 class="input-textarea lined-textarea"

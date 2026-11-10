@@ -95,8 +95,9 @@ const dom = {
   edMaxConcurrency: $("ed-max-concurrency"),
   edAlias: $("ed-alias"),
   edGatewayProvider: $("ed-gateway-provider"),
+  edKeysHighlight: $("ed-keys-highlight"),
   edKeysSearch: $("ed-keys-search"),
-  edKeysSearchResults: $("ed-keys-search-results"),
+  edKeysSearchClear: $("ed-keys-search-clear"),
   edSortKeysBtn: $("ed-sort-keys-btn"),
   edExportKeysBtn: $("ed-export-keys-btn"),
   editorConfirm: $("editor-confirm"),
@@ -778,30 +779,167 @@ function showEditorConfirm(removed) {
   dom.editorConfirmOk.focus();
 }
 
-function renderEditorSearchResults() {
-  const query = dom.edKeysSearch.value.trim().toLowerCase();
-  dom.edKeysSearchResults.replaceChildren();
-  if (!query) {
-    dom.edKeysSearchResults.classList.add("hidden");
-    return;
+// ── Keys textarea: orange marks on every occurrence of the query ─────────
+// The query is whatever is typed in the search box; while that box is empty it is
+// whatever is selected in the textarea. A textarea cannot colour part of its own
+// text, so the marks are drawn in a mirror layer of identically styled text
+// sitting behind it (see .keys-highlight in style.css): the marks are the only
+// thing visible, because the layer's own glyphs are transparent and the textarea
+// paints its real text on top of them. This replaced the old hit list — the same
+// query, drawn where the keys are instead of in a second list underneath. Every
+// occurrence is marked, square-edged like the browser's own find highlight.
+let _keysHighlightFrame = 0;
+
+// Lays the mirror layer onto the textarea's text box and copies every property
+// that decides where a glyph lands. Copied rather than restated in CSS so the
+// two can never drift apart when a token changes.
+// Two boxes: the outer one is clipped by its own overflow and never moves, the
+// inner one carries the text and is translated by the scroll offset. A single
+// box cannot do both jobs — the clip region of an element travels with its own
+// transform, so one box would cut away the very lines that just scrolled in.
+function _placeKeysHighlight(layer, inner, ta) {
+  const editor = ta.closest(".keys-editor");
+  if (!editor) return false;
+  const eRect = editor.getBoundingClientRect();
+  const eCs = getComputedStyle(editor);
+  const tRect = ta.getBoundingClientRect();
+  const cs = getComputedStyle(ta);
+  // Absolute children of the editor are placed against its padding box.
+  layer.style.left =
+    tRect.left - eRect.left - (parseFloat(eCs.borderLeftWidth) || 0) + "px";
+  layer.style.top =
+    tRect.top - eRect.top - (parseFloat(eCs.borderTopWidth) || 0) + "px";
+  // clientWidth/clientHeight are the textarea's padding box, scrollbar already
+  // excluded: exactly the area the textarea shows its text in, so the outer box
+  // can clip at the same edge the textarea clips at.
+  layer.style.width = ta.clientWidth + "px";
+  layer.style.height = ta.clientHeight + "px";
+  inner.style.padding = cs.padding;
+  inner.style.font = cs.font;
+  // After the font shorthand, which resets line-height to 'normal'.
+  inner.style.lineHeight = cs.lineHeight;
+  inner.style.letterSpacing = cs.letterSpacing;
+  inner.style.whiteSpace = cs.whiteSpace;
+  inner.style.overflowWrap = cs.overflowWrap;
+  inner.style.wordBreak = cs.wordBreak;
+  inner.style.tabSize = cs.tabSize;
+  return true;
+}
+
+function syncKeysHighlight() {
+  const ta = dom.edKeys;
+  const layer = dom.edKeysHighlight;
+  if (!ta || !layer) return;
+  // Closed editor: nothing laid out, nothing to paint.
+  if (!ta.clientWidth) return;
+  const inner = layer.firstElementChild;
+  if (!inner) return;
+  if (!_placeKeysHighlight(layer, inner, ta)) return;
+
+  const value = ta.value;
+  // Search box first, selection second: an empty box is the "just show me what I
+  // picked" mode, and a filled box keeps marking its phrase even after the user
+  // clicks back into the textarea and the selection collapses.
+  const typed = (dom.edKeysSearch && dom.edKeysSearch.value.trim()) || "";
+  const query = typed || value.slice(ta.selectionStart, ta.selectionEnd);
+  const frag = document.createDocumentFragment();
+  const mark = (text) => {
+    const el = document.createElement("mark");
+    el.textContent = text;
+    frag.appendChild(el);
+  };
+  if (query.trim()) {
+    // Case-insensitive substring match, same rule the old hit list used: every
+    // occurrence gets a band, and the browser's find-bar look (square, no
+    // rounding) is what tells them apart from the markup around them.
+    const hay = value.toLowerCase();
+    const needle = query.toLowerCase();
+    let from = 0;
+    for (;;) {
+      const at = hay.indexOf(needle, from);
+      if (at < 0) break;
+      if (at > from) frag.appendChild(document.createTextNode(value.slice(from, at)));
+      mark(value.slice(at, at + needle.length));
+      from = at + needle.length;
+    }
+    if (from < value.length)
+      frag.appendChild(document.createTextNode(value.slice(from)));
+  } else {
+    frag.appendChild(document.createTextNode(value));
   }
-  const lines = dom.edKeys.value.split("\n");
-  let hits = 0;
-  lines.forEach((line, i) => {
-    const key = line.trim();
-    if (!key || !key.toLowerCase().includes(query)) return;
-    hits++;
-    const row = document.createElement("div");
-    row.className = "hit";
-    row.textContent = `第 ${i + 1} 行 · ${maskKey(key)}`;
-    dom.edKeysSearchResults.appendChild(row);
+  // A textarea whose value ends in a newline shows an empty last line; a block
+  // of pre-wrap text does not, so pad it to keep the marks on the right lines.
+  if (value.endsWith("\n")) frag.appendChild(document.createTextNode("\u200b"));
+  inner.replaceChildren(frag);
+  // Translated rather than scrolled: a scroll offset would be clamped to the
+  // inner box's own overflow, and any round-off would slide the marks off the
+  // text.
+  inner.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+}
+
+// One rebuild per frame at most: selectionchange and input both fire while a
+// drag-select is in progress.
+function scheduleKeysHighlight() {
+  if (_keysHighlightFrame) return;
+  _keysHighlightFrame = requestAnimationFrame(() => {
+    _keysHighlightFrame = 0;
+    syncKeysHighlight();
   });
-  if (!hits) {
-    const row = document.createElement("div");
-    row.textContent = "没有符合条件的行";
-    dom.edKeysSearchResults.appendChild(row);
+}
+
+// The clear button never moves, so the box does not change shape under the
+// cursor: it only lights up (and becomes clickable and tabbable) when there is
+// something to clear.
+function syncSearchClearButton() {
+  const btn = dom.edKeysSearchClear;
+  if (!btn || !dom.edKeysSearch) return;
+  const has = !!dom.edKeysSearch.value;
+  btn.classList.toggle("is-active", has);
+  btn.disabled = !has;
+}
+
+function bindKeysHighlight() {
+  const ta = dom.edKeys;
+  if (!ta || !dom.edKeysHighlight) return;
+  ta.addEventListener("input", scheduleKeysHighlight);
+  ta.addEventListener("scroll", scheduleKeysHighlight, { passive: true });
+  if (dom.edKeysSearch) {
+    // "search" as well as "input": the box's own clear button fires both in
+    // Chrome, but the box is also cleared by Esc, which only fires "search".
+    dom.edKeysSearch.addEventListener("input", () => {
+      syncSearchClearButton();
+      scheduleKeysHighlight();
+    });
+    dom.edKeysSearch.addEventListener("search", () => {
+      syncSearchClearButton();
+      scheduleKeysHighlight();
+    });
+    if (dom.edKeysSearchClear)
+      dom.edKeysSearchClear.addEventListener("mousedown", (e) => {
+        // Keeps the caret where it is; focusing the box below is then enough.
+        e.preventDefault();
+      });
+    if (dom.edKeysSearchClear)
+      dom.edKeysSearchClear.addEventListener("click", () => {
+        if (!dom.edKeysSearch.value) return;
+        dom.edKeysSearch.value = "";
+        syncSearchClearButton();
+        // The box no longer fires "input" when a script writes value, so the
+        // marks are rebuilt from here.
+        syncKeysHighlight();
+        dom.edKeysSearch.focus();
+      });
+    syncSearchClearButton();
   }
-  dom.edKeysSearchResults.classList.remove("hidden");
+  document.addEventListener("selectionchange", () => {
+    // Ignore selections that have nothing to do with this textarea, so marks
+    // stay put when the user clicks a button or selects text elsewhere.
+    if (document.activeElement === ta) scheduleKeysHighlight();
+  });
+  if (typeof ResizeObserver !== "undefined")
+    new ResizeObserver(scheduleKeysHighlight).observe(ta);
+  window.addEventListener("resize", scheduleKeysHighlight);
+  syncKeysHighlight();
 }
 
 function cycleEditorSort() {
@@ -814,7 +952,7 @@ function cycleEditorSort() {
   );
   dom.edSortKeysBtn.textContent = `排序：${SORT_LABELS[state.editorSortMode]}`;
   syncLineNums(dom.edKeys);
-  renderEditorSearchResults();
+  syncKeysHighlight();
 }
 
 function exportEditorKeys() {
@@ -872,11 +1010,12 @@ function openEditor(index = -1) {
   }
   dom.edExtraBodyStatus.textContent = "";
   dom.edExtraBodyStatus.className = "json-status";
-  dom.edKeysSearch.value = "";
-  dom.edKeysSearchResults.replaceChildren();
-  dom.edKeysSearchResults.classList.add("hidden");
   state.editorSortMode = "none";
   dom.edSortKeysBtn.textContent = "排序：预设";
+  // A query left over from the last time the editor was open would paint marks
+  // on a provider the user never searched in.
+  if (dom.edKeysSearch) dom.edKeysSearch.value = "";
+  syncSearchClearButton();
   hideEditorConfirm();
   state.editorSnapshot = dom.edKeys.value;
   dom.editorOverlay.classList.remove("hidden");
@@ -885,6 +1024,7 @@ function openEditor(index = -1) {
   syncLineNums(dom.edKeys);
   syncLineNums(dom.edModels);
   syncLineNums(dom.edExtraBody);
+  syncKeysHighlight();
 }
 
 function closeEditor() {
@@ -910,6 +1050,7 @@ async function saveEditor(confirmed = false) {
   dom.edModels.value = models;
   syncLineNums(dom.edKeys);
   syncLineNums(dom.edModels);
+  syncKeysHighlight();
 
   if (!apiBase) {
     dom.editorError.textContent = "请填写 API Base URL";
@@ -2683,6 +2824,7 @@ function bindEvents() {
   bindLineNums(dom.edKeys);
   bindLineNums(dom.edModels);
   bindLineNums(dom.edExtraBody);
+  bindKeysHighlight();
 
   // Extra Body JSON live validation
   dom.edExtraBody.addEventListener("input", () => {
@@ -2714,8 +2856,8 @@ function bindEvents() {
   dom.editorSave.addEventListener("click", () => saveEditor());
   dom.editorCancel.addEventListener("click", closeEditor);
 
-  // Key tools (R8): search, three-state sort, export, delete confirmation
-  dom.edKeysSearch.addEventListener("input", renderEditorSearchResults);
+  // Key tools: three-state sort, export, delete confirmation. Finding a key is
+  // the orange occurrence highlight in the textarea, bound in bindKeysHighlight.
   dom.edSortKeysBtn.addEventListener("click", cycleEditorSort);
   dom.edExportKeysBtn.addEventListener("click", exportEditorKeys);
   dom.editorConfirmOk.addEventListener("click", () => saveEditor(true));
@@ -2725,7 +2867,7 @@ function bindEvents() {
       syncLineNums(dom.edKeys);
     }
     hideEditorConfirm();
-    renderEditorSearchResults();
+    syncKeysHighlight();
   });
   dom.editorOverlay.addEventListener("click", (e) => {
     if (e.target.dataset.closeModal === "editor") closeEditor();
