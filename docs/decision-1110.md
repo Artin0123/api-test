@@ -66,7 +66,7 @@ Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分�
 ### 2.4 批次刪除與前端實作注意細節
 
 - **批次刪除**：`DELETE /api/dead-keys` 支援 `ids: string[]`，讀一次 KV、執行一次再平衡、寫回一次並直接回傳更新後陣列，避免 N 筆逐一刪除觸發 KV 每秒 1 次寫入限制。
-- **常駐篩選面板與表格細節**：移除獨立的篩選收合按鈕與手動新增列後，將 `.dk-filter-panel` 改為常駐顯示以減少一層互動；起訖時間改為純數字文字欄（無預設 `yyyy/mm/dd` 佔位文字，自動格式化為 `YYYY/MM/DD`）搭配隱藏原生 `<input type="date">` 日曆按鈕以支援手動輸入與日曆選取，縮窄時間欄位寬度以讓給「Key 搜寻」，並於篩選框底部左右分放「删除密钥」與「清除筛选」。在 `table-layout: auto` 下直接對 `<td>` 設 `max-width` 會被瀏覽器忽略，須設於儲存格內層元素；`dead_keys` 表格改用 `table-layout: fixed` ＋ `min-width` 並僅讓錯誤訊息欄吃剩餘寬度；Code 篩選以 `value="__none__"` 區分「無 Code」與「全部」；排序直接重排資料陣列並重新渲染（而非搬移 DOM `<tr>`），使序號與勾選狀態不致錯亂，且無日期／無 Code 列無論升序降序一律置底。
+- **常駐篩選面板與表格細節**：移除獨立的篩選收合按鈕與手動新增列後，將 `.dk-filter-panel` 改為常駐顯示以減少一層互動；起訖時間改為純數字文字欄（無預設 `yyyy/mm/dd` 佔位文字，自動格式化為 `YYYY/MM/DD`）搭配隱藏原生 `<input type="date">` 日曆按鈕以支援手動輸入與日曆選取，縮窄時間欄位寬度以讓給「Key 搜寻」，並於篩選框底部左右分放「删除密钥」與「清除筛选」。在 `table-layout: auto` 下直接對 `<td>` 設 `max-width` 會被瀏覽器忽略，須設於儲存格內層元素；`dead_keys` 表格改用 `table-layout: fixed` ＋ `min-width` 並僅讓錯誤訊息欄吃剩餘寬度；Code 篩選以 `value="__none__"` 區分「無 Code」與「全部」；排序直接重排資料陣列並重新渲染（而非搬移 DOM `<tr>`），使序號與勾選狀態不致錯亂，且無日期／無 Code 列無論升序降序一律置底（測試結果效能表排序亦採相同「缺值永遠置底」慣例）。切換至失效密鑰分頁時比照其餘分頁重新讀取最新清單（僅重刷時結束多選模式，切分頁保留仍存在紀錄的勾選集合），避免外部測試結果對帳後看見過期快取。
 
 ---
 
@@ -200,7 +200,9 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 - **`aria-disabled` 樣式**：`<a class="btn">` 不受 `:disabled` 匹配，須於 `.btn` 與各 `:hover` 規則補上 `[aria-disabled="true"]` 處理，避免無法點擊的連結仍有懸停高亮。
 - **RWD 順序與縱向 `flex-basis`**：轉發樣式必須排在 `── RWD` 區段之前才不會覆蓋手機斷點；`.proxy-toolbar-row` 轉成 `column` 後 `flex-basis` 會變成元素高度，因此 `.proxy-url` 在手機斷點須重設為 `flex: none` 並改為自動換行。
 - **模型選單 `flex: none` 固定寬度**：`.proxy-model-select` 必須使用 `flex: none` 配明確 `15rem` 寬度；若使用可縮減的 `flex-basis`，右側群組計算內在寬度時只會量到選項文字寬度，導致後方按鈕提前換行。
-- **「保存模型」按鈕寬度穩定**：點擊後文字從「保存模型」（4 字）變為「已保存」（3 字）時，`.proxy-save-model` 以縱向 flex（`gap: 0`）搭配零高度 `::after` 錨定四字實際字體寬度（不硬寫 `rem` 或行內 `style`），並以 `content: "保存模型" / ""` 防止螢幕閱讀器重覆唸出；同時於 `app.js` 使用 `proxySaveModelTimer` 追蹤計時器，在連點或重畫工具列（切換服務商）時清除舊計時器。
+- **「保存模型」按鈕寬度穩定**：點擊後文字從「保存模型」（4 字）變為「已保存」（3 字）時，`.proxy-save-model` 以縱向 flex（`gap: 0`）搭配零高度 `::after` 錨定四字實際字體寬度（不硬寫 `rem` 或行內 `style`），並以 `content: "保存模型" / ""` 防止螢幕閱讀器重覆唸出；同時於 `app.js` 使用 `proxySaveModelTimer`（與 URL 複製用的 `proxyUrlTimer`）追蹤計時器，在連點或重畫工具列（切換服務商）時清除舊計時器。
+- **控制項高度齊一與手機端按鈕特異性**：`.btn` 統一帶 `1px solid transparent` 邊框使 `.btn-primary`／`.btn-danger-solid` 與有框按鈕完全同高，`.input-select` 與 `.input-text` 一律釘死 `height: var(--control-h)`；在 `@media (max-width: 640px)` 內重新宣告 `.btn-sm`（含 `.dk-filter-actions .btn`）、`.btn-xs` 與 `.btn-icon` 內距與字級，避免手機端 `.btn` 的大內距覆寫小按鈕與複製圖示尺寸；並以 `.dk-filter-panel, .proxy-toolbar`、`.provider-grid, .proxy-key-grid` 及 `.provider-card, .proxy-key-card` 共用外框與間距規則。
+- **批量測試保留單卡結果與請求競態防護**：`runProxyBatch()` 與 `testProxyKey()` 在觸發 `loadProxyState({ preserveResults: true })` 時保留 `state.proxyLastResults`，並保證於 `finally` 解鎖工具列與卡片按鈕；所有分頁載入器皆帶遞增請求序號（`state.reqSeq`）丟棄過期回應，且各彈窗共用 `openModal`/`closeModal` 堆疊維護頂層 `Esc` 關閉、`Tab` 焦點循環與關閉後焦點還原。
 
 ### 11.4 尚待正式線上環境複驗項目
 

@@ -17,6 +17,11 @@ async function getMock() {
   return _mockData;
 }
 
+function syncMockSettings(settings) {
+  if (!MOCK || !_mockData || !settings) return;
+  _mockData.settings = settings;
+}
+
 // ── State ────────────────────────────────────────────────────────────────
 const state = {
   signedIn: false,
@@ -24,7 +29,6 @@ const state = {
   fpCache: new Map(), // api_base + provider_type -> sha256 fingerprint
   selectedProviders: new Set(), // indices of currently selected provider cards
   deadKeys: [], // dead key records loaded from /api/dead-keys
-  deadKeysLoaded: false,
   dkSelectMode: false, // bulk-selection mode active on dead keys tab
   dkSelected: new Set(), // set of dead key record ids checked in the table
   dkPendingDelete: null, // snapshot of ids currently being confirmed for deletion
@@ -40,6 +44,9 @@ const state = {
   proxyTestingKeys: new Set(), // `${fp}:${id}` keys currently testing individually
   proxyRecoveringKeys: new Set(), // `${fp}:${id}` keys currently recovering
   proxyLastResults: new Map(), // _uiKey -> Map<String(id), result> across post-test reloads
+  mockProxyOverrides: new Map(), // mock provider key -> { test_model, keys: Map }
+  reqSeq: { config: 0, results: 0, deadkeys: 0, proxy: 0 },
+  modalStack: [], // active { overlay, prevFocus } stack for Esc & focus restore
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -484,13 +491,80 @@ async function logout() {
   } catch {}
   state.settings = null;
   state.deadKeys = [];
-  state.deadKeysLoaded = false;
+  state.proxy = null;
   state.proxyPlainKeys.clear();
+  state.proxyLastResults.clear();
+  state.proxyTestingKeys.clear();
+  state.proxyRecoveringKeys.clear();
   sessionEnded();
   dom.authInput.value = "";
 }
 
-// ── UI Helpers ────────────────────────────────────────────────────────────
+// ── UI & Modal Helpers ────────────────────────────────────────────────────
+function modalFocusableElements(overlay) {
+  const panel = overlay ? overlay.querySelector(".modal-panel") : null;
+  if (!panel) return [];
+  return Array.from(
+    panel.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => !el.closest(".hidden") && el.getClientRects().length > 0);
+}
+
+function openModal(overlay, initialFocusEl = null) {
+  if (!overlay) return;
+  const idx = state.modalStack.findIndex((item) => item.overlay === overlay);
+  let prevFocus = document.activeElement;
+  if (idx >= 0) {
+    prevFocus = state.modalStack[idx].prevFocus;
+    state.modalStack.splice(idx, 1);
+  }
+  state.modalStack.push({ overlay, prevFocus });
+  overlay.classList.remove("hidden");
+
+  const target =
+    initialFocusEl &&
+    !initialFocusEl.disabled &&
+    initialFocusEl.getClientRects().length > 0
+      ? initialFocusEl
+      : modalFocusableElements(overlay)[0];
+  if (target && typeof target.focus === "function") {
+    target.focus();
+  }
+}
+
+function closeModal(overlay, { fallbackFocusEl = null } = {}) {
+  if (!overlay) return;
+  overlay.classList.add("hidden");
+  const idx = state.modalStack.findIndex((item) => item.overlay === overlay);
+  const entry = idx >= 0 ? state.modalStack.splice(idx, 1)[0] : null;
+  const target =
+    entry && entry.prevFocus && entry.prevFocus.isConnected && !entry.prevFocus.disabled
+      ? entry.prevFocus
+      : fallbackFocusEl;
+  if (
+    target &&
+    target !== document.body &&
+    target.isConnected &&
+    !target.disabled &&
+    typeof target.focus === "function"
+  ) {
+    target.focus();
+  } else if (
+    overlay.contains(document.activeElement) &&
+    typeof document.activeElement.blur === "function"
+  ) {
+    document.activeElement.blur();
+  }
+}
+
+function topOpenModal() {
+  for (let i = state.modalStack.length - 1; i >= 0; i--) {
+    const { overlay } = state.modalStack[i];
+    if (overlay && !overlay.classList.contains("hidden")) return overlay;
+  }
+  return null;
+}
 function toggleMobileMenu(force) {
   const open =
     typeof force === "boolean"
@@ -527,11 +601,11 @@ function openSettings() {
   dom.setDiscordUrl.value = s.discord_webhook_url || "";
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
-  dom.settingsOverlay.classList.remove("hidden");
+  openModal(dom.settingsOverlay, dom.setGithubUrl);
 }
 
 function closeSettings() {
-  dom.settingsOverlay.classList.add("hidden");
+  closeModal(dom.settingsOverlay);
 }
 
 async function saveSettings() {
@@ -549,6 +623,7 @@ async function saveSettings() {
     const current = state.settings || {};
     state.settings = { ...current, ...patch };
     if (version !== undefined) state.settings.version = version;
+    syncMockSettings(state.settings);
     applySettingsToUI();
     closeSettings();
   } catch (err) {
@@ -597,6 +672,7 @@ function applySettingsToUI() {
 
 // ── Config tab ─────────────────────────────────────────────────────────────
 async function loadConfig() {
+  const reqId = ++state.reqSeq.config;
   dom.configLoading.classList.remove("hidden");
   dom.configError.classList.add("hidden");
   dom.configSaveError.textContent = "";
@@ -607,18 +683,23 @@ async function loadConfig() {
     let data;
     if (MOCK) {
       const mock = await getMock();
-      data = { settings: mock.settings };
+      data = { settings: state.settings || mock.settings };
     } else {
       data = await api("/api/settings", { auth: true });
     }
+    if (reqId !== state.reqSeq.config) return;
     state.settings = data.settings || {};
+    syncMockSettings(state.settings);
     applySettingsToUI();
     renderProviderGrid();
   } catch (err) {
+    if (reqId !== state.reqSeq.config) return;
     dom.configError.textContent = `读取失败：${err.message}`;
     dom.configError.classList.remove("hidden");
   } finally {
-    dom.configLoading.classList.add("hidden");
+    if (reqId === state.reqSeq.config) {
+      dom.configLoading.classList.add("hidden");
+    }
   }
 }
 
@@ -641,26 +722,6 @@ function renderProviderGrid() {
     .join("");
   dom.providerGrid.classList.remove("hidden");
   dom.providerEmpty.classList.add("hidden");
-
-  dom.providerGrid
-    .querySelectorAll("[data-edit]")
-    .forEach((btn) =>
-      btn.addEventListener("click", () => openEditor(Number(btn.dataset.edit))),
-    );
-  dom.providerGrid
-    .querySelectorAll("[data-delete]")
-    .forEach((btn) =>
-      btn.addEventListener("click", () =>
-        deleteProvider(Number(btn.dataset.delete)),
-      ),
-    );
-  dom.providerGrid
-    .querySelectorAll("[data-select]")
-    .forEach((cb) =>
-      cb.addEventListener("change", () =>
-        toggleSelection(Number(cb.dataset.select)),
-      ),
-    );
   updateBulkBtnState();
 }
 
@@ -1031,8 +1092,7 @@ function openEditor(index = -1) {
   syncSearchClearButton();
   hideEditorConfirm();
   state.editorSnapshot = dom.edKeys.value;
-  dom.editorOverlay.classList.remove("hidden");
-  dom.edApiBase.focus();
+  openModal(dom.editorOverlay, dom.edApiBase);
   // Sync line numbers after values are populated
   syncLineNums(dom.edKeys);
   syncLineNums(dom.edModels);
@@ -1041,7 +1101,7 @@ function openEditor(index = -1) {
 }
 
 function closeEditor() {
-  dom.editorOverlay.classList.add("hidden");
+  closeModal(dom.editorOverlay);
 }
 
 async function saveEditor(confirmed = false) {
@@ -1157,6 +1217,7 @@ async function saveEditor(confirmed = false) {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    syncMockSettings(state.settings);
     hideEditorConfirm();
     state.editorSnapshot = null;
     state.editorSortMode = "none";
@@ -1186,6 +1247,7 @@ async function deleteProvider(index) {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    syncMockSettings(state.settings);
     state.selectedProviders.clear();
     renderProviderGrid();
   } catch (err) {
@@ -1220,6 +1282,7 @@ async function bulkToggle(enable) {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    syncMockSettings(state.settings);
     state.selectedProviders.clear();
     renderProviderGrid();
   } catch (err) {
@@ -1338,6 +1401,7 @@ async function syncProxyPlainKeys(proxyProviders) {
 }
 
 async function loadProxyState({ preserveResults = false } = {}) {
+  const reqId = ++state.reqSeq.proxy;
   if (!preserveResults) {
     state.proxyLastResults.clear();
   }
@@ -1353,14 +1417,19 @@ async function loadProxyState({ preserveResults = false } = {}) {
     let data;
     if (MOCK) {
       const mock = await getMock();
-      data = mockProxyState(mock.settings || {});
+      if (!state.settings) {
+        state.settings = mock.settings || {};
+      }
+      data = mockProxyState(state.settings);
     } else {
       data = await api("/api/proxy/state", { auth: true });
     }
+    if (reqId !== state.reqSeq.proxy) return false;
     const providers = data.providers || [];
     assignProxyUiKeys(providers);
     if (!MOCK) {
       await syncProxyPlainKeys(providers);
+      if (reqId !== state.reqSeq.proxy) return false;
     } else {
       state.proxyPlainKeys.clear();
       for (const p of providers) {
@@ -1377,35 +1446,63 @@ async function loadProxyState({ preserveResults = false } = {}) {
     renderProxyState(data);
     return true;
   } catch (err) {
+    if (reqId !== state.reqSeq.proxy) return false;
     dom.proxyError.textContent = `读取失败：${err.message}`;
     dom.proxyError.classList.remove("hidden");
     return false;
   } finally {
-    dom.proxyLoading.classList.add("hidden");
+    if (reqId === state.reqSeq.proxy) {
+      dom.proxyLoading.classList.add("hidden");
+    }
   }
 }
 
+function mockOverrideForProvider(p, occKey) {
+  let override = state.mockProxyOverrides.get(occKey);
+  if (!override) {
+    override = { test_model: "", keys: new Map() };
+    state.mockProxyOverrides.set(occKey, override);
+  }
+  return override;
+}
+
 function mockProxyState(settings) {
+  const counts = new Map();
   const providers = (settings.providers || []).map((p, i) => {
+    const baseId = `${p.provider_type || ""}|${p.api_base || ""}|${p.alias || ""}`;
+    const occ = counts.get(baseId) || 0;
+    counts.set(baseId, occ + 1);
+    const mockKey = `${baseId}#${occ}`;
+    const override = mockOverrideForProvider(p, mockKey);
     const fp = `mock-${i}`;
     const keys = splitKeyLines(p.keys);
     const keyEntries = keys.map((key, ki) => {
-      const disabled = keys.length > 1 && ki === keys.length - 1;
+      let entryState = override.keys.get(key);
+      if (!entryState) {
+        const disabled = keys.length > 1 && ki === keys.length - 1;
+        entryState = {
+          disabled,
+          fail_count: disabled ? 3 : 0,
+          last_used_at: disabled
+            ? Date.now() - 3 * 3600 * 1000
+            : ki === 0
+              ? Date.now() - 25 * 1000
+              : null,
+        };
+        override.keys.set(key, entryState);
+      }
       return {
         id: i * 100 + ki + 1,
         masked: maskKey(key),
-        disabled,
-        fail_count: disabled ? 3 : 0,
-        last_used_at: disabled
-          ? Date.now() - 3 * 3600 * 1000
-          : ki === 0
-            ? Date.now() - 25 * 1000
-            : null,
+        disabled: !!entryState.disabled,
+        fail_count: Number(entryState.fail_count || 0),
+        last_used_at: entryState.last_used_at,
         synced: true,
       };
     });
     return {
       fp,
+      _mockKey: mockKey,
       _mockPlainKeys: keys,
       alias: p.alias || "",
       host: extractHost(p.api_base),
@@ -1418,7 +1515,7 @@ function mockProxyState(settings) {
         ({ gemini: "/models/{model}:generateContent", anthropic: "/messages" })[
           p.provider_type
         ] || "/chat/completions",
-      test_model: "",
+      test_model: override.test_model || "",
       logs_url: "",
       models: splitModels(p.models),
       keys_total: keyEntries.length,
@@ -1528,11 +1625,16 @@ function renderProxyModelSelect(p) {
 }
 
 let proxySaveModelTimer = null;
+let proxyUrlTimer = null;
 
 function renderProxyToolbar() {
   if (proxySaveModelTimer) {
     clearTimeout(proxySaveModelTimer);
     proxySaveModelTimer = null;
+  }
+  if (proxyUrlTimer) {
+    clearTimeout(proxyUrlTimer);
+    proxyUrlTimer = null;
   }
   dom.proxySaveModel.textContent = "保存模型";
   const p = selectedProxyProvider();
@@ -1754,7 +1856,15 @@ async function testProxyKey(
   let result;
   try {
     if (MOCK) {
-      result = { ok: true, status: 200, ms: 123, model: "mock" };
+      const provider = (state.proxy?.providers || []).find(
+        (item) => item._uiKey === targetUiKey || item.fp === fp,
+      );
+      result = {
+        ok: true,
+        status: 200,
+        ms: 123,
+        model: (provider && provider.test_model) || "mock",
+      };
     } else {
       result = await api("/api/proxy/test", {
         method: "POST",
@@ -1889,6 +1999,9 @@ async function saveProxyTestModel() {
       p.test_model = res.test_model || "";
     } else {
       p.test_model = model;
+      if (p._mockKey) {
+        mockOverrideForProvider(p, p._mockKey).test_model = model;
+      }
     }
     renderProxyToolbar();
     renderProxyKeyCards();
@@ -1911,7 +2024,8 @@ async function recoverProxyKey(fp, id) {
   if (state.proxyRecoveringKeys.has(token)) return;
   if (!confirm("恢复这把密钥？恢复后会重新参与轮用。")) return;
 
-  const targetUiKey = (selectedProxyProvider() || {})._uiKey;
+  const currentProvider = selectedProxyProvider();
+  const targetUiKey = (currentProvider || {})._uiKey;
   state.proxyRecoveringKeys.add(token);
   updateProxyCardButtonsDisabled();
   try {
@@ -1921,6 +2035,19 @@ async function recoverProxyKey(fp, id) {
         auth: true,
         body: { fp, id: Number(targetId) },
       });
+    } else if (currentProvider && currentProvider._mockKey) {
+      const ki = (currentProvider.keys || []).findIndex(
+        (k) => String(k.id ?? "") === targetId,
+      );
+      const rawKey = ki >= 0 ? (currentProvider._mockPlainKeys || [])[ki] : "";
+      if (rawKey) {
+        const override = mockOverrideForProvider(
+          currentProvider,
+          currentProvider._mockKey,
+        );
+        const prev = override.keys.get(rawKey) || {};
+        override.keys.set(rawKey, { ...prev, disabled: false, fail_count: 0 });
+      }
     }
     const store = state.proxyLastResults.get(targetUiKey);
     if (store) store.delete(targetId);
@@ -1936,6 +2063,7 @@ async function recoverProxyKey(fp, id) {
 
 // ── Results tab ────────────────────────────────────────────────────────────
 async function loadResults() {
+  const reqId = ++state.reqSeq.results;
   dom.resultsLoading.classList.remove("hidden");
   dom.resultsError.classList.add("hidden");
   dom.resultsEmpty.classList.add("hidden");
@@ -1947,9 +2075,11 @@ async function loadResults() {
     if (!state.settings) {
       if (MOCK) {
         const mock = await getMock();
+        if (reqId !== state.reqSeq.results) return;
         state.settings = mock.settings;
       } else {
         const d = await api("/api/settings", { auth: true });
+        if (reqId !== state.reqSeq.results) return;
         state.settings = d.settings || {};
         applySettingsToUI();
       }
@@ -1993,6 +2123,8 @@ async function loadResults() {
       }),
     );
 
+    if (reqId !== state.reqSeq.results) return;
+
     const hasAny = bundles.some(
       (b) =>
         b.resultData.exists ||
@@ -2017,37 +2149,15 @@ async function loadResults() {
       .forEach(function (textarea) {
         syncLineNums(textarea);
       });
-    // Keyboard support for result-group-header (click handled by delegation)
-    dom.resultsBody.querySelectorAll(".result-group-header").forEach((h) => {
-      h.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          h.click();
-        }
-      });
-    });
-    // Bind inv-group toggles
-    dom.resultsBody.querySelectorAll(".inv-group-header").forEach((h) => {
-      const toggle = (e) => {
-        if (e && e.target.closest("button")) return;
-        const g = h.closest(".inv-group");
-        const open = g.classList.toggle("open");
-        h.setAttribute("aria-expanded", String(open));
-      };
-      h.addEventListener("click", toggle);
-      h.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          toggle(e);
-        }
-      });
-    });
     dom.resultsBody.classList.remove("hidden");
   } catch (err) {
+    if (reqId !== state.reqSeq.results) return;
     dom.resultsError.textContent = `读取失败：${err.message}`;
     dom.resultsError.classList.remove("hidden");
   } finally {
-    dom.resultsLoading.classList.add("hidden");
+    if (reqId === state.reqSeq.results) {
+      dom.resultsLoading.classList.add("hidden");
+    }
   }
 }
 
@@ -2217,7 +2327,7 @@ function renderPerfTable(modelPerf) {
       <td data-value="${p.avg_total ?? ""}" class="na">${esc(total)}</td>
       <td data-value="${p.timeout_rate ?? ""}">${toRate}</td>
       <td data-value="${p.has_thinking_ratio ?? ""}" class="na">${esc(thinkRatio)}</td>
-      <td data-value="${p.answer_verified === true ? 1 : 0}">${answerVerified}</td>
+      <td data-value="${p.answer_verified === true ? 2 : p.answer_verified === false ? 1 : ""}">${answerVerified}</td>
       <td>${sampleBtn}</td>
     </tr>`;
     })
@@ -2324,11 +2434,11 @@ function openErrorDetail(errorCode, detail, subtitle = "") {
     ${errorCode != null ? `<div class="errdetail-code">Error Code: <strong>${esc(errorCode)}</strong></div>` : ""}
     ${rows}
   `;
-  dom.errDetailOverlay.classList.remove("hidden");
+  openModal(dom.errDetailOverlay, dom.errDetailClose);
 }
 
 function closeErrorDetail() {
-  dom.errDetailOverlay.classList.add("hidden");
+  closeModal(dom.errDetailOverlay);
 }
 
 // ── Dead keys tab ─────────────────────────────────────────────────────────
@@ -2422,18 +2532,16 @@ function detailMessage(detail) {
 }
 
 async function loadDeadKeys(force = false) {
+  const reqId = ++state.reqSeq.deadkeys;
   dom.dkError.classList.add("hidden");
   // Filter panel stays visible at all times, so keep default options populated
   // even while loading or when a request fails.
   fillHostSelect(dom.dkFHost, { includeAll: true, selected: dom.dkFHost.value });
   fillCodeSelect();
 
-  if (state.deadKeysLoaded && !force) {
-    renderDeadKeys();
-    return;
+  if (force) {
+    exitDkSelectMode();
   }
-
-  exitDkSelectMode();
 
   dom.dkLoading.classList.remove("hidden");
   dom.dkEmpty.classList.add("hidden");
@@ -2442,9 +2550,12 @@ async function loadDeadKeys(force = false) {
   try {
     if (!state.settings) {
       if (MOCK) {
-        state.settings = (await getMock()).settings;
+        const mock = await getMock();
+        if (reqId !== state.reqSeq.deadkeys) return;
+        state.settings = mock.settings;
       } else {
         const d = await api("/api/settings", { auth: true });
+        if (reqId !== state.reqSeq.deadkeys) return;
         state.settings = d.settings || {};
         applySettingsToUI();
       }
@@ -2452,18 +2563,28 @@ async function loadDeadKeys(force = false) {
 
     if (MOCK) {
       const mock = await getMock();
+      if (reqId !== state.reqSeq.deadkeys) return;
       state.deadKeys = Array.isArray(mock.dead_keys) ? mock.dead_keys : [];
     } else {
       const d = await api("/api/dead-keys", { auth: true });
+      if (reqId !== state.reqSeq.deadkeys) return;
       state.deadKeys = Array.isArray(d.dead_keys) ? d.dead_keys : [];
     }
-    state.deadKeysLoaded = true;
+    if (!force && state.dkSelected.size > 0) {
+      const validIds = new Set(state.deadKeys.map((r) => r && r.id).filter(Boolean));
+      for (const id of [...state.dkSelected]) {
+        if (!validIds.has(id)) state.dkSelected.delete(id);
+      }
+    }
     renderDeadKeys();
   } catch (err) {
+    if (reqId !== state.reqSeq.deadkeys) return;
     dom.dkError.textContent = `读取失败：${err.message}`;
     dom.dkError.classList.remove("hidden");
   } finally {
-    dom.dkLoading.classList.add("hidden");
+    if (reqId === state.reqSeq.deadkeys) {
+      dom.dkLoading.classList.add("hidden");
+    }
   }
 }
 
@@ -2827,12 +2948,11 @@ function openDkEdit(id) {
   // so the field shows a real value instead of the browser's locale placeholder.
   dom.dkeExpired.value = dkDateOf(rec) || todayISO();
   dom.dkeCode.value = rec.error_code != null ? String(rec.error_code) : "";
-  dom.dkEditOverlay.classList.remove("hidden");
-  dom.dkeKey.focus();
+  openModal(dom.dkEditOverlay, dom.dkeKey);
 }
 
 function closeDkEdit() {
-  dom.dkEditOverlay.classList.add("hidden");
+  closeModal(dom.dkEditOverlay);
 }
 
 async function saveDkEdit() {
@@ -2908,6 +3028,7 @@ function removeDeadKeysLocal(ids) {
     if (heir) heir.error_detail = gone.error_detail;
   }
   state.deadKeys = next;
+  if (MOCK && _mockData) _mockData.dead_keys = next;
 }
 
 function updateDkBulkBtn(visibleCount) {
@@ -2970,15 +3091,13 @@ function openDkConfirm() {
     )
     .join("");
   if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
-  dom.dkConfirmOverlay.classList.remove("hidden");
-  dom.dkConfirmOk.focus();
+  openModal(dom.dkConfirmOverlay, dom.dkConfirmOk);
 }
 
 function closeDkConfirm() {
   state.dkPendingDelete = null;
-  dom.dkConfirmOverlay.classList.add("hidden");
   if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
-  if (dom.dkBulkDelBtn) dom.dkBulkDelBtn.focus();
+  closeModal(dom.dkConfirmOverlay, { fallbackFocusEl: dom.dkBulkDelBtn });
 }
 
 async function confirmDeleteDeadKeys() {
@@ -3069,13 +3188,15 @@ function openSample(model, sample) {
       <pre class="sample-pre">${content ? esc(content) : `<span class="na">（空）</span>`}</pre>
     </div>
   `;
-  dom.sampleOverlay.classList.remove("hidden");
+  openModal(dom.sampleOverlay, dom.sampleClose);
 }
 function closeSample() {
-  dom.sampleOverlay.classList.add("hidden");
+  closeModal(dom.sampleOverlay);
 }
 
 // ── Copy ──────────────────────────────────────────────────────────────────
+const copyBtnTimers = new WeakMap();
+
 function fallbackCopy(text) {
   const ta = document.createElement("textarea");
   ta.value = text;
@@ -3091,27 +3212,40 @@ function fallbackCopy(text) {
 
 function copyText(text, btn) {
   const doFeedback = () => {
-    if (!btn) return;
+    if (!btn || !btn.isConnected) return;
+    const prevTimer = copyBtnTimers.get(btn);
+    if (prevTimer) clearTimeout(prevTimer);
+
     const isIconOnly =
       btn.classList.contains("btn-icon") || !btn.textContent.trim();
     if (isIconOnly) {
-      const origHtml = btn.innerHTML;
+      const origHtml = btn.dataset.origHtml ?? btn.innerHTML;
+      btn.dataset.origHtml = origHtml;
       btn.innerHTML = CHECK_ICON_SVG;
       btn.classList.add("copied");
       btn.disabled = true;
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        copyBtnTimers.delete(btn);
+        if (!btn.isConnected) return;
         btn.innerHTML = origHtml;
+        delete btn.dataset.origHtml;
         btn.classList.remove("copied");
         btn.disabled = false;
       }, 1500);
+      copyBtnTimers.set(btn, timer);
     } else {
-      const orig = btn.textContent;
+      const orig = btn.dataset.origText ?? btn.textContent;
+      btn.dataset.origText = orig;
       btn.textContent = "已复制!";
       btn.disabled = true;
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        copyBtnTimers.delete(btn);
+        if (!btn.isConnected) return;
         btn.textContent = orig;
+        delete btn.dataset.origText;
         btn.disabled = false;
       }, 1500);
+      copyBtnTimers.set(btn, timer);
     }
   };
 
@@ -3139,10 +3273,12 @@ function copyProxyUrl() {
   const url = dom.proxyUrl.dataset.copyVal || "";
   if (!url) return;
   copyText(url, null);
+  if (proxyUrlTimer) clearTimeout(proxyUrlTimer);
   dom.proxyUrl.textContent = "已复制";
   dom.proxyUrl.classList.add("is-copied");
-  setTimeout(() => {
-    if (!dom.proxyUrl.classList.contains("is-copied")) return;
+  proxyUrlTimer = setTimeout(() => {
+    proxyUrlTimer = null;
+    if (!dom.proxyUrl.isConnected || !dom.proxyUrl.classList.contains("is-copied")) return;
     dom.proxyUrl.textContent = url;
     dom.proxyUrl.classList.remove("is-copied");
   }, 1200);
@@ -3292,6 +3428,16 @@ function bindEvents() {
   dom.addProviderBtn.addEventListener("click", () => openEditor());
   dom.bulkEnableBtn.addEventListener("click", () => bulkToggle(true));
   dom.bulkDisableBtn.addEventListener("click", () => bulkToggle(false));
+  dom.providerGrid.addEventListener("click", (e) => {
+    const editBtn = e.target.closest("[data-edit]");
+    if (editBtn) return openEditor(Number(editBtn.dataset.edit));
+    const delBtn = e.target.closest("[data-delete]");
+    if (delBtn) return deleteProvider(Number(delBtn.dataset.delete));
+  });
+  dom.providerGrid.addEventListener("change", (e) => {
+    const box = e.target.closest("[data-select]");
+    if (box) toggleSelection(Number(box.dataset.select));
+  });
   dom.edAddHeaderBtn.addEventListener("click", () => {
     const row = createHeaderRow();
     dom.edHeadersContainer.appendChild(row);
@@ -3370,15 +3516,31 @@ function bindEvents() {
     true,
   );
 
-  // Result group open — delegated
+  // Result group open & performance table sorting — delegated
+  const toggleResultGroupHeader = (header) => {
+    const g = header.closest(".result-group");
+    if (!g) return;
+    const open = g.classList.toggle("open");
+    header.setAttribute("aria-expanded", String(open));
+  };
+  const toggleInvGroupHeader = (invHeader) => {
+    const g = invHeader.closest(".inv-group");
+    if (!g) return;
+    const open = g.classList.toggle("open");
+    invHeader.setAttribute("aria-expanded", String(open));
+  };
+
   dom.resultsBody.addEventListener("click", (e) => {
     const header = e.target.closest(".result-group-header");
     if (header) {
-      const g = header.closest(".result-group");
-      const open = g.classList.toggle("open");
-      header.setAttribute("aria-expanded", String(open));
-      const arrow = header.querySelector(".rgh-arrow");
-      if (arrow) arrow.style.transform = open ? "rotate(180deg)" : "";
+      toggleResultGroupHeader(header);
+      return;
+    }
+
+    const invHeader = e.target.closest(".inv-group-header");
+    if (invHeader && !e.target.closest("button")) {
+      toggleInvGroupHeader(invHeader);
+      return;
     }
 
     const sortTh = e.target.closest("th[data-sort]");
@@ -3412,12 +3574,19 @@ function bindEvents() {
           cell.dataset.value !== undefined
             ? cell.dataset.value
             : cell.textContent.trim();
-        const parsed = parseFloat(raw);
-        const val = isModel ? raw : isNaN(parsed) ? -Infinity : parsed;
-        return { row, val };
+        if (isModel) {
+          return { row, val: raw, missing: raw === "" };
+        }
+        const parsed = raw === "" ? NaN : parseFloat(raw);
+        return { row, val: parsed, missing: !Number.isFinite(parsed) };
       });
 
       pairs.sort((a, b) => {
+        if (a.missing !== b.missing) return a.missing ? 1 : -1;
+        if (isModel) {
+          const cmp = a.val.localeCompare(b.val);
+          return newDir === "asc" ? cmp : -cmp;
+        }
         if (a.val < b.val) return newDir === "asc" ? -1 : 1;
         if (a.val > b.val) return newDir === "asc" ? 1 : -1;
         return 0;
@@ -3426,22 +3595,47 @@ function bindEvents() {
       const frag = document.createDocumentFragment();
       pairs.forEach((p) => frag.appendChild(p.row));
       tbody.appendChild(frag);
+      return;
     }
 
     const copyBtn = e.target.closest(".copy-btn");
-    if (copyBtn) copyText(copyBtn.dataset.copyVal || "", copyBtn);
+    if (copyBtn) {
+      copyText(copyBtn.dataset.copyVal || "", copyBtn);
+      return;
+    }
 
     const sampleBtn = e.target.closest("[data-sample]");
     if (sampleBtn) {
-      const payload = JSON.parse(sampleBtn.dataset.sample);
-      openSample(payload.model, payload.sample);
+      try {
+        const payload = JSON.parse(sampleBtn.dataset.sample);
+        openSample(payload.model, payload.sample);
+      } catch {}
+      return;
     }
 
     const errBtn = e.target.closest("[data-errdetail]");
     if (errBtn) {
       e.stopPropagation();
-      const payload = JSON.parse(errBtn.dataset.errdetail);
-      openErrorDetail(payload.error_code, payload.error_detail);
+      try {
+        const payload = JSON.parse(errBtn.dataset.errdetail);
+        openErrorDetail(payload.error_code, payload.error_detail);
+      } catch {}
+    }
+  });
+
+  dom.resultsBody.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target.closest("button, input, textarea, select, a")) return;
+    const header = e.target.closest(".result-group-header");
+    if (header) {
+      e.preventDefault();
+      toggleResultGroupHeader(header);
+      return;
+    }
+    const invHeader = e.target.closest(".inv-group-header");
+    if (invHeader) {
+      e.preventDefault();
+      toggleInvGroupHeader(invHeader);
     }
   });
 
@@ -3530,15 +3724,42 @@ function bindEvents() {
     if (e.target.dataset.closeModal === "sample") closeSample();
   });
 
-  // Esc closes any open modal
+  // Global modal keyboard handling: Esc closes topmost modal; Tab stays trapped inside
+  const MODAL_CLOSE_MAP = new Map([
+    [dom.editorOverlay, closeEditor],
+    [dom.settingsOverlay, closeSettings],
+    [dom.sampleOverlay, closeSample],
+    [dom.dkEditOverlay, closeDkEdit],
+    [dom.dkConfirmOverlay, closeDkConfirm],
+    [dom.errDetailOverlay, closeErrorDetail],
+  ]);
+
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (!dom.editorOverlay.classList.contains("hidden")) closeEditor();
-    if (!dom.settingsOverlay.classList.contains("hidden")) closeSettings();
-    if (!dom.sampleOverlay.classList.contains("hidden")) closeSample();
-    if (!dom.dkEditOverlay.classList.contains("hidden")) closeDkEdit();
-    if (!dom.dkConfirmOverlay.classList.contains("hidden")) closeDkConfirm();
-    if (!dom.errDetailOverlay.classList.contains("hidden")) closeErrorDetail();
+    const activeOverlay = topOpenModal();
+    if (!activeOverlay) return;
+    if (e.key === "Escape") {
+      const closeFn = MODAL_CLOSE_MAP.get(activeOverlay);
+      if (closeFn) closeFn();
+      return;
+    }
+    if (e.key === "Tab") {
+      const items = modalFocusableElements(activeOverlay);
+      if (!items.length) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first || !activeOverlay.contains(document.activeElement)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (document.activeElement === last || !activeOverlay.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
   });
 }
 

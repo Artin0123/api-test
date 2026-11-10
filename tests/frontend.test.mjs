@@ -116,3 +116,28 @@ test("proxy toolbar keeps an outer frame with inner spacing", () => {
   assert.ok(css.includes(".proxy-key-state-tag"), "style.css is missing .proxy-key-state-tag");
   assert.ok(css.includes(".proxy-summary-num"), "style.css is missing .proxy-summary-num");
 });
+
+test("shared button borders, select height, and mobile compact button rules stay aligned", () => {
+  const css = read("style.css");
+  assert.match(css, /\.btn\s*\{[^}]*border:\s*1px solid transparent/s);
+  assert.match(css, /\.input-text,\s*\.input-select\s*\{[^}]*height:\s*var\(--control-h\)/s);
+  const mobileBlock = css.slice(css.indexOf("@media (max-width: 640px)"));
+  assert.match(mobileBlock, /\.btn-xs\s*\{/);
+  assert.match(mobileBlock, /\.btn-icon\s*\{/);
+  for (const dead of [
+    ".copy-textarea--horizontal",
+    ".inv-models-details",
+    ".config-form",
+    ".config-cols",
+    ".field--inline",
+    ".modal-footer--editor",
+  ]) {
+    assert.ok(!css.includes(dead), `dead CSS rule ${dead} should stay removed`);
+  }
+});
+
+test("async tab loaders guard stale requests and proxy batch keeps key results", () => {
+  assert.match(app, /reqSeq\s*:\s*\{/);
+  assert.match(app, /loadProxyState\(\{\s*preserveResults:\s*true\s*\}\)/);
+  assert.match(app, /clearProxyNotice\(\{\s*keepGlobal:\s*true\s*\}\)/);
+});
