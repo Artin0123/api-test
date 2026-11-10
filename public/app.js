@@ -29,6 +29,13 @@ const state = {
   dkSelected: new Set(), // set of dead key record ids checked in the table
   dkPendingDelete: null, // snapshot of ids currently being confirmed for deletion
   dkSort: { col: "index", dir: "asc" },
+  editorSnapshot: null, // key textarea content when the delete confirmation appeared
+  editorPendingRemoved: null, // keys shown in the current confirmation
+  editorSortMode: "none",
+  editorSortOrigin: "",
+  proxy: null,
+  proxySelected: null,
+  proxyBusy: false,
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -86,6 +93,17 @@ const dom = {
   edAddHeaderBtn: $("ed-add-header-btn"),
   edHeadersContainer: $("ed-headers-container"),
   edMaxConcurrency: $("ed-max-concurrency"),
+  edAlias: $("ed-alias"),
+  edGatewayProvider: $("ed-gateway-provider"),
+  edKeysSearch: $("ed-keys-search"),
+  edKeysSearchResults: $("ed-keys-search-results"),
+  edSortKeysBtn: $("ed-sort-keys-btn"),
+  edExportKeysBtn: $("ed-export-keys-btn"),
+  editorConfirm: $("editor-confirm"),
+  editorConfirmMsg: $("editor-confirm-msg"),
+  editorConfirmList: $("editor-confirm-list"),
+  editorConfirmOk: $("editor-confirm-ok"),
+  editorConfirmCancel: $("editor-confirm-cancel"),
 
   // app settings modal
   settingsOverlay: $("settings-overlay"),
@@ -151,6 +169,27 @@ const dom = {
   errDetailTitle: $("errdetail-title"),
   errDetailSubtitle: $("errdetail-subtitle"),
   errDetailContent: $("errdetail-content"),
+
+  // proxy tab
+  proxyRefreshBtn: $("proxy-refresh-btn"),
+  proxyNotice: $("proxy-notice"),
+  proxyLoading: $("proxy-loading"),
+  proxyError: $("proxy-error"),
+  proxyEmpty: $("proxy-empty"),
+  proxyKeyEmpty: $("proxy-key-empty"),
+  proxyToolbar: $("proxy-toolbar"),
+  proxyProvider: $("proxy-provider"),
+  proxySummary: $("proxy-summary"),
+  proxyUrl: $("proxy-url"),
+  proxyCopyUrl: $("proxy-copy-url"),
+  proxySample: $("proxy-sample"),
+  proxyTestModel: $("proxy-test-model"),
+  proxySaveModel: $("proxy-save-model"),
+  proxyTestAll: $("proxy-test-all"),
+  proxyTestActive: $("proxy-test-active"),
+  proxyTestDisabled: $("proxy-test-disabled"),
+  proxyLogs: $("proxy-logs"),
+  proxyKeyGrid: $("proxy-key-grid"),
 };
 
 // ── API ──────────────────────────────────────────────────────────────────
@@ -308,6 +347,67 @@ function normalizeKeys(raw) {
     .join("\n");
 }
 
+/** Newline list helper shared by the editor tools and the proxy page. */
+function splitKeyLines(raw) {
+  return String(raw || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Head/tail mask for keys. Keep this function in sync with the identically
+ *  named one in `_worker.js` (same threshold, same separators): a 9-character
+ *  key would otherwise reveal 8 of its 9 characters (4+4). */
+function maskKey(key) {
+  const s = String(key || "");
+  if (!s) return "";
+  if (s.length < 16) return `${s.slice(0, 1)}***${s.slice(-1)}`;
+  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+}
+
+/** Multiset diff of two newline lists: duplicated keys are counted, so removing
+ *  one copy of a key that appears twice reports exactly one removal. */
+function diffKeyLines(oldText, newText) {
+  const count = (text) => {
+    const map = new Map();
+    for (const key of splitKeyLines(text)) map.set(key, (map.get(key) || 0) + 1);
+    return map;
+  };
+  const before = count(oldText);
+  const after = count(newText);
+  const removed = [];
+  for (const [key, n] of before) {
+    const left = n - (after.get(key) || 0);
+    for (let i = 0; i < left; i++) removed.push(key);
+  }
+  return removed;
+}
+
+const SORT_MODES = ["none", "asc", "desc"];
+const SORT_LABELS = { none: "预设", asc: "A→Z", desc: "Z→A" };
+
+function nextSortMode(mode) {
+  const i = SORT_MODES.indexOf(mode);
+  return SORT_MODES[(i + 1) % SORT_MODES.length];
+}
+
+/** Three-state sort. "none" restores the text captured when the cycle started,
+ *  so the original order (and duplicated lines) survive the round trip. The
+ *  comparison is the default JS string comparison (UTF-16 code units), which for
+ *  ASCII keys is plain ASCII order; localeCompare would follow the system
+ *  locale and is deliberately not used. */
+function sortKeysText(text, mode, originText) {
+  if (mode === "none") {
+    return originText === undefined ? String(text) : originText;
+  }
+  const lines = splitKeyLines(text);
+  const cmp =
+    mode === "asc"
+      ? (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+      : (a, b) => (a < b ? 1 : a > b ? -1 : 0);
+  return [...lines].sort(cmp).join("\n");
+}
+
 // ── Theme ────────────────────────────────────────────────────────────────
 function getTheme() {
   return document.documentElement.getAttribute("data-theme") || "dark";
@@ -408,6 +508,7 @@ function switchTab(name) {
   if (name === "results") loadResults();
   if (name === "config") loadConfig();
   if (name === "deadkeys") loadDeadKeys();
+  if (name === "proxy") loadProxyState();
 
   // Close mobile menu if open
   toggleMobileMenu(false);
@@ -658,6 +759,88 @@ function getEditorHeaders() {
   return { headers, invalid };
 }
 
+function hideEditorConfirm() {
+  dom.editorConfirm.classList.add("hidden");
+  dom.editorConfirmMsg.textContent = "";
+  dom.editorConfirmList.replaceChildren();
+  state.editorPendingRemoved = null;
+}
+
+function showEditorConfirm(removed) {
+  dom.editorConfirmMsg.textContent = `即将删除 ${removed.length} 支密钥；确认后才会储存。`;
+  dom.editorConfirmList.replaceChildren();
+  for (const key of removed) {
+    const li = document.createElement("li");
+    li.textContent = maskKey(key);
+    dom.editorConfirmList.appendChild(li);
+  }
+  dom.editorConfirm.classList.remove("hidden");
+  dom.editorConfirmOk.focus();
+}
+
+function renderEditorSearchResults() {
+  const query = dom.edKeysSearch.value.trim().toLowerCase();
+  dom.edKeysSearchResults.replaceChildren();
+  if (!query) {
+    dom.edKeysSearchResults.classList.add("hidden");
+    return;
+  }
+  const lines = dom.edKeys.value.split("\n");
+  let hits = 0;
+  lines.forEach((line, i) => {
+    const key = line.trim();
+    if (!key || !key.toLowerCase().includes(query)) return;
+    hits++;
+    const row = document.createElement("div");
+    row.className = "hit";
+    row.textContent = `第 ${i + 1} 行 · ${maskKey(key)}`;
+    dom.edKeysSearchResults.appendChild(row);
+  });
+  if (!hits) {
+    const row = document.createElement("div");
+    row.textContent = "没有符合条件的行";
+    dom.edKeysSearchResults.appendChild(row);
+  }
+  dom.edKeysSearchResults.classList.remove("hidden");
+}
+
+function cycleEditorSort() {
+  if (state.editorSortMode === "none") state.editorSortOrigin = dom.edKeys.value;
+  state.editorSortMode = nextSortMode(state.editorSortMode);
+  dom.edKeys.value = sortKeysText(
+    dom.edKeys.value,
+    state.editorSortMode,
+    state.editorSortOrigin,
+  );
+  dom.edSortKeysBtn.textContent = `排序：${SORT_LABELS[state.editorSortMode]}`;
+  syncLineNums(dom.edKeys);
+  renderEditorSearchResults();
+}
+
+function exportEditorKeys() {
+  const keys = splitKeyLines(dom.edKeys.value);
+  if (!keys.length) {
+    dom.editorError.textContent = "没有可导出的密钥";
+    return;
+  }
+  const host = extractHost(dom.edApiBase.value || "provider");
+  const filename = `${host || "provider"}-keys.txt`.replace(
+    /[^a-zA-Z0-9._-]+/g,
+    "-",
+  );
+  const blob = new Blob([`${keys.join("\n")}\n`], {
+    type: "text/plain;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function openEditor(index = -1) {
   dom.editorIndex.value = String(index);
   dom.editorError.textContent = "";
@@ -670,6 +853,8 @@ function openEditor(index = -1) {
     dom.edKeys.value = p.keys || "";
     dom.edModels.value = p.models || "";
     dom.edExtraBody.value = p.extra_body || "";
+    dom.edAlias.value = p.alias || "";
+    dom.edGatewayProvider.value = p.gateway_provider || "";
     renderEditorHeaders(p.custom_headers);
     dom.edMaxConcurrency.value =
       p.max_concurrency != null ? String(p.max_concurrency) : "";
@@ -680,11 +865,20 @@ function openEditor(index = -1) {
     dom.edKeys.value = "";
     dom.edModels.value = "";
     dom.edExtraBody.value = "";
+    dom.edAlias.value = "";
+    dom.edGatewayProvider.value = "";
     renderEditorHeaders([]);
     dom.edMaxConcurrency.value = "";
   }
   dom.edExtraBodyStatus.textContent = "";
   dom.edExtraBodyStatus.className = "json-status";
+  dom.edKeysSearch.value = "";
+  dom.edKeysSearchResults.replaceChildren();
+  dom.edKeysSearchResults.classList.add("hidden");
+  state.editorSortMode = "none";
+  dom.edSortKeysBtn.textContent = "排序：预设";
+  hideEditorConfirm();
+  state.editorSnapshot = dom.edKeys.value;
   dom.editorOverlay.classList.remove("hidden");
   dom.edApiBase.focus();
   // Sync line numbers after values are populated
@@ -697,7 +891,7 @@ function closeEditor() {
   dom.editorOverlay.classList.add("hidden");
 }
 
-async function saveEditor() {
+async function saveEditor(confirmed = false) {
   dom.editorError.textContent = "";
   const index = Number(dom.editorIndex.value);
   const existingProviders = (state.settings || {}).providers || [];
@@ -762,6 +956,39 @@ async function saveEditor() {
     custom_headers: customHeaders,
     max_concurrency: maxConcurrency,
   };
+  const alias = dom.edAlias.value.trim();
+  const gatewayProvider = dom.edGatewayProvider.value.trim();
+  // Omit empty proxy fields so a provider that never used forwarding keeps the
+  // exact shape it had before this feature existed.
+  if (alias) entry.alias = alias;
+  if (gatewayProvider) entry.gateway_provider = gatewayProvider;
+
+  // A shrinking key list gets an in-place confirmation instead of a popup: the
+  // footer grows, so the warning cannot be missed.
+  const baseline = state.editorSnapshot ?? keys;
+  const removed = diffKeyLines(baseline, keys);
+  if (removed.length && !confirmed) {
+    state.editorPendingRemoved = removed;
+    showEditorConfirm(removed);
+    return;
+  }
+  // If the textarea changed after the confirmation was shown, the list the
+  // operator agreed to is stale: show the new one instead of saving blindly.
+  if (confirmed) {
+    const shown = state.editorPendingRemoved || [];
+    const a = [...removed].sort();
+    const b = [...shown].sort();
+    const same =
+      a.length === b.length && a.every((value, i) => value === b[i]);
+    if (!same) {
+      state.editorPendingRemoved = removed.length ? removed : null;
+      if (removed.length) {
+        showEditorConfirm(removed);
+        return;
+      }
+    }
+  }
+  state.editorPendingRemoved = null;
   const settings = state.settings || {};
   const providers = [...(settings.providers || [])];
 
@@ -776,6 +1003,9 @@ async function saveEditor() {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    hideEditorConfirm();
+    state.editorSnapshot = null;
+    state.editorSortMode = "none";
     renderProviderGrid();
     closeEditor();
   } catch (err) {
@@ -837,6 +1067,366 @@ async function bulkToggle(enable) {
     renderProviderGrid();
   } catch (err) {
     dom.configSaveError.textContent = err.message;
+  }
+}
+
+// ── Proxy tab (rotation / forwarding) ──────────────────────────────────────
+function selectedProxyProvider() {
+  const providers = (state.proxy && state.proxy.providers) || [];
+  return providers.find((p) => p.fp === state.proxySelected) || providers[0] || null;
+}
+
+async function loadProxyState() {
+  dom.proxyLoading.classList.remove("hidden");
+  dom.proxyError.classList.add("hidden");
+  dom.proxyEmpty.classList.add("hidden");
+  dom.proxyKeyEmpty.classList.add("hidden");
+  dom.proxyToolbar.classList.add("hidden");
+  dom.proxyKeyGrid.classList.add("hidden");
+  dom.proxyNotice.classList.add("hidden");
+
+  try {
+    let data;
+    if (MOCK) {
+      const mock = await getMock();
+      data = mockProxyState(mock.settings || {});
+    } else {
+      data = await api("/api/proxy/state", { auth: true });
+    }
+    state.proxy = data;
+    const providers = data.providers || [];
+    if (!providers.some((p) => p.fp === state.proxySelected)) {
+      state.proxySelected = providers[0] ? providers[0].fp : null;
+    }
+    renderProxyState(data);
+  } catch (err) {
+    dom.proxyError.textContent = `读取失败：${err.message}`;
+    dom.proxyError.classList.remove("hidden");
+  } finally {
+    dom.proxyLoading.classList.add("hidden");
+  }
+}
+
+function mockProxyState(settings) {
+  const providers = (settings.providers || []).map((p, i) => {
+    const keys = splitKeyLines(p.keys);
+    return {
+      fp: `mock-${i}`,
+      alias: p.alias || "",
+      host: extractHost(p.api_base),
+      provider_type: p.provider_type || "openai",
+      enabled: p.enabled !== false,
+      via_gateway: false,
+      gateway_provider: p.gateway_provider || "",
+      proxy_url: p.alias ? `/proxy/${p.alias}` : "",
+      sample_path:
+        ({ gemini: "/models/{model}:generateContent", anthropic: "/messages" })[
+          p.provider_type
+        ] || "/chat/completions",
+      test_model: "",
+      logs_url: "",
+      keys_total: keys.length,
+      keys_available: keys.length,
+      keys: keys.map((key, ki) => ({
+        id: i * 100 + ki + 1,
+        masked: maskKey(key),
+        disabled: false,
+        fail_count: 0,
+        last_used_at: null,
+        synced: true,
+      })),
+    };
+  });
+  return {
+    ok: true,
+    backend: "d1",
+    proxy_enabled: true,
+    proxy_message: "",
+    gateway_ready: false,
+    logs_url_template: "",
+    providers,
+  };
+}
+
+function proxyTimeLabel(ms) {
+  if (!ms) return "从未";
+  const d = new Date(Number(ms));
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+}
+
+function renderProxyState(data) {
+  const providers = data.providers || [];
+  if (!data.proxy_enabled) {
+    dom.proxyNotice.textContent = data.proxy_message || "转发功能目前停用";
+    dom.proxyNotice.className = "alert alert-error";
+    dom.proxyNotice.classList.remove("hidden");
+  }
+  if (!providers.length) {
+    dom.proxyEmpty.classList.remove("hidden");
+    dom.proxyToolbar.classList.add("hidden");
+    dom.proxyKeyGrid.classList.add("hidden");
+    dom.proxyKeyEmpty.classList.add("hidden");
+    return;
+  }
+
+  dom.proxyProvider.replaceChildren();
+  for (const p of providers) {
+    const opt = document.createElement("option");
+    opt.value = p.fp;
+    opt.textContent = `${p.alias || "（未设别名）"} · ${p.host} · ${p.provider_type}`;
+    if (p.fp === state.proxySelected) opt.selected = true;
+    dom.proxyProvider.appendChild(opt);
+  }
+
+  dom.proxyEmpty.classList.add("hidden");
+  dom.proxyToolbar.classList.remove("hidden");
+  renderProxyToolbar();
+  renderProxyKeyCards();
+}
+
+function renderProxyToolbar() {
+  const p = selectedProxyProvider();
+  if (!p) return;
+  const enabled =
+    !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
+  const url = p.alias ? `${location.origin}${p.proxy_url}` : "";
+
+  const available = Number(p.keys_available || 0);
+  dom.proxySummary.textContent = `可用 ${available} / ${Number(p.keys_total || 0)}`;
+  // Colour the one number on this row that means "nothing will be served".
+  dom.proxySummary.className =
+    "proxy-summary" + (available ? "" : " proxy-summary--empty");
+  dom.proxyUrl.textContent = url || "（尚未设定转发别名）";
+  dom.proxyCopyUrl.dataset.copyVal = url;
+  dom.proxyCopyUrl.disabled = !url;
+  dom.proxySample.textContent = p.alias
+    ? `范例路径：${p.sample_path}`
+    : "未设别名：请到「来源设定」编辑这个服务商";
+  dom.proxyTestModel.value = p.test_model || "";
+  dom.proxySaveModel.disabled = !enabled;
+
+  const hasKeys = (p.keys || []).some((k) => k.id != null);
+  const canTest = enabled && hasKeys && !!p.test_model;
+  for (const btn of [
+    dom.proxyTestAll,
+    dom.proxyTestActive,
+    dom.proxyTestDisabled,
+  ]) {
+    btn.disabled = !canTest;
+    btn.title = !p.test_model ? "请先填写并保存测试模型" : "";
+  }
+
+  if (p.logs_url) {
+    dom.proxyLogs.href = p.logs_url;
+    dom.proxyLogs.removeAttribute("aria-disabled");
+    dom.proxyLogs.title = "打开 AI Gateway 日志（已按服务商过滤）";
+  } else {
+    dom.proxyLogs.removeAttribute("href");
+    dom.proxyLogs.setAttribute("aria-disabled", "true");
+    dom.proxyLogs.title = "部署设定 AI_GATEWAY_LOGS_URL 后可用";
+  }
+}
+
+function renderProxyKeyCards() {
+  const p = selectedProxyProvider();
+  if (!p) return;
+  const keys = p.keys || [];
+  const enabled =
+    !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
+  if (!keys.length) {
+    // Sibling of the grid, not a grid item: a .state-card dropped inside the
+    // grid used to render as one 280px column instead of a full-width notice.
+    dom.proxyKeyGrid.replaceChildren();
+    dom.proxyKeyGrid.classList.add("hidden");
+    dom.proxyKeyEmpty.classList.remove("hidden");
+    return;
+  }
+  dom.proxyKeyEmpty.classList.add("hidden");
+  const canAct = enabled && !!p.test_model;
+  dom.proxyKeyGrid.innerHTML = keys
+    .map((k) => {
+      const id = k.id == null ? "" : String(k.id);
+      const mask = esc(k.masked || "");
+      // Green / amber, the same pairing .provider-card uses for 启用 / 停用,
+      // so "正常" stops looking like an unknown state.
+      const badge = k.disabled
+        ? `<span class="badge badge-warn">已禁用</span>`
+        : `<span class="badge badge-ok">正常</span>`;
+      const recover = k.disabled
+        ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${enabled && id ? "" : " disabled"}>恢复</button>`
+        : "";
+      return `
+        <article class="proxy-key-card${k.disabled ? " proxy-key-card--disabled" : ""}" data-key-id="${escAttr(id)}">
+          <div class="proxy-key-card-head">
+            <code class="proxy-key-mask" title="${mask}">${mask}</code>
+            ${badge}
+          </div>
+          <div class="proxy-key-card-meta">
+            <span>连续失败 <strong>${Number(k.fail_count || 0)}</strong></span>
+            <span>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
+          </div>
+          <div class="proxy-key-card-actions">
+            <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${canAct && id ? "" : " disabled"}>测试</button>
+            ${recover}
+          </div>
+          <div class="proxy-test-result" data-proxy-result="${escAttr(id)}"></div>
+        </article>`;
+    })
+    .join("");
+  dom.proxyKeyGrid.classList.remove("hidden");
+}
+
+function renderProxyTestResult(id, result) {
+  if (id == null) return;
+  const el = dom.proxyKeyGrid.querySelector(`[data-proxy-result="${id}"]`);
+  if (!el) return;
+  if (result && result.ok) {
+    el.textContent = `可用 · ${result.ms} ms · ${result.model || ""}`;
+    el.className = "proxy-test-result ok";
+    return;
+  }
+  const detail = result && result.error ? ` · ${truncate(result.error, 90)}` : "";
+  const charged =
+    result && result.disabled
+      ? " · 已达门槛，已禁用"
+      : result && typeof result.fail_count === "number"
+        ? ` · 连续失败 ${result.fail_count} 次`
+        : "";
+  el.textContent = `不可用 · HTTP ${result && result.status ? result.status : "—"}${detail}${charged}`;
+  el.className = "proxy-test-result fail";
+}
+
+/** Returns the result object so the batch loop can count it. */
+async function testProxyKey(fp, id) {
+  const el = dom.proxyKeyGrid.querySelector(`[data-proxy-result="${id}"]`);
+  if (el) {
+    el.textContent = "测试中...";
+    el.className = "proxy-test-result";
+  }
+  let result;
+  try {
+    if (MOCK) {
+      result = { ok: true, status: 200, ms: 123, model: "mock" };
+    } else {
+      result = await api("/api/proxy/test", {
+        method: "POST",
+        auth: true,
+        body: { fp, id: Number(id) },
+      });
+    }
+    renderProxyTestResult(id, result);
+  } catch (err) {
+    result = { ok: false, status: err.status || 0, error: err.message };
+    renderProxyTestResult(id, result);
+  }
+  if (result && result.disabled) {
+    await loadProxyState();
+    dom.proxyNotice.className = "alert alert-error";
+    dom.proxyNotice.textContent = `这把密钥已达门槛并被禁用（连续失败 ${result.fail_count} 次）。`;
+    dom.proxyNotice.classList.remove("hidden");
+  }
+  return result;
+}
+
+function proxyActionButtons() {
+  return [
+    dom.proxyTestAll,
+    dom.proxyTestActive,
+    dom.proxyTestDisabled,
+    dom.proxySaveModel,
+  ];
+}
+
+async function runProxyBatch(mode) {
+  if (state.proxyBusy) return;
+  const p = selectedProxyProvider();
+  if (!p) return;
+  const keys = (p.keys || []).filter((k) => {
+    if (k.id == null) return false;
+    if (mode === "active") return !k.disabled;
+    if (mode === "disabled") return k.disabled;
+    return true;
+  });
+  if (!keys.length) {
+    dom.proxyNotice.className = "alert alert-info";
+    dom.proxyNotice.textContent = "没有符合这个条件的密钥。";
+    dom.proxyNotice.classList.remove("hidden");
+    return;
+  }
+
+  state.proxyBusy = true;
+  proxyActionButtons().forEach((b) => {
+    b.disabled = true;
+  });
+  dom.proxyNotice.className = "alert alert-info";
+  dom.proxyNotice.classList.remove("hidden");
+
+  let ok = 0;
+  let fail = 0;
+  try {
+    for (let i = 0; i < keys.length; i++) {
+      dom.proxyNotice.textContent = `批量测试中：${i + 1} / ${keys.length}（可用 ${ok}，不可用 ${fail}）`;
+      const result = await testProxyKey(p.fp, keys[i].id);
+      if (result && result.ok) ok++;
+      else fail++;
+    }
+  } finally {
+    // Reset even if something throws: otherwise the buttons stay disabled forever.
+    state.proxyBusy = false;
+  }
+
+  await loadProxyState();
+  dom.proxyNotice.className = "alert alert-info";
+  dom.proxyNotice.textContent = `批量测试完成：共 ${keys.length} 把，可用 ${ok}，不可用 ${fail}。`;
+  dom.proxyNotice.classList.remove("hidden");
+}
+
+async function saveProxyTestModel() {
+  if (state.proxyBusy) return;
+  const p = selectedProxyProvider();
+  if (!p) return;
+  const model = dom.proxyTestModel.value.trim();
+  dom.proxySaveModel.disabled = true;
+  try {
+    if (!MOCK) {
+      const res = await api("/api/proxy/test-model", {
+        method: "POST",
+        auth: true,
+        body: { fp: p.fp, model },
+      });
+      p.test_model = res.test_model || "";
+    } else {
+      p.test_model = model;
+    }
+    renderProxyToolbar();
+    renderProxyKeyCards();
+    dom.proxySaveModel.textContent = "已保存";
+    setTimeout(() => {
+      dom.proxySaveModel.textContent = "保存模型";
+    }, 1200);
+  } catch (err) {
+    dom.proxyNotice.className = "alert alert-error";
+    dom.proxyNotice.textContent = `保存失败：${err.message}`;
+    dom.proxyNotice.classList.remove("hidden");
+  } finally {
+    dom.proxySaveModel.disabled = false;
+  }
+}
+
+async function recoverProxyKey(fp, id) {
+  if (!confirm("恢复这把密钥？恢复后会重新参与轮用。")) return;
+  try {
+    if (!MOCK) {
+      await api("/api/proxy/recover", {
+        method: "POST",
+        auth: true,
+        body: { fp, id: Number(id) },
+      });
+    }
+    await loadProxyState();
+  } catch (err) {
+    dom.proxyError.textContent = `恢复失败：${err.message}`;
+    dom.proxyError.classList.remove("hidden");
   }
 }
 
@@ -2121,10 +2711,59 @@ function bindEvents() {
     dom.edHeadersContainer.appendChild(row);
     row.querySelector("[data-header-key]")?.focus();
   });
-  dom.editorSave.addEventListener("click", saveEditor);
+  dom.editorSave.addEventListener("click", () => saveEditor());
   dom.editorCancel.addEventListener("click", closeEditor);
+
+  // Key tools (R8): search, three-state sort, export, delete confirmation
+  dom.edKeysSearch.addEventListener("input", renderEditorSearchResults);
+  dom.edSortKeysBtn.addEventListener("click", cycleEditorSort);
+  dom.edExportKeysBtn.addEventListener("click", exportEditorKeys);
+  dom.editorConfirmOk.addEventListener("click", () => saveEditor(true));
+  dom.editorConfirmCancel.addEventListener("click", () => {
+    if (state.editorSnapshot !== null) {
+      dom.edKeys.value = state.editorSnapshot;
+      syncLineNums(dom.edKeys);
+    }
+    hideEditorConfirm();
+    renderEditorSearchResults();
+  });
   dom.editorOverlay.addEventListener("click", (e) => {
     if (e.target.dataset.closeModal === "editor") closeEditor();
+  });
+
+  // Proxy tab
+  dom.proxyRefreshBtn.addEventListener("click", loadProxyState);
+  dom.proxyProvider.addEventListener("change", () => {
+    state.proxySelected = dom.proxyProvider.value;
+    dom.proxyNotice.classList.add("hidden");
+    renderProxyToolbar();
+    renderProxyKeyCards();
+  });
+  dom.proxyCopyUrl.addEventListener("click", () =>
+    copyText(dom.proxyCopyUrl.dataset.copyVal || "", dom.proxyCopyUrl),
+  );
+  dom.proxySaveModel.addEventListener("click", saveProxyTestModel);
+  dom.proxyTestModel.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveProxyTestModel();
+    }
+  });
+  dom.proxyTestAll.addEventListener("click", () => runProxyBatch("all"));
+  dom.proxyTestActive.addEventListener("click", () => runProxyBatch("active"));
+  dom.proxyTestDisabled.addEventListener("click", () => runProxyBatch("disabled"));
+  dom.proxyKeyGrid.addEventListener("click", (e) => {
+    const testBtn = e.target.closest("[data-proxy-test]");
+    if (testBtn) {
+      return testProxyKey(testBtn.dataset.fp, testBtn.dataset.proxyTest);
+    }
+    const recoverBtn = e.target.closest("[data-proxy-recover]");
+    if (recoverBtn) {
+      return recoverProxyKey(
+        recoverBtn.dataset.fp,
+        recoverBtn.dataset.proxyRecover,
+      );
+    }
   });
 
   // Results

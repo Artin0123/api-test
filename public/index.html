@@ -105,6 +105,13 @@
                         >
                             失效密钥
                         </button>
+                        <button
+                            class="tab-btn"
+                            data-tab="proxy"
+                            type="button"
+                        >
+                            轮询转发
+                        </button>
                     </nav>
                     <div class="topbar-actions">
                         <a
@@ -367,6 +374,113 @@
                     </div>
                     <div id="dk-table-wrap" class="hidden"></div>
                 </section>
+                <!-- ── Proxy (rotation / forwarding) tab ── -->
+                <section id="tab-proxy" class="tab-panel hidden">
+                    <div class="panel-head">
+                        <div>
+                            <h2>轮询转发</h2>
+                            <p class="muted">
+                                依别名转发请求，金钥自动轮用；连续失败达门槛后禁用，恢复靠每日测试或手动按钮。
+                            </p>
+                        </div>
+                        <div class="panel-head-actions">
+                            <button
+                                id="proxy-refresh-btn"
+                                class="btn btn-secondary"
+                                type="button"
+                            >
+                                重新读取
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="proxy-notice" class="alert alert-error hidden"></div>
+                    <div id="proxy-loading" class="state-card">读取中...</div>
+                    <div id="proxy-error" class="alert alert-error hidden"></div>
+                    <div id="proxy-empty" class="state-card hidden">
+                        尚未添加任何服务商。
+                    </div>
+                    <div id="proxy-key-empty" class="state-card hidden">
+                        这个服务商没有密钥，请到「来源设定」补上。
+                    </div>
+
+                    <div id="proxy-toolbar" class="proxy-toolbar hidden">
+                        <div class="proxy-toolbar-row">
+                            <label class="field field--inline">
+                                <span class="field-label">服务商</span>
+                                <select
+                                    id="proxy-provider"
+                                    class="input-select"
+                                ></select>
+                            </label>
+                            <span id="proxy-summary" class="proxy-summary"></span>
+                        </div>
+                        <div class="proxy-toolbar-row">
+                            <code id="proxy-url" class="proxy-url"></code>
+                            <button
+                                id="proxy-copy-url"
+                                class="btn btn-secondary btn-sm copy-btn"
+                                type="button"
+                                title="复制转发网址"
+                                aria-label="复制转发网址"
+                            >
+                                复制
+                            </button>
+                            <span id="proxy-sample" class="proxy-hint"></span>
+                        </div>
+                        <div class="proxy-toolbar-row">
+                            <label class="field field--inline">
+                                <span class="field-label">测试模型</span>
+                                <input
+                                    id="proxy-test-model"
+                                    class="input-text"
+                                    type="text"
+                                    placeholder="例如 gpt-4o-mini"
+                                    spellcheck="false"
+                                />
+                            </label>
+                            <button
+                                id="proxy-save-model"
+                                class="btn btn-secondary btn-sm"
+                                type="button"
+                            >
+                                保存模型
+                            </button>
+                            <button
+                                id="proxy-test-all"
+                                class="btn btn-secondary btn-sm"
+                                type="button"
+                            >
+                                测试全部
+                            </button>
+                            <button
+                                id="proxy-test-active"
+                                class="btn btn-secondary btn-sm"
+                                type="button"
+                            >
+                                只测有效
+                            </button>
+                            <button
+                                id="proxy-test-disabled"
+                                class="btn btn-secondary btn-sm"
+                                type="button"
+                            >
+                                只测无效
+                            </button>
+                            <a
+                                id="proxy-logs"
+                                class="btn btn-secondary btn-sm"
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-disabled="true"
+                            >
+                                Gateway 记录
+                            </a>
+                        </div>
+                    </div>
+
+                    <div id="proxy-key-grid" class="proxy-key-grid hidden"></div>
+                </section>
             </main>
         </div>
 
@@ -416,11 +530,11 @@
                                     ></line>
                                 </svg>
                                 <span class="info-tooltip"
-                                    >系统会自动补全以下后缀：<br />OpenAI:
+                                    >只会补全端点后缀，<b>版本前缀要自己填进 API Base</b
+                                    >（例：<code>https://api.openai.com/v1</code>）：<br />OpenAI:
                                     <code>/chat/completions</code><br />Gemini:
                                     <code
                                         >/models/{model}:streamGenerateContent</code
-                                    ><br />Ollama: <code>/api/chat</code
                                     ><br />Anthropic:
                                     <code>/messages</code></span
                                 >
@@ -428,7 +542,6 @@
                         </span>
                         <select id="ed-provider-type" class="input-select">
                             <option value="openai">openai</option>
-                            <option value="ollama">ollama</option>
                             <option value="gemini">gemini</option>
                             <option value="anthropic">anthropic</option>
                         </select>
@@ -445,10 +558,73 @@
                     </label>
 
                     <label class="field">
-                        <span class="field-label"
+                        <span class="field-label">
+                            转发别名
+                            <small class="muted"
+                                >小写英文、数字与连字号；留空表示不转发</small
+                            >
+                        </span>
+                        <input
+                            type="text"
+                            id="ed-alias"
+                            class="input-text"
+                            placeholder="例如 openai-main"
+                            spellcheck="false"
+                            autocomplete="off"
+                        />
+                    </label>
+
+                    <label class="field">
+                        <span class="field-label">
+                            Gateway Provider
+                            <small class="muted"
+                                >选填，Custom Provider slug；留空表示直连</small
+                            >
+                        </span>
+                        <input
+                            type="text"
+                            id="ed-gateway-provider"
+                            class="input-text"
+                            placeholder="例如 openai-custom"
+                            spellcheck="false"
+                            autocomplete="off"
+                        />
+                    </label>
+
+                    <div class="field">
+                        <label class="field-label" for="ed-keys"
                             >API Keys
-                            <small class="muted">一行一个</small></span
+                            <small class="muted">一行一个</small></label
                         >
+                        <div class="keys-toolbar">
+                            <input
+                                type="search"
+                                id="ed-keys-search"
+                                class="input-text keys-search"
+                                placeholder="搜索密钥，结果以遮挡显示"
+                                aria-label="搜索密钥"
+                                spellcheck="false"
+                                autocomplete="off"
+                            />
+                            <button
+                                id="ed-sort-keys-btn"
+                                class="btn btn-secondary btn-xs"
+                                type="button"
+                            >
+                                排序：预设
+                            </button>
+                            <button
+                                id="ed-export-keys-btn"
+                                class="btn btn-secondary btn-xs"
+                                type="button"
+                            >
+                                导出
+                            </button>
+                        </div>
+                        <div
+                            id="ed-keys-search-results"
+                            class="keys-search-results hidden"
+                        ></div>
                         <div class="lined-editor modal-editor-box">
                             <div class="line-nums" aria-hidden="true"></div>
                             <textarea
@@ -458,7 +634,7 @@
                                 placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"
                             ></textarea>
                         </div>
-                    </label>
+                    </div>
 
                     <label class="field">
                         <span class="field-label"
@@ -543,6 +719,29 @@
                         />
                     </label>
 
+                    <div id="editor-confirm" class="editor-confirm hidden">
+                        <p id="editor-confirm-msg" class="editor-confirm-msg"></p>
+                        <ul
+                            id="editor-confirm-list"
+                            class="editor-confirm-list"
+                        ></ul>
+                        <div class="editor-confirm-actions">
+                            <button
+                                id="editor-confirm-ok"
+                                class="btn btn-danger-solid btn-sm"
+                                type="button"
+                            >
+                                确认删除并储存
+                            </button>
+                            <button
+                                id="editor-confirm-cancel"
+                                class="btn btn-ghost btn-sm"
+                                type="button"
+                            >
+                                取消
+                            </button>
+                        </div>
+                    </div>
                     <p id="editor-error" class="form-error" role="alert"></p>
                 </div>
                 <div class="modal-footer">

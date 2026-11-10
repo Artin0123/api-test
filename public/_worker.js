@@ -34,6 +34,13 @@ const ROUTES = {
   "POST /api/dead-keys": handlePostDeadKey,
   "PUT /api/dead-keys": handlePutDeadKey,
   "DELETE /api/dead-keys": handleDeleteDeadKey,
+  "GET /api/proxy/state": handleGetProxyState,
+  "POST /api/proxy/test": handleProxyTest,
+  "POST /api/proxy/recover": handleProxyRecover,
+  "POST /api/proxy/test-model": handleProxyTestModel,
+  "GET /api/storage/export": handleStorageExport,
+  "POST /api/storage/migrate": handleStorageMigrate,
+  "POST /api/storage/restore": handleStorageRestore,
 };
 
 /**
@@ -87,9 +94,39 @@ function withSecurityHeaders(response) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const isApi = url.pathname.startsWith("/api/");
+    const isProxy = url.pathname.startsWith("/proxy/");
 
-    if (!url.pathname.startsWith("/api/")) {
+    if (!isApi && !isProxy) {
       return withSecurityHeaders(await env.ASSETS.fetch(request));
+    }
+
+    // Pages Functions have no startup phase, so a bad storage setting can only be
+    // reported per request. Static assets stay reachable on purpose — the page
+    // itself has to load, otherwise the operator sees a blank 500 instead of the
+    // reason. /api/storage/* is exempt: export only needs KV and is exactly what
+    // an operator reaches for when the backend is misconfigured.
+    if (isApi && !url.pathname.startsWith("/api/storage/")) {
+      const configError = storageConfigError(env);
+      if (configError) {
+        return withSecurityHeaders(
+          json({ error: configError, code: "CONFIG_ERROR" }, 500),
+        );
+      }
+    }
+
+    if (isProxy) {
+      try {
+        return withSecurityHeaders(await handleProxy(request, env, url));
+      } catch (err) {
+        if (err && err.code === "CONFIG_ERROR") {
+          return withSecurityHeaders(json({ error: err.message }, 500));
+        }
+        console.error(err);
+        return withSecurityHeaders(
+          json({ error: "Internal Server Error" }, 500),
+        );
+      }
     }
 
     const key = `${request.method} ${url.pathname}`;
@@ -97,13 +134,183 @@ export default {
     if (!handler) return withSecurityHeaders(text("Not Found", 404));
 
     try {
+      if (!url.pathname.startsWith("/api/storage/")) {
+        const configError = storageConfigError(env);
+        if (configError) {
+          return withSecurityHeaders(
+            json({ error: configError, code: "CONFIG_ERROR" }, 500),
+          );
+        }
+      }
       return withSecurityHeaders(await handler(request, env, url));
     } catch (err) {
+      if (err && err.code === "CONFIG_ERROR") {
+        return withSecurityHeaders(json({ error: err.message }, 500));
+      }
       console.error(err);
       return withSecurityHeaders(json({ error: "Internal Server Error" }, 500));
     }
   },
 };
+
+// ─── storage backend (KV ⇄ D1) ─────────────────────────────────────────────
+// STORAGE_BACKEND defaults to d1 on purpose: the proxy needs single-row atomic
+// updates (key_state), which KV's final consistency and 1,000 writes/day cannot
+// provide. Existing KV-only deployments must set STORAGE_BACKEND=kv explicitly
+// until they have created D1, bound it as DB and run the migration — deploying
+// without that order turns every /api request into a 500.
+
+const D1_SCHEMA = [
+  "CREATE TABLE IF NOT EXISTS store (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS key_state (" +
+    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+    "fp TEXT NOT NULL, " +
+    "api_key TEXT NOT NULL, " +
+    "last_used_at INTEGER, " +
+    "fail_count INTEGER NOT NULL DEFAULT 0, " +
+    "disabled INTEGER NOT NULL DEFAULT 0, " +
+    "updated_at INTEGER NOT NULL, " +
+    "UNIQUE (fp, api_key))",
+  "CREATE INDEX IF NOT EXISTS idx_key_state_pick " +
+    "ON key_state (fp, disabled, last_used_at)",
+];
+
+async function ensureSchema(db) {
+  for (const sql of D1_SCHEMA) await db.prepare(sql).run();
+}
+
+function storageBackendName(env) {
+  const raw = env.STORAGE_BACKEND;
+  const name = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return name || "d1";
+}
+
+function hasD1(env) {
+  return !!env.DB && typeof env.DB.prepare === "function";
+}
+
+function hasKv(env) {
+  return !!env.KV_STORE && typeof env.KV_STORE.get === "function";
+}
+
+/** Returns a human-readable reason when the configured backend cannot work. */
+function storageConfigError(env) {
+  const name = storageBackendName(env);
+  const raw = typeof env.STORAGE_BACKEND === "string" ? env.STORAGE_BACKEND.trim() : "";
+  if (name !== "d1" && name !== "kv") {
+    return `STORAGE_BACKEND=${raw} 无效；只能填 d1 或 kv`;
+  }
+  if (name === "d1" && !hasD1(env)) {
+    return raw
+      ? "STORAGE_BACKEND=d1 但没有绑定 D1 数据库 DB"
+      : "STORAGE_BACKEND=d1（未设定时的预设值）但没有绑定 D1 数据库 DB";
+  }
+  if (name === "kv" && !hasKv(env)) {
+    return "STORAGE_BACKEND=kv 但没有绑定 KV 命名空间 KV_STORE";
+  }
+  return null;
+}
+
+/** KV-shaped adapter over the D1 `store` table: get / put / delete / list.
+ *  The rest of this file stays backend-agnostic because these are the only four
+ *  operations the existing data model ever uses. */
+function d1Store(env) {
+  if (!hasD1(env)) {
+    const err = new Error(
+      "STORAGE_BACKEND=d1 but no D1 database is bound as DB",
+    );
+    err.code = "CONFIG_ERROR";
+    throw err;
+  }
+  const db = env.DB;
+  return {
+    async get(k) {
+      await ensureSchemaFor(db);
+      const row = await db
+        .prepare("SELECT v FROM store WHERE k = ?")
+        .bind(k)
+        .first();
+      return row ? row.v : null;
+    },
+    async put(k, v) {
+      await ensureSchemaFor(db);
+      await db
+        .prepare(
+          "INSERT INTO store (k, v) VALUES (?, ?) " +
+            "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        )
+        .bind(k, v)
+        .run();
+    },
+    async delete(k) {
+      await ensureSchemaFor(db);
+      await db.prepare("DELETE FROM store WHERE k = ?").bind(k).run();
+    },
+    async list({ prefix = "", cursor = null, limit = 1000 } = {}) {
+      await ensureSchemaFor(db);
+      const n = Math.min(Math.max(Number(limit) || 1000, 1), 1000);
+      const rows = await db
+        .prepare(
+          "SELECT k FROM store " +
+            "WHERE (? = '' OR substr(k, 1, length(?)) = ?) " +
+            "AND (? IS NULL OR k > ?) " +
+            "ORDER BY k LIMIT ?",
+        )
+        .bind(prefix, prefix, prefix, cursor, cursor, n)
+        .all();
+      const keys = (rows.results || []).map((r) => ({ name: r.k }));
+      const complete = keys.length < n;
+      return {
+        keys,
+        list_complete: complete,
+        cursor: complete ? null : keys[keys.length - 1].name,
+      };
+    },
+  };
+}
+
+function kvStore(env) {
+  if (!hasKv(env)) {
+    const err = new Error("KV_STORE is not configured");
+    err.code = "CONFIG_ERROR";
+    throw err;
+  }
+  return env.KV_STORE;
+}
+
+/** The one entry point every handler uses for settings / results / checkpoint /
+ *  dead_keys. The proxy's own key_state table is SQL-only and lives in D1. */
+function store(env) {
+  return storageBackendName(env) === "d1" ? d1Store(env) : kvStore(env);
+}
+
+/** KV `list()` is paginated for real namespaces; migration must walk every page. */
+async function listAllEntries(source) {
+  const entries = [];
+  let cursor = null;
+  let pages = 0;
+  do {
+    const page = await source.list({ cursor, limit: 1000 });
+    pages++;
+    for (const key of page.keys || []) {
+      const name = key && key.name;
+      if (!name) continue;
+      const value = await source.get(name);
+      if (value !== null && value !== undefined) {
+        entries.push({ k: name, v: value });
+      }
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  return { entries, pages };
+}
+
+function parseJsonObject(raw) {
+  const parsed = parseJsonOrNull(raw);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed
+    : null;
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -116,15 +323,6 @@ function json(data, status = 200) {
 
 function text(value, status = 200) {
   return new Response(value, { status });
-}
-
-function kvStore(env) {
-  if (!env.KV_STORE || typeof env.KV_STORE.get !== "function") {
-    const err = new Error("KV_STORE is not configured");
-    err.code = "CONFIG_ERROR";
-    throw err;
-  }
-  return env.KV_STORE;
 }
 
 // ─── auth ───────────────────────────────────────────────────────────────────
@@ -301,10 +499,100 @@ function settingsVersion(settings) {
   return typeof settings.version === "number" ? settings.version : 0;
 }
 
+// `/proxy/{alias}` is matched as the first path segment, so an alias has to be a
+// single lowercase segment. Validated at save time: a bad alias must fail with a
+// 400 here, not turn into a mystery 404 at forward time.
+const PROXY_ALIAS_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** Trim the two proxy fields and drop them when empty so old providers keep the
+ *  exact shape they had before this feature existed. */
+function normalizeProviderForStorage(p) {
+  if (!p || typeof p !== "object") return p;
+  const out = { ...p };
+  if (typeof p.alias === "string") {
+    const alias = p.alias.trim();
+    if (alias) out.alias = alias;
+    else delete out.alias;
+  }
+  if (typeof p.gateway_provider === "string") {
+    const slug = p.gateway_provider.trim();
+    if (slug) out.gateway_provider = slug;
+    else delete out.gateway_provider;
+  }
+  return out;
+}
+
+// Only these three provider families are supported. `ollama` was removed on
+// purpose: its auth header and payload shape differ enough that keeping it
+// around produced a half-supported format with no data to migrate.
+const PROVIDER_TYPES = new Set(["openai", "gemini", "anthropic"]);
+
+function validateProviderTypes(providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    const type = typeof p.provider_type === "string" ? p.provider_type.trim() : "";
+    if (!type) return `providers[${i}].provider_type 不能为空`;
+    if (!PROVIDER_TYPES.has(type)) {
+      return `providers[${i}].provider_type "${type}" 不支援；只能是 ${[...PROVIDER_TYPES].join(" / ")}`;
+    }
+  }
+  return null;
+}
+
+/** Every provider must keep at least one key: a keyless card can never be
+ *  forwarded and would silently sit in the notebook forever. The editor already
+ *  refuses it (app.js); this closes the curl/write-API path as well. */
+/** `proxy_test_models` is a { fingerprint: model } map kept *outside* providers[]:
+ *  the proxy probe model is its own setting and must not inherit the daily-test
+ *  model list. Empty values are dropped so the map stays small. */
+function normalizeProxyTestModels(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [fp, model] of Object.entries(raw)) {
+    if (typeof fp !== "string" || !fp || typeof model !== "string") continue;
+    const trimmed = model.trim();
+    if (trimmed) out[fp] = trimmed;
+  }
+  return out;
+}
+
+function validateProviderKeys(providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    if (!providerKeys(p).length) {
+      return `providers[${i}] 没有任何 API Key；至少要保留一把，要停用请把 enabled 设为 false`;
+    }
+  }
+  return null;
+}
+
+function validateProviderAliases(providers) {
+  const seen = new Set();
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    const alias = p.alias;
+    if (alias === undefined || alias === null || alias === "") continue;
+    if (typeof alias !== "string") {
+      return `providers[${i}].alias 必须是字符串`;
+    }
+    if (!PROXY_ALIAS_RE.test(alias)) {
+      return `providers[${i}].alias "${alias}" 格式不正确：只能用小写英文、数字与连字号，且不超过 64 个字元`;
+    }
+    if (seen.has(alias)) {
+      return `providers[${i}].alias "${alias}" 与其他服务商重复`;
+    }
+    seen.add(alias);
+  }
+  return null;
+}
+
 async function handleGetSettings(request, env) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
-  const kv = kvStore(env);
+  const kv = store(env);
   const raw = await kv.get(SETTINGS_KEY);
   const settings = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
   settings.version = settingsVersion(settings);
@@ -328,7 +616,7 @@ async function handlePostSettings(request, env) {
     return json({ error: "providers must be an array" }, 400);
   }
 
-  const kv = kvStore(env);
+  const kv = store(env);
   const raw = await kv.get(SETTINGS_KEY);
   const existing = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
   const currentVersion = settingsVersion(existing);
@@ -345,10 +633,13 @@ async function handlePostSettings(request, env) {
     );
   }
 
+  const sourceProviders = Array.isArray(body.providers)
+    ? body.providers
+    : Array.isArray(existing.providers)
+      ? existing.providers
+      : [];
   const next = {
-    providers: Array.isArray(body.providers)
-      ? body.providers
-      : existing.providers,
+    providers: sourceProviders.map(normalizeProviderForStorage),
     github_url:
       typeof body.github_url === "string"
         ? body.github_url
@@ -357,10 +648,49 @@ async function handlePostSettings(request, env) {
       typeof body.discord_webhook_url === "string"
         ? body.discord_webhook_url
         : existing.discord_webhook_url,
+    proxy_test_models: normalizeProxyTestModels(
+      body.proxy_test_models !== undefined
+        ? body.proxy_test_models
+        : existing.proxy_test_models,
+    ),
     version: currentVersion + 1,
   };
 
+  const aliasError = validateProviderAliases(next.providers || []);
+  if (aliasError) return json({ error: aliasError }, 400);
+
+  const typeError = validateProviderTypes(next.providers || []);
+  if (typeError) return json({ error: typeError }, 400);
+
+  const keyError = validateProviderKeys(next.providers || []);
+  if (keyError) return json({ error: keyError }, 400);
+
+  // Drop test-model entries whose provider no longer exists, so editing api_base
+  // (new fingerprint) or deleting a provider cannot leave the map growing.
+  const liveFps = new Set(
+    await Promise.all(
+      (next.providers || [])
+        .filter((p) => p && p.provider_type?.trim() && p.api_base?.trim())
+        .map((p) =>
+          providerFingerprint(p.provider_type.trim(), p.api_base.trim()),
+        ),
+    ),
+  );
+  next.proxy_test_models = Object.fromEntries(
+    Object.entries(next.proxy_test_models).filter(([fp]) => liveFps.has(fp)),
+  );
+
   await kv.put(SETTINGS_KEY, JSON.stringify(next));
+
+  // key_state mirrors the settings key list, so removals and fingerprint changes
+  // are reconciled right here. Doing it lazily at forward time would leave stale
+  // rows behind forever on a site nobody calls. A failure here must not roll back
+  // the settings write that already succeeded.
+  try {
+    await syncKeyState(env, next.providers || []);
+  } catch (err) {
+    console.error("key_state sync failed", err);
+  }
 
   // Cleanup stale checkpoints: only delete for providers that were REMOVED or had their
   // identity (api_base / provider_type) changed — i.e. old fingerprints not present in
@@ -409,7 +739,7 @@ async function handleGetResults(request, env, url) {
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
-  const kv = kvStore(env);
+  const kv = store(env);
   const raw = await kv.get(`results:${fp}`);
   if (!raw) return json({ exists: false });
 
@@ -449,7 +779,7 @@ async function handlePostResults(request, env) {
   }
 
   const fp = await providerFingerprint(provider_type.trim(), api_base.trim());
-  const kv = kvStore(env);
+  const kv = store(env);
   const payload = { ...body, uploaded_at: new Date().toISOString() };
   await kv.put(`results:${fp}`, JSON.stringify(payload));
   // Auto-clean checkpoint so frontend won't show stale "执行中"
@@ -469,12 +799,23 @@ async function handlePostResults(request, env) {
   } catch (err) {
     console.error("dead key sync failed", err);
   }
+  // The daily run is the authority on key health: keys reported as valid get their
+  // proxy ledger cleared. Best-effort like the dead-key sync — the results are
+  // already stored, so a failure here must not look like a lost run.
+  let recovered = 0;
+  try {
+    recovered = await recoverKeysFromResults(env, fp, body.valid_keys);
+  } catch (err) {
+    console.error("key_state recovery failed", err);
+  }
+
   return json({
     ok: true,
     fingerprint: fp,
     dead_keys_added: synced.added,
     dead_keys_removed: synced.removed,
     dead_keys_updated: synced.updated,
+    keys_recovered: recovered,
   });
 }
 
@@ -487,7 +828,7 @@ async function handleGetCheckpoint(request, env, url) {
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
-  const kv = kvStore(env);
+  const kv = store(env);
   const raw = await kv.get(`checkpoint:${fp}`);
   if (!raw) return json({ exists: false });
 
@@ -512,7 +853,7 @@ async function handlePostCheckpoint(request, env) {
     return json({ error: "provider_type and api_base required" }, 400);
 
   const fp = await providerFingerprint(provider_type.trim(), api_base.trim());
-  const kv = kvStore(env);
+  const kv = store(env);
   const payload = { ...body, saved_at: new Date().toISOString() };
   await kv.put(`checkpoint:${fp}`, JSON.stringify(payload));
   return json({ ok: true, fingerprint: fp });
@@ -525,7 +866,7 @@ async function handleDeleteCheckpoint(request, env, url) {
   const fp = getNonEmptyString(url, "fp");
   if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
-  const kv = kvStore(env);
+  const kv = store(env);
   await kv.delete(`checkpoint:${fp}`);
   return json({ ok: true });
 }
@@ -833,7 +1174,7 @@ async function syncDeadKeysFromResults(
 async function handleGetDeadKeys(request, env) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
-  const kv = kvStore(env);
+  const kv = store(env);
   return json({ ok: true, dead_keys: await readDeadKeys(kv) });
 }
 
@@ -855,7 +1196,7 @@ async function handlePostDeadKey(request, env) {
     typeof body.provider_host === "string" ? body.provider_host.trim() : "";
   if (!provider_host) return json({ error: "provider_host required" }, 400);
 
-  const kv = kvStore(env);
+  const kv = store(env);
   const list = await readDeadKeys(kv);
 
   // Key dedup is global (not per host): the earliest record wins, nothing is overwritten.
@@ -907,7 +1248,7 @@ async function handlePutDeadKey(request, env, url) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  const kv = kvStore(env);
+  const kv = store(env);
   const list = await readDeadKeys(kv);
   const idx = list.findIndex((r) => r && r.id === id);
   if (idx === -1) return json({ error: "Not Found" }, 404);
@@ -1009,7 +1350,7 @@ async function handleDeleteDeadKey(request, env, url) {
   if (invalidJson) return json({ error: "Invalid JSON" }, 400);
   if (!ids.length) return json({ error: "id required" }, 400);
 
-  const kv = kvStore(env);
+  const kv = store(env);
   const list = await readDeadKeys(kv);
   const idSet = new Set(ids);
   const removed = [];
@@ -1026,4 +1367,1315 @@ async function handleDeleteDeadKey(request, env, url) {
 
   await kv.put(DEAD_KEYS_KEY, JSON.stringify(next));
   return json({ ok: true, deleted: removed.length, dead_keys: next });
+}
+
+// ─── shared proxy helpers ───────────────────────────────────────────────────
+
+// Fetch already decodes the body, so re-streaming it while keeping the upstream
+// Content-Encoding / Content-Length would make the browser try to decode plain
+// text. Hop-by-hop headers are connection-scoped and must not be relayed at all.
+const DROP_UPSTREAM_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "host",
+  "content-length",
+  "content-encoding",
+  // Cloudflare request metadata and caller-IP headers: the upstream is a third
+  // party, it has no business seeing which edge served the request or who the
+  // original caller was (verified by probe-headers: they were passed through).
+  "cf-connecting-ip",
+  "cf-ipcountry",
+  "cf-ray",
+  "cf-visitor",
+  "cf-worker",
+  "x-forwarded-for",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "true-client-ip",
+]);
+
+// Credential headers are always replaced by the selected key. Letting a caller
+// keep its own Authorization would make the key rotation meaningless (and leak
+// whatever it sent to the upstream).
+const CALLER_CREDENTIAL_HEADERS = new Set([
+  "authorization",
+  "x-api-key",
+  "x-goog-api-key",
+  "anthropic-version",
+]);
+
+// One rule, no per-status guessing: every non-2xx response counts as a failure
+// and moves on to the next key. That keeps 400 (Gemini returns it for an invalid
+// key), 401, 403, 429 and 5xx on the same path instead of trying to infer whose
+// fault each code is. The trade-off is explicit: a provider-wide outage, or one
+// malformed body, charges every key it touches — the daily test result puts
+// those keys back (see recoverKeysFromResults) and the card shows the counters.
+
+/** Head/tail mask for keys. Keep this function in sync with the identically
+ *  named one in `app.js` (same threshold, same separators): a 9-character key
+ *  would otherwise reveal 8 of its 9 characters (4+4). */
+function maskKey(key) {
+  const s = String(key || "");
+  if (!s) return "";
+  if (s.length < 16) return `${s.slice(0, 1)}***${s.slice(-1)}`;
+  return `${s.slice(0, 4)}***${s.slice(-4)}`;
+}
+
+/** cf-aig-metadata travels as an HTTP header, so its value must be ASCII only.
+ *  A non-ASCII byte (the document's example was "…") makes fetch throw before
+ *  the request leaves the worker. */
+function metadataKeyTag(apiKey) {
+  const ascii = String(apiKey || "").replace(/[^\x21-\x7e]/g, "");
+  if (!ascii) return "key";
+  // Never reveal more than the UI mask. Short keys are rare, but a 4+4 tag on a
+  // 5-character key would spell out the whole secret in the Gateway logs.
+  if (ascii.length < 16) {
+    return `${ascii.slice(0, 1)}***${ascii.slice(-1)}`;
+  }
+  return `${ascii.slice(0, 4)}-${ascii.slice(-4)}`;
+}
+
+function providerKeys(provider) {
+  if (!provider || typeof provider.keys !== "string") return [];
+  return provider.keys
+    .split("\n")
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+
+function providerModels(provider) {
+  if (!provider || typeof provider.models !== "string") return [];
+  return provider.models
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+}
+
+function parseExtraBody(provider) {
+  if (!provider || typeof provider.extra_body !== "string") return null;
+  const raw = provider.extra_body.trim();
+  if (!raw) return null;
+  const parsed = parseJsonOrNull(raw);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed
+    : null;
+}
+
+function applyProviderAuth(headers, providerType, apiKey) {
+  switch (providerType) {
+    case "gemini":
+      headers.set("x-goog-api-key", apiKey);
+      break;
+    case "anthropic":
+      headers.set("x-api-key", apiKey);
+      headers.set("anthropic-version", "2023-06-01");
+      break;
+    case "openai":
+    default:
+      headers.set("Authorization", `Bearer ${apiKey}`);
+      break;
+  }
+}
+
+/** Direct upstream or AI Gateway custom-provider. The custom provider's base_url
+ *  is registered as the provider's api_base, so `custom-{slug}` + caller path
+ *  lands on exactly the same URL as the direct call. No per-type append logic. */
+function upstreamFor(env, provider) {
+  const slug =
+    typeof provider.gateway_provider === "string"
+      ? provider.gateway_provider.trim()
+      : "";
+  const account = (env.AI_GATEWAY_ACCOUNT_ID || "").trim();
+  const gateway = (env.AI_GATEWAY_ID || "").trim();
+  const token = (env.AI_GATEWAY_TOKEN || "").trim();
+  if (slug && account && gateway && token) {
+    return {
+      kind: "gateway",
+      token,
+      base:
+        `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(account)}` +
+        `/${encodeURIComponent(gateway)}/custom-${encodeURIComponent(slug)}`,
+    };
+  }
+  return {
+    kind: "direct",
+    base: String(provider.api_base || "").trim().replace(/\/+$/, ""),
+  };
+}
+
+function targetUrl(upstream, subPathAndQuery) {
+  const suffix = subPathAndQuery.startsWith("/")
+    ? subPathAndQuery
+    : subPathAndQuery
+      ? `/${subPathAndQuery}`
+      : "";
+  return `${upstream.base}${suffix}`;
+}
+
+function copyUpstreamHeaders(response) {
+  const headers = new Headers();
+  for (const [name, value] of response.headers) {
+    const lower = name.toLowerCase();
+    if (DROP_UPSTREAM_HEADERS.has(lower)) continue;
+    if (lower === "set-cookie") continue;
+    if (lower.startsWith("cf-aig-")) continue;
+    headers.append(name, value);
+  }
+  return headers;
+}
+
+function buildForwardHeaders(env, provider, alias, apiKey, incoming, upstream) {
+  const headers = new Headers();
+  for (const [name, value] of incoming) {
+    const lower = name.toLowerCase();
+    if (DROP_UPSTREAM_HEADERS.has(lower)) continue;
+    if (CALLER_CREDENTIAL_HEADERS.has(lower)) continue;
+    if (lower === "cookie") continue;
+    if (lower.startsWith("cf-aig-")) continue;
+    headers.append(name, value);
+  }
+
+  applyProviderAuth(headers, provider.provider_type, apiKey);
+
+  // Custom headers come after auth on purpose, matching async_test_keys.py:
+  // a deliberately configured header is allowed to override the default.
+  if (Array.isArray(provider.custom_headers)) {
+    for (const h of provider.custom_headers) {
+      const key = typeof h?.key === "string" ? h.key.trim() : "";
+      if (!key) continue;
+      const value = String(h?.value ?? "").replace(/[\r\n]/g, "");
+      try {
+        headers.set(key, value);
+      } catch {
+        // Invalid name/value written by hand (curl); skip instead of failing the
+        // whole forward request.
+      }
+    }
+  }
+
+  if (upstream.kind === "gateway") {
+    headers.set("cf-aig-authorization", `Bearer ${upstream.token}`);
+    headers.set("cf-aig-skip-cache", "true");
+    headers.set("cf-aig-max-attempts", "1");
+    headers.set(
+      "cf-aig-request-timeout",
+      String(proxyTimeoutMs(env)),
+    );
+    headers.set(
+      "cf-aig-metadata",
+      JSON.stringify({ key: metadataKeyTag(apiKey), provider: alias }),
+    );
+  }
+
+  return headers;
+}
+
+function proxyTimeoutMs(env) {
+  const n = parseInt(env.PROXY_UPSTREAM_TIMEOUT_MS, 10);
+  if (!Number.isFinite(n)) return 120000;
+  return Math.min(Math.max(n, 1000), 600000);
+}
+
+function proxyFailThreshold(env) {
+  const n = parseInt(env.PROXY_FAIL_THRESHOLD, 10);
+  if (!Number.isFinite(n) || n < 1) return 3;
+  return n;
+}
+
+// The document caps retries at 3 (4 keys per request), well under the free
+// plan's 50-subrequest ceiling. Clamp rather than trust the deployment setting.
+function proxyMaxRetries(env) {
+  const n = parseInt(env.PROXY_MAX_RETRIES, 10);
+  if (!Number.isFinite(n) || n < 0) return 3;
+  return Math.min(n, 3);
+}
+
+function proxyCredential(request) {
+  const auth = request.headers.get("Authorization") || "";
+  if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+  return (
+    request.headers.get("x-api-key") ||
+    request.headers.get("x-goog-api-key") ||
+    ""
+  ).trim();
+}
+
+/** null when the proxy can serve requests, otherwise a human-readable reason. */
+function proxyConfigError(env) {
+  if (storageBackendName(env) !== "d1") {
+    return "转发需要 STORAGE_BACKEND=d1（KV 模式无法即时维护密钥状态）";
+  }
+  const proxyPassword = (env.PROXY_PASSWORD || "").trim();
+  if (!proxyPassword) {
+    return "PROXY_PASSWORD 未设定，转发功能已停用";
+  }
+  const adminPassword = (env.ADMIN_PASSWORD || "").trim();
+  if (adminPassword && timingSafeEqual(proxyPassword, adminPassword)) {
+    return "PROXY_PASSWORD 不能与 ADMIN_PASSWORD 相同";
+  }
+  return null;
+}
+
+// ─── key_state (rotation + blacklist ledger) ────────────────────────────────
+
+// D1 schema creation is memoized per binding object. Pages Functions have no
+// startup hook, and a missing table must not block the first request — this also
+// makes a freshly bound empty D1 usable without a separate init step.
+const schemaReady = new WeakMap();
+function ensureSchemaFor(db) {
+  let ready = schemaReady.get(db);
+  if (!ready) {
+    ready = ensureSchema(db).catch((err) => {
+      // Do not memoize a transient failure: the next request should retry.
+      schemaReady.delete(db);
+      throw err;
+    });
+    schemaReady.set(db, ready);
+  }
+  return ready;
+}
+
+async function syncKeyState(env, providers) {
+  if (storageBackendName(env) !== "d1" || !hasD1(env)) return;
+  const db = env.DB;
+  await ensureSchemaFor(db);
+  const now = Date.now();
+
+  const wanted = [];
+  for (const p of providers || []) {
+    if (
+      !p ||
+      typeof p.provider_type !== "string" ||
+      typeof p.api_base !== "string"
+    ) {
+      continue;
+    }
+    const providerType = p.provider_type.trim();
+    const apiBase = p.api_base.trim();
+    if (!providerType || !apiBase) continue;
+    const fp = await providerFingerprint(providerType, apiBase);
+    for (const apiKey of providerKeys(p)) wanted.push({ fp, apiKey });
+  }
+
+  const identity = (row) => `${row.fp}\u0000${row.api_key}`;
+  const current = await db
+    .prepare("SELECT id, fp, api_key FROM key_state")
+    .all();
+  const rows = current.results || [];
+  const wantedSet = new Set(wanted.map((w) => `${w.fp}\u0000${w.apiKey}`));
+  const existingSet = new Set(rows.map(identity));
+
+  const staleIds = rows.filter((r) => !wantedSet.has(identity(r))).map((r) => r.id);
+  for (let i = 0; i < staleIds.length; i += 100) {
+    const chunk = staleIds.slice(i, i + 100);
+    const sql = `DELETE FROM key_state WHERE id IN (${chunk.map(() => "?").join(",")})`;
+    await db.prepare(sql).bind(...chunk).run();
+  }
+
+  for (const w of wanted) {
+    if (existingSet.has(`${w.fp}\u0000${w.apiKey}`)) continue;
+    await db
+      .prepare(
+        "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
+          "VALUES (?, ?, NULL, 0, 0, ?) ON CONFLICT(fp, api_key) DO NOTHING",
+      )
+      .bind(w.fp, w.apiKey, now)
+      .run();
+  }
+}
+
+/** One atomic statement picks the least-recently-used enabled key and stamps it.
+ *  Stamp-at-pick is required: stamping after success would let a retry loop pick
+ *  the key that just failed, and a broken key would stay first forever. MAX(now,
+ *  global max + 1) keeps two picks in the same millisecond strictly increasing. */
+async function pickKeyRow(db, fp, excludeIds) {
+  const now = Date.now();
+  const excluded = Array.isArray(excludeIds) ? excludeIds : [];
+  const notIn = excluded.length
+    ? ` AND id NOT IN (${excluded.map(() => "?").join(",")})`
+    : "";
+  const sql =
+    "UPDATE key_state " +
+    "SET last_used_at = MAX(?, COALESCE((SELECT MAX(last_used_at) FROM key_state WHERE fp = ?), 0) + 1), " +
+    "    updated_at = ? " +
+    "WHERE id = (" +
+    "  SELECT id FROM key_state " +
+    "   WHERE fp = ? AND disabled = 0" +
+    notIn +
+    "   ORDER BY last_used_at, id LIMIT 1" +
+    ") " +
+    "RETURNING id, api_key, fail_count, disabled";
+  const result = await db
+    .prepare(sql)
+    .bind(now, fp, now, fp, ...excluded)
+    .all();
+  return (result.results || [])[0] || null;
+}
+
+async function recordKeyFailure(db, id, threshold) {
+  const result = await db
+    .prepare(
+      "UPDATE key_state " +
+        "SET fail_count = fail_count + 1, " +
+        "    disabled = CASE WHEN fail_count + 1 >= ? THEN 1 ELSE disabled END, " +
+        "    updated_at = ? " +
+        "WHERE id = ? RETURNING fail_count, disabled",
+    )
+    .bind(threshold, Date.now(), id)
+    .all();
+  return (result.results || [])[0] || null;
+}
+
+/**
+ * The daily GHA run is the authority on whether a key is alive. When it reports a
+ * key in `valid_keys`, clear that key's proxy ledger: a transient outage that
+ * pushed fail_count to the threshold must not keep the key disabled forever.
+ * Only the daily result recovers — a manual Test press does not write the ledger
+ * (see handleProxyTest), so pressing the button can not paper over a dead key.
+ * Returns the number of rows that actually changed.
+ */
+async function recoverKeysFromResults(env, fp, validKeys) {
+  if (storageBackendName(env) !== "d1" || !hasD1(env)) return 0;
+  const keys = (Array.isArray(validKeys) ? validKeys : [])
+    .filter((k) => typeof k === "string")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (!keys.length) return 0;
+
+  const db = env.DB;
+  await ensureSchemaFor(db);
+  let recovered = 0;
+  for (let i = 0; i < keys.length; i += 100) {
+    const chunk = keys.slice(i, i + 100);
+    const sql =
+      "UPDATE key_state SET disabled = 0, fail_count = 0, updated_at = ? " +
+      "WHERE fp = ? AND (disabled <> 0 OR fail_count <> 0) " +
+      `AND api_key IN (${chunk.map(() => "?").join(",")})`;
+    const res = await db.prepare(sql).bind(Date.now(), fp, ...chunk).run();
+    recovered += Number(res.meta?.changes || 0);
+  }
+  return recovered;
+}
+
+/** Insert a row for every key that has none yet; existing rows are untouched.
+ *  Chunked because SQLite caps bound parameters. */
+async function seedKeyRows(db, fp, keys, now) {
+  for (let i = 0; i < keys.length; i += 100) {
+    const chunk = keys.slice(i, i + 100);
+    const sql =
+      "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
+      `VALUES ${chunk.map(() => "(?, ?, NULL, 0, 0, ?)").join(",")} ` +
+      "ON CONFLICT(fp, api_key) DO NOTHING";
+    const params = [];
+    for (const key of chunk) params.push(fp, key, now);
+    await db.prepare(sql).bind(...params).run();
+  }
+}
+
+async function resetKeyFailure(db, id) {
+  // Only write when there is something to reset: a success on an already-clean
+  // key must not spend a D1 write on every single forwarded request.
+  await db
+    .prepare(
+      "UPDATE key_state SET fail_count = 0, updated_at = ? WHERE id = ? AND fail_count <> 0",
+    )
+    .bind(Date.now(), id)
+    .run();
+}
+
+// ─── /proxy/{alias}/… ───────────────────────────────────────────────────────
+
+async function handleProxy(request, env, url) {
+  const configError = proxyConfigError(env);
+  if (configError) return json({ error: configError, code: "PROXY_DISABLED" }, 503);
+
+  const proxyPassword = (env.PROXY_PASSWORD || "").trim();
+  const credential = proxyCredential(request);
+  if (!credential || !timingSafeEqual(credential, proxyPassword)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const prefix = "/proxy/";
+  const rest = url.pathname.slice(prefix.length);
+  const slash = rest.indexOf("/");
+  let alias = slash === -1 ? rest : rest.slice(0, slash);
+  try {
+    alias = decodeURIComponent(alias);
+  } catch {
+    return json({ error: "Bad alias" }, 400);
+  }
+  const subPath = slash === -1 ? "" : rest.slice(slash);
+  const pathAndQuery = `${subPath}${url.search}`;
+
+  const kv = store(env);
+  const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
+  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
+  const provider = providers.find(
+    (p) => p && typeof p.alias === "string" && p.alias === alias,
+  );
+  if (!provider) return json({ error: "Unknown proxy alias" }, 404);
+  if (provider.enabled === false) {
+    return json({ error: "Provider is disabled" }, 503);
+  }
+
+  const db = env.DB;
+  await ensureSchemaFor(db);
+  const fp = await providerFingerprint(
+    String(provider.provider_type || "").trim(),
+    String(provider.api_base || "").trim(),
+  );
+  const upstream = upstreamFor(env, provider);
+  const target = targetUrl(upstream, pathAndQuery);
+  const timeoutMs = proxyTimeoutMs(env);
+  const threshold = proxyFailThreshold(env);
+  const maxRetries = proxyMaxRetries(env);
+
+  const rawBody =
+    request.method === "GET" || request.method === "HEAD"
+      ? null
+      : await request.arrayBuffer();
+  const contentType = request.headers.get("content-type") || "";
+  const isJson = /^application\/json\b/i.test(contentType);
+  const extraBody = parseExtraBody(provider);
+  const attemptBody = () => {
+    if (rawBody === null) return undefined;
+    if (!isJson || !extraBody) return rawBody;
+    try {
+      const decoded = new TextDecoder().decode(rawBody);
+      const parsed = JSON.parse(decoded);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return rawBody;
+      }
+      return JSON.stringify({ ...parsed, ...extraBody });
+    } catch {
+      return rawBody;
+    }
+  };
+
+  const tried = new Set();
+  const notebookKeys = providerKeys(provider);
+  let lastFailure = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let keyRow = await pickKeyRow(db, fp, [...tried]);
+
+    // Ghost guard (B′): the notebook is the authority on *which* keys may be
+    // used; key_state only carries their counters. A row whose key was deleted
+    // from the notebook but never pruned (sync failed) must never reach the
+    // upstream — drop it and pick again. Happy path costs nothing extra.
+    for (let ghosts = 0; keyRow && ghosts < 5; ghosts++) {
+      if (notebookKeys.includes(keyRow.api_key)) break;
+      try {
+        await db.prepare("DELETE FROM key_state WHERE id = ?").bind(keyRow.id).run();
+      } catch (dbErr) {
+        console.error("ghost key_state row cleanup failed", dbErr);
+      }
+      keyRow = await pickKeyRow(db, fp, [...tried]);
+    }
+
+    // Opposite direction: the notebook lists keys but the ledger has no row at
+    // all (sync failed on insert). Seed once and pick again. Partial gaps are
+    // not detected here on purpose — they are safe (a key that is missing a row
+    // simply gets no traffic) and the card shows `synced: false`.
+    if (!keyRow && notebookKeys.length) {
+      const count = await db
+        .prepare("SELECT COUNT(*) AS n FROM key_state WHERE fp = ?")
+        .bind(fp)
+        .first();
+      if (!count || Number(count.n) === 0) {
+        await seedKeyRows(db, fp, notebookKeys, Date.now());
+        keyRow = await pickKeyRow(db, fp, [...tried]);
+      }
+    }
+
+    if (!keyRow) {
+      if (!lastFailure) {
+        return json(
+          { error: "暂无可用的 Key（全部已禁用或无金钥）", code: "NO_KEYS" },
+          503,
+        );
+      }
+      break;
+    }
+    tried.add(keyRow.id);
+
+    const headers = buildForwardHeaders(
+      env,
+      provider,
+      alias,
+      keyRow.api_key,
+      request.headers,
+      upstream,
+    );
+
+    // The timeout covers "time to first byte", not the stream: a chat completion
+    // can legitimately stream for minutes, and AbortSignal.timeout would cut the
+    // body mid-stream. Clear the timer as soon as the headers arrive.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
+    try {
+      response = await fetch(target, {
+        method: request.method,
+        headers,
+        body: attemptBody(),
+        redirect: "follow",
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+    } catch (err) {
+      clearTimeout(timer);
+      try {
+        await recordKeyFailure(db, keyRow.id, threshold);
+      } catch (dbErr) {
+        console.error("key_state failure write failed", dbErr);
+      }
+      lastFailure = {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          error: "Upstream request failed",
+          detail: String((err && err.message) || err),
+        }),
+      };
+      continue;
+    }
+
+    if (response.ok) {
+      try {
+        await resetKeyFailure(db, keyRow.id);
+      } catch (dbErr) {
+        console.error("key_state reset failed", dbErr);
+      }
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: copyUpstreamHeaders(response),
+      });
+    }
+
+    // Every non-2xx lands here: charge the key and move on to the next one (the
+    // single rule explained above maskKey). The body is buffered because it has to
+    // be consumed before the next attempt, while the last one is returned verbatim.
+    try {
+      await recordKeyFailure(db, keyRow.id, threshold);
+    } catch (dbErr) {
+      console.error("key_state failure write failed", dbErr);
+    }
+    lastFailure = {
+      status: response.status,
+      headers: copyUpstreamHeaders(response),
+      body: await response.text(),
+    };
+  }
+
+  if (!lastFailure) {
+    return json({ error: "暂无可用的 Key", code: "NO_KEYS" }, 503);
+  }
+  return new Response(lastFailure.body, {
+    status: lastFailure.status,
+    headers: lastFailure.headers,
+  });
+}
+
+// ─── /api/proxy/state ──────────────────────────────────────────────────────
+
+const SAMPLE_PATHS = {
+  openai: "/chat/completions",
+  gemini: "/models/{model}:streamGenerateContent?alt=sse",
+  anthropic: "/messages",
+};
+
+async function handleGetProxyState(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const backend = storageBackendName(env);
+  const configError = proxyConfigError(env);
+  const kv = store(env);
+  const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
+  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
+
+  // Resolve fingerprint per provider first, so the key_state read can be scoped to
+  // this site's providers. A full table scan would bill every row on every tab
+  // switch once the table grows.
+  const entries = [];
+  for (const p of providers) {
+    if (!p || typeof p !== "object") continue;
+    const providerType = String(p.provider_type || "").trim();
+    const apiBase = String(p.api_base || "").trim();
+    if (!providerType || !apiBase) continue;
+    entries.push({
+      provider: p,
+      providerType,
+      apiBase,
+      fp: await providerFingerprint(providerType, apiBase),
+    });
+  }
+
+  const testModels =
+    settings &&
+    typeof settings.proxy_test_models === "object" &&
+    !Array.isArray(settings.proxy_test_models)
+      ? settings.proxy_test_models
+      : {};
+
+  let rows = [];
+  if (backend === "d1" && hasD1(env) && entries.length) {
+    await ensureSchemaFor(env.DB);
+    const fps = [...new Set(entries.map((e) => e.fp))];
+    for (let i = 0; i < fps.length; i += 500) {
+      const chunk = fps.slice(i, i + 500);
+      const result = await env.DB.prepare(
+        "SELECT id, fp, api_key, last_used_at, fail_count, disabled FROM key_state " +
+          `WHERE fp IN (${chunk.map(() => "?").join(",")})`,
+      )
+        .bind(...chunk)
+        .all();
+      rows = rows.concat(result.results || []);
+    }
+  }
+  const rowsByFp = new Map();
+  for (const row of rows) {
+    if (!rowsByFp.has(row.fp)) rowsByFp.set(row.fp, new Map());
+    rowsByFp.get(row.fp).set(row.api_key, row);
+  }
+
+  const list = [];
+  for (const { provider: p, providerType, apiBase, fp } of entries) {
+    const fpRows = rowsByFp.get(fp) || new Map();
+    const upstream = upstreamFor(env, p);
+    const keys = providerKeys(p).map((apiKey) => {
+      const row = fpRows.get(apiKey);
+      return {
+        id: row ? row.id : null,
+        masked: maskKey(apiKey),
+        tag: metadataKeyTag(apiKey),
+        disabled: row ? !!row.disabled : false,
+        fail_count: row ? row.fail_count : 0,
+        last_used_at: row ? row.last_used_at : null,
+        synced: !!row,
+      };
+    });
+    let host = apiBase;
+    try {
+      host = new URL(apiBase).hostname;
+    } catch {}
+    const alias = typeof p.alias === "string" ? p.alias : "";
+    list.push({
+      fp,
+      alias,
+      host,
+      provider_type: providerType,
+      enabled: p.enabled !== false,
+      via_gateway: upstream.kind === "gateway",
+      gateway_provider:
+        typeof p.gateway_provider === "string" ? p.gateway_provider : "",
+      proxy_url: alias ? `/proxy/${alias}` : "",
+      sample_path: SAMPLE_PATHS[providerType] || "/chat/completions",
+      test_model:
+        typeof testModels[fp] === "string" ? testModels[fp] : "",
+      logs_url: gatewayLogsUrl(env, alias),
+      model: providerModels(p)[0] || "",
+      keys_total: keys.length,
+      keys_available: keys.filter((k) => !k.disabled).length,
+      keys,
+    });
+  }
+
+  return json({
+    ok: true,
+    backend,
+    proxy_enabled: !configError,
+    proxy_message: configError || "",
+    gateway_ready: upstreamReady(env),
+    logs_url_template: (env.AI_GATEWAY_LOGS_URL || "").trim(),
+    providers: list,
+  });
+}
+
+function upstreamReady(env) {
+  return !!(
+    (env.AI_GATEWAY_ACCOUNT_ID || "").trim() &&
+    (env.AI_GATEWAY_ID || "").trim() &&
+    (env.AI_GATEWAY_TOKEN || "").trim()
+  );
+}
+
+/** AI_GATEWAY_LOGS_URL is an operator-provided template; {provider} and {key} are
+ *  URL-encoded before substitution. No template = no link (button disabled). */
+function gatewayLogsUrl(env, alias, keyTag = "") {
+  const template = String(env.AI_GATEWAY_LOGS_URL ?? "").trim();
+  if (!template) return "";
+  return template
+    .replace(/\{provider\}/g, encodeURIComponent(alias || ""))
+    .replace(/\{key\}/g, encodeURIComponent(keyTag || ""));
+}
+
+// ─── /api/proxy/test ───────────────────────────────────────────────────────
+
+/** Minimal single-key probe. Diagnostic for the ledger *only* in the failure
+ *  direction: a failed probe counts toward the blacklist, a successful one does
+ *  not clear it (the daily result is what recovers a key). */
+function testRequestFor(provider, model) {
+  if (!model) return null;
+  switch (provider.provider_type) {
+    case "gemini":
+      return {
+        model,
+        path: `/models/${encodeURIComponent(model)}:generateContent`,
+        body: {
+          contents: [{ parts: [{ text: "ping" }] }],
+          generationConfig: { maxOutputTokens: 1 },
+        },
+      };
+    case "anthropic":
+      return {
+        model,
+        path: "/messages",
+        body: {
+          model,
+          max_tokens: 1,
+          messages: [{ role: "user", content: "ping" }],
+        },
+      };
+    case "openai":
+    default:
+      return {
+        model,
+        path: "/chat/completions",
+        body: {
+          model,
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 1,
+          stream: false,
+        },
+      };
+  }
+}
+
+async function handleProxyTest(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const configError = proxyConfigError(env);
+  if (configError) return json({ error: configError }, 503);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const id = Number(body.id);
+  const fp = typeof body.fp === "string" ? body.fp.trim() : "";
+  if (!Number.isInteger(id) || !fp) {
+    return json({ error: "id and fp required" }, 400);
+  }
+
+  await ensureSchemaFor(env.DB);
+  const row = await env.DB.prepare(
+    "SELECT id, fp, api_key FROM key_state WHERE id = ? AND fp = ?",
+  )
+    .bind(id, fp)
+    .first();
+  if (!row) return json({ error: "Not Found" }, 404);
+
+  const settings = parseJsonObject(await store(env).get(SETTINGS_KEY));
+  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
+  const provider = (
+    await Promise.all(
+      providers.map(async (p) => {
+        if (!p || typeof p.api_base !== "string") return null;
+        const candidate = await providerFingerprint(
+          String(p.provider_type || "").trim(),
+          p.api_base.trim(),
+        );
+        return candidate === fp ? p : null;
+      }),
+    )
+  ).find(Boolean);
+  if (!provider) return json({ error: "Not Found" }, 404);
+
+  // The probe model is its own setting (proxy_test_models), never the provider's
+  // daily-test list: changing it here must not touch what the morning run uses.
+  const testModel =
+    settings &&
+    typeof settings.proxy_test_models === "object" &&
+    !Array.isArray(settings.proxy_test_models) &&
+    typeof settings.proxy_test_models[fp] === "string"
+      ? settings.proxy_test_models[fp].trim()
+      : "";
+  if (!testModel) {
+    return json(
+      { error: "尚未设定测试模型；请先在「轮询转发」页填写并保存" },
+      400,
+    );
+  }
+
+  const probe = testRequestFor(provider, testModel);
+  if (!probe) return json({ error: "该服务商没有设定 Models" }, 400);
+
+  const upstream = upstreamFor(env, provider);
+  const alias =
+    typeof provider.alias === "string" ? provider.alias : provider.provider_type;
+  const headers = buildForwardHeaders(
+    env,
+    provider,
+    alias,
+    row.api_key,
+    new Headers({ "Content-Type": "application/json" }),
+    upstream,
+  );
+  headers.set("Content-Type", "application/json");
+
+  const started = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), proxyTimeoutMs(env));
+    let response;
+    try {
+      response = await fetch(targetUrl(upstream, probe.path), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(probe.body),
+        redirect: "follow",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    const ms = Date.now() - started;
+    let detail = "";
+    let ledger = null;
+    if (!response.ok) {
+      detail = (await response.text()).slice(0, 300);
+      // A failed manual probe counts: the agreed rule is that a key becomes
+      // disabled from a failed test or from proxy traffic, never from the daily
+      // result. A *successful* probe does not clear the ledger — recovery is the
+      // daily result's job (recoverKeysFromResults), otherwise the button would
+      // be a way around the threshold.
+      try {
+        ledger = await recordKeyFailure(env.DB, row.id, proxyFailThreshold(env));
+      } catch (dbErr) {
+        console.error("key_state failure write failed", dbErr);
+      }
+    } else if (response.body) {
+      await response.body.cancel();
+    }
+    return json({
+      ok: response.ok,
+      status: response.status,
+      ms,
+      model: probe.model,
+      error: detail || undefined,
+      fail_count: ledger ? ledger.fail_count : undefined,
+      disabled: ledger ? !!ledger.disabled : undefined,
+    });
+  } catch (err) {
+    return json({
+      ok: false,
+      status: 0,
+      ms: Date.now() - started,
+      model: probe.model,
+      error: String((err && err.message) || err),
+    });
+  }
+}
+
+// ─── /api/proxy/recover ────────────────────────────────────────────────────
+
+async function handleProxyRecover(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  if (storageBackendName(env) !== "d1") {
+    return json({ error: "Recover requires STORAGE_BACKEND=d1" }, 503);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const id = Number(body.id);
+  const fp = typeof body.fp === "string" ? body.fp.trim() : "";
+  if (!Number.isInteger(id) || !fp) {
+    return json({ error: "id and fp required" }, 400);
+  }
+
+  await ensureSchemaFor(env.DB);
+  const result = await env.DB.prepare(
+    "UPDATE key_state SET disabled = 0, fail_count = 0, updated_at = ? " +
+      "WHERE id = ? AND fp = ? RETURNING id, fail_count, disabled, last_used_at",
+  )
+    .bind(Date.now(), id, fp)
+    .all();
+  const row = (result.results || [])[0];
+  if (!row) return json({ error: "Not Found" }, 404);
+  return json({
+    ok: true,
+    key: {
+      id: row.id,
+      fail_count: row.fail_count,
+      disabled: !!row.disabled,
+      last_used_at: row.last_used_at,
+    },
+  });
+}
+
+// ─── /api/proxy/test-model ─────────────────────────────────────────────────
+// Stores one model per provider fingerprint. Deliberately separate from
+// providers[].models: this is the *proxy probe* model, and the plan says it must
+// not inherit from 来源设定.
+async function handleProxyTestModel(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const fp = typeof body.fp === "string" ? body.fp.trim() : "";
+  if (!fp) return json({ error: "fp required" }, 400);
+
+  const kv = store(env);
+  const settings =
+    parseJsonObject(await kv.get(SETTINGS_KEY)) || { ...DEFAULT_SETTINGS };
+  const providers = Array.isArray(settings.providers) ? settings.providers : [];
+  const known = new Set(
+    await Promise.all(
+      providers
+        .filter((p) => p && typeof p.api_base === "string" && p.provider_type)
+        .map((p) =>
+          providerFingerprint(String(p.provider_type).trim(), p.api_base.trim()),
+        ),
+    ),
+  );
+  if (!known.has(fp)) return json({ error: "Not Found" }, 404);
+
+  const model = typeof body.model === "string" ? body.model.trim() : "";
+  const map = normalizeProxyTestModels(settings.proxy_test_models);
+  if (model) map[fp] = model;
+  else delete map[fp];
+
+  const next = {
+    ...settings,
+    providers,
+    proxy_test_models: map,
+    version: settingsVersion(settings) + 1,
+  };
+  await kv.put(SETTINGS_KEY, JSON.stringify(next));
+  return json({ ok: true, test_model: model });
+}
+
+// ─── /api/storage/* (migration + backup) ───────────────────────────────────
+// These endpoints deliberately work even when STORAGE_BACKEND points at a
+// backend that is not usable yet: export only needs KV, and that is exactly the
+// backup an operator needs before touching anything.
+
+// Shared by export and restore: a backup that cannot be restored is worse than no
+// backup, so both ends use the same ceiling instead of export silently producing a
+// 20001-entry file that restore then rejects.
+const STORAGE_MAX_ENTRIES = 20000;
+
+function jsonPrivate(data, status = 200) {  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function storageSource(env, name) {
+  const wanted = name === "current" ? storageBackendName(env) : name;
+  if (name === "current" && wanted === "d1" && !hasD1(env) && hasKv(env)) {
+    // A backup must still be possible when the configured backend is unusable;
+    // KV is the only source left in that state.
+    return { name: "kv", source: env.KV_STORE };
+  }
+  if (wanted === "kv") {
+    if (!hasKv(env)) return null;
+    return { name: "kv", source: env.KV_STORE };
+  }
+  if (wanted === "d1") {
+    if (!hasD1(env)) return null;
+    return { name: "d1", source: d1Store(env) };
+  }
+  return null;
+}
+
+async function handleStorageExport(request, env, url) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }  const requested = (url.searchParams.get("source") || "current").trim();
+  const picked = storageSource(env, requested);
+  if (!picked) {
+    return jsonPrivate(
+      { error: `source=${requested} 无法使用（绑定不存在或名称无效）` },
+      400,
+    );
+  }
+
+  const { entries, pages } = await listAllEntries(picked.source);
+
+  // Keep the two sides symmetric: restore refuses more than 20000 entries, so an
+  // export bigger than that would be a backup that can never be restored. Fail
+  // here, where the operator can still act, instead of at restore time.
+  if (entries.length > STORAGE_MAX_ENTRIES) {
+    return jsonPrivate(
+      {
+        error:
+          `资料过多：${entries.length} 笔（上限 ${STORAGE_MAX_ENTRIES}）；` +
+          "这份备份无法被 /api/storage/restore 还原，请先清理数据或分批导出",
+        entry_count: entries.length,
+        limit: STORAGE_MAX_ENTRIES,
+      },
+      400,
+    );
+  }
+
+  let keyState = [];
+  if (hasD1(env)) {
+    await ensureSchemaFor(env.DB);
+    const result = await env.DB.prepare(
+      "SELECT id, fp, api_key, last_used_at, fail_count, disabled, updated_at " +
+        "FROM key_state ORDER BY id",
+    ).all();
+    keyState = result.results || [];
+  }
+
+  const bytes = entries.reduce((sum, e) => sum + e.k.length + e.v.length, 0);
+  return jsonPrivate({
+    ok: true,
+    exported_at: new Date().toISOString(),
+    source: picked.name,
+    backend_setting: storageBackendName(env),
+    kv_pages: pages,
+    entry_count: entries.length,
+    bytes,
+    key_state_count: keyState.length,
+    entries,
+    key_state: keyState,
+  });
+}
+
+async function seedKeyStateFromProviders(db, providers, now) {
+  let inserted = 0;
+  for (const p of providers || []) {
+    if (
+      !p ||
+      typeof p.provider_type !== "string" ||
+      typeof p.api_base !== "string"
+    ) {
+      continue;
+    }
+    const providerType = p.provider_type.trim();
+    const apiBase = p.api_base.trim();
+    if (!providerType || !apiBase) continue;
+    const fp = await providerFingerprint(providerType, apiBase);
+    for (const apiKey of providerKeys(p)) {
+      const result = await db
+        .prepare(
+          "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
+            "VALUES (?, ?, NULL, 0, 0, ?) ON CONFLICT(fp, api_key) DO NOTHING",
+        )
+        .bind(fp, apiKey, now)
+        .run();
+      inserted += Number(result?.meta?.changes || 0);
+    }
+  }
+  return inserted;
+}
+
+async function handleStorageMigrate(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {}
+  if (body.confirm !== "migrate") {
+    return json(
+      { error: 'confirmation required: send {"confirm":"migrate"}' },
+      400,
+    );
+  }
+  if (!hasKv(env)) return json({ error: "KV_STORE binding required" }, 400);
+  if (!hasD1(env)) return json({ error: "DB (D1) binding required" }, 400);
+
+  const { entries, pages } = await listAllEntries(env.KV_STORE);
+  const settingsEntry = entries.find((e) => e.k === SETTINGS_KEY);
+  const settings = settingsEntry ? parseJsonObject(settingsEntry.v) : null;
+  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
+  const keyCount = providers.reduce(
+    (sum, p) => sum + providerKeys(p).length,
+    0,
+  );
+
+  if (body.dryRun) {
+    return json({
+      ok: true,
+      dry_run: true,
+      kv_pages: pages,
+      entries: entries.length,
+      key_state_rows_to_seed: keyCount,
+      providers: providers.length,
+    });
+  }
+
+  await ensureSchemaFor(env.DB);
+  let inserted = 0;
+  let skipped = 0;
+  for (const entry of entries) {
+    const result = await env.DB.prepare(
+      "INSERT INTO store (k, v) VALUES (?, ?) ON CONFLICT(k) DO NOTHING",
+    )
+      .bind(entry.k, entry.v)
+      .run();
+    const changes = Number(result?.meta?.changes || 0);
+    if (changes > 0) inserted++;
+    else skipped++;
+  }
+  const seeded = await seedKeyStateFromProviders(env.DB, providers, Date.now());
+
+  return json({
+    ok: true,
+    kv_pages: pages,
+    entries: entries.length,
+    store_inserted: inserted,
+    store_skipped_existing: skipped,
+    key_state_seeded: seeded,
+    providers: providers.length,
+    keys: keyCount,
+    migrated_at: new Date().toISOString(),
+  });
+}
+
+async function handleStorageRestore(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  if (!hasD1(env)) {
+    return json({ error: "Restore requires the DB (D1) binding" }, 503);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  if (body.confirm !== "restore") {
+    return json(
+      { error: 'confirmation required: send {"confirm":"restore"}' },
+      400,
+    );
+  }
+  const entries = Array.isArray(body.entries) ? body.entries : null;
+  if (!entries) return json({ error: "entries must be an array" }, 400);
+  if (entries.length > STORAGE_MAX_ENTRIES) {
+    return json({ error: "entries too large (max 20000)" }, 400);
+  }
+  for (const e of entries) {
+    if (!e || typeof e.k !== "string" || !e.k || typeof e.v !== "string") {
+      return json({ error: "each entry needs string k and v" }, 400);
+    }
+  }
+
+  await ensureSchemaFor(env.DB);
+  let restored = 0;
+  for (const e of entries) {
+    await env.DB.prepare(
+      "INSERT INTO store (k, v) VALUES (?, ?) " +
+        "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+    )
+      .bind(e.k, e.v)
+      .run();
+    restored++;
+  }
+
+  let keyState = 0;
+  const rows = Array.isArray(body.key_state) ? body.key_state : [];
+  for (const row of rows) {
+    if (!row || typeof row.fp !== "string" || typeof row.api_key !== "string") {
+      continue;
+    }
+    await env.DB.prepare(
+      "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT(fp, api_key) DO UPDATE SET " +
+        "last_used_at = excluded.last_used_at, " +
+        "fail_count = excluded.fail_count, " +
+        "disabled = excluded.disabled, " +
+        "updated_at = excluded.updated_at",
+    )
+      .bind(
+        row.fp,
+        row.api_key,
+        row.last_used_at ?? null,
+        Number(row.fail_count || 0),
+        row.disabled ? 1 : 0,
+        Number(row.updated_at || Date.now()),
+      )
+      .run();
+    keyState++;
+  }
+
+  // Precise rollback: the backup defines the whole state, so anything that is not
+  // in it is removed. Deletes run *after* the upserts on purpose — a failure in
+  // the middle leaves a superset (safe) instead of a half-restored database.
+  const keepStore = new Set(entries.map((e) => e.k));
+  const existingStore = await env.DB.prepare("SELECT k FROM store").all();
+  const staleStore = (existingStore.results || [])
+    .map((r) => r.k)
+    .filter((k) => !keepStore.has(k));
+  for (let i = 0; i < staleStore.length; i += 100) {
+    const chunk = staleStore.slice(i, i + 100);
+    await env.DB.prepare(
+      `DELETE FROM store WHERE k IN (${chunk.map(() => "?").join(",")})`,
+    )
+      .bind(...chunk)
+      .run();
+  }
+
+  const identity = (fp, apiKey) => `${fp}\u0000${apiKey}`;
+  const keepKeys = new Set(
+    rows
+      .filter((r) => r && typeof r.fp === "string" && typeof r.api_key === "string")
+      .map((r) => identity(r.fp, r.api_key)),
+  );
+  const existingKeys = await env.DB.prepare(
+    "SELECT id, fp, api_key FROM key_state",
+  ).all();
+  const staleKeys = (existingKeys.results || [])
+    .filter((r) => !keepKeys.has(identity(r.fp, r.api_key)))
+    .map((r) => r.id);
+  for (let i = 0; i < staleKeys.length; i += 100) {
+    const chunk = staleKeys.slice(i, i + 100);
+    await env.DB.prepare(
+      `DELETE FROM key_state WHERE id IN (${chunk.map(() => "?").join(",")})`,
+    )
+      .bind(...chunk)
+      .run();
+  }
+
+  return json({
+    ok: true,
+    store_restored: restored,
+    key_state_restored: keyState,
+    store_removed: staleStore.length,
+    key_state_removed: staleKeys.length,
+    restored_at: new Date().toISOString(),
+  });
 }

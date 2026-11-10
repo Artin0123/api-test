@@ -234,6 +234,7 @@ a:hover {
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
 .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
 }
 
@@ -731,6 +732,19 @@ a:hover {
     flex-direction: column;
     gap: 0.5rem;
 }
+/* Same .field, but sharing a horizontal toolbar row instead of owning a whole
+   modal column: it sizes to its own content (a <select> to its longest option,
+   a text input to a fixed 18rem) and only shrinks when the row runs out of
+   space. Letting it grow turned the provider picker into a 950px-wide bar. */
+.field--inline {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.field--inline > .input-text {
+    width: 18rem;
+    max-width: 100%;
+}
 
 .field-label {
     font-size: var(--text-sm);
@@ -1032,6 +1046,21 @@ a:hover {
     gap: 0.6rem;
 }
 
+/* The editor footer also hosts the in-place delete confirmation, so it grows
+   upward while the action row stays right-aligned. Other modals keep the
+   original single-row footer. */
+.modal-footer--editor {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+}
+
+.modal-footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
 /* ── Sample modal content ──────────────────────────────────────────────── */
 .sample-block {
     display: flex;
@@ -1138,7 +1167,10 @@ a:hover {
     line-height: 1;
 }
 
-.btn:disabled {
+/* :disabled only matches real form controls, so <a class="btn"> has to say it
+   with aria-disabled — and would otherwise look fully clickable while dead. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
     opacity: 0.45;
     cursor: not-allowed;
 }
@@ -1148,7 +1180,7 @@ a:hover {
     color: #fff;
 }
 
-.btn-primary:hover:not(:disabled) {
+.btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
     opacity: 0.9;
 }
 
@@ -1158,7 +1190,7 @@ a:hover {
     border: 1px solid var(--border);
 }
 
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
     background: var(--border);
 }
 
@@ -1168,7 +1200,7 @@ a:hover {
     border: 1px solid var(--border);
 }
 
-.btn-ghost:hover:not(:disabled) {
+.btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
     color: var(--text);
     border-color: var(--text-muted);
 }
@@ -1179,7 +1211,7 @@ a:hover {
     border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
-.btn-danger:hover:not(:disabled) {
+.btn-danger:hover:not(:disabled):not([aria-disabled="true"]) {
     background: rgba(239, 68, 68, 0.22);
 }
 
@@ -1189,7 +1221,7 @@ a:hover {
     color: #fff;
 }
 
-.btn-danger-solid:hover:not(:disabled) {
+.btn-danger-solid:hover:not(:disabled):not([aria-disabled="true"]) {
     opacity: 0.9;
 }
 
@@ -1213,7 +1245,7 @@ a:hover {
     border: 1px solid transparent;
 }
 
-.btn.btn-danger-icon:hover:not(:disabled) {
+.btn.btn-danger-icon:hover:not(:disabled):not([aria-disabled="true"]) {
     background: rgba(239, 68, 68, 0.12);
     border-color: rgba(239, 68, 68, 0.25);
 }
@@ -1239,6 +1271,12 @@ a:hover {
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     color: #fca5a5;
+}
+
+.alert-info {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: var(--text);
 }
 
 .form-error {
@@ -1421,7 +1459,7 @@ code {
     border-radius: var(--radius-sm);
 }
 
-.btn-icon:hover:not(:disabled) {
+.btn-icon:hover:not(:disabled):not([aria-disabled="true"]) {
     color: var(--text);
 }
 
@@ -1710,6 +1748,158 @@ code {
     }
 }
 
+/* ── Proxy (rotation / forwarding) tab ──────────────────────────────────── */
+/* Toolbar on top (provider picker + actions), one card per key below.
+   The provider itself is a <select>, not a card: per-provider cards turned into
+   very tall columns once a provider had more than a handful of keys.
+
+   Surfaces are borrowed, never redefined: toolbar = .dk-filter-panel
+   (bg-2 / radius-sm / 1rem 1.1rem), key card = .provider-card
+   (bg-2 / radius / ~1.1rem / 1rem grid gap), empty state = .state-card.
+   Anything new here has to reuse those tokens or the four tabs drift apart
+   again — which is exactly what happened when this tab was first written. */
+.proxy-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.proxy-toolbar-row {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.proxy-summary {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Nothing usable left on this provider: worth a colour, unlike a plain count. */
+.proxy-summary--empty {
+    color: var(--fail);
+}
+
+/* The <code> chip keeps the global code background; here it only has to
+   stretch, wrap and stop looking like disabled text. */
+.proxy-url {
+    flex: 1 1 16rem;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-3);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
+}
+
+.proxy-hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+.proxy-key-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.proxy-key-card {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.35rem;
+    min-width: 0;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+/* Disabled keys are a colour swap on the existing border, the same move
+   .provider-card--selected makes with the accent. The card is NOT dimmed: the
+   恢复 button is the reason the row is still on screen. */
+.proxy-key-card--disabled {
+    border-color: var(--warn);
+}
+
+.proxy-key-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+/* Flex item, so the ellipsis needs min-width: 0 to ever kick in. The mask is
+   identity, not content: it must not inherit the `code` chip (bg-3 + padding
+   made it read as a disabled input), so it borrows .provider-card-host instead
+   — same weight and size as the other tabs' card titles. */
+.proxy-key-mask {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    font-family: var(--mono);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Same shape as .provider-card-meta: muted labels, solid numbers. */
+.proxy-key-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.proxy-key-card-meta span strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.proxy-key-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* No reserved height: an untested key should not look like it is hiding text,
+   and :empty keeps the card's flex gap from adding a phantom row. */
+.proxy-test-result {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+.proxy-test-result:empty {
+    display: none;
+}
+
+.proxy-test-result.ok {
+    color: var(--ok);
+}
+
+.proxy-test-result.fail {
+    color: var(--fail);
+}
+
 /* ── RWD ───────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
     :root {
@@ -1838,6 +2028,44 @@ code {
 
     .provider-card {
         padding: 1rem;
+    }
+    /* Proxy: single column and the same padding drop as provider cards; the
+       toolbar stacks one control per row so nothing sits under a thumb. */
+    .proxy-key-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .proxy-key-card {
+        padding: 1rem;
+    }
+
+    .proxy-toolbar {
+        padding: 0.85rem;
+    }
+
+    .proxy-toolbar-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .field--inline {
+        flex: none;
+        width: 100%;
+    }
+
+    .field--inline > .input-text {
+        width: 100%;
+    }
+
+    .proxy-toolbar-row .btn {
+        flex: 1 1 auto;
+        min-height: 2.6rem;
+    }
+
+    /* The row is a column here, so .proxy-url's flex-basis becomes a height:
+       the URL chip grew to 16rem tall. Keep it one line of text. */
+    .proxy-url {
+        flex: none;
     }
 
     /* Copy block: stack vertically */
@@ -1993,4 +2221,74 @@ code {
         align-items: flex-start;
         gap: 0.4rem;
     }
+}
+/* ── Key editor toolbar / search ────────────────────────────────────────── */
+.keys-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.keys-search {
+    flex: 1;
+    min-width: 10rem;
+}
+
+.keys-search-results {
+    max-height: 7.5rem;
+    overflow-y: auto;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.keys-search-results .hit {
+    color: var(--text);
+}
+
+.line-nums span.hit {
+    color: var(--warn);
+    font-weight: 700;
+}
+
+/* ── In-place delete confirmation (no modal, CSP-safe class toggle) ─────── */
+.editor-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--fail);
+    border-radius: var(--radius-sm);
+    background: rgba(239, 68, 68, 0.07);
+}
+
+.editor-confirm-msg {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text);
+}
+
+.editor-confirm-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    /* Five rows are shown directly; more scroll inside the same box. */
+    max-height: 5.6rem;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text);
+}
+
+.editor-confirm-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
 }

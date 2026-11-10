@@ -22,7 +22,7 @@ MODELS_FILE_PATH = r"models_list\models.txt"
 OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
 API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-PROVIDER_TYPE = "openai"  # 支援: 'openai', 'ollama', 'gemini', 'anthropic'
+PROVIDER_TYPE = "openai"  # 支援: 'openai', 'gemini', 'anthropic'
 EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例：'{"temperature": 0.7}'
 CUSTOM_HEADERS = []  # 选填，例：[{"key": "HTTP-Referer", "value": "https://example.com"}]
 
@@ -190,8 +190,6 @@ def get_full_endpoint(api_base, provider_type, model):
     base = api_base.rstrip("/")
     if provider_type == "openai":
         return f"{base}/chat/completions"
-    elif provider_type == "ollama":
-        return f"{base}/api/chat"
     elif provider_type == "gemini":
         return f"{base}/models/{model}:streamGenerateContent?alt=sse"
     elif provider_type == "anthropic":
@@ -205,13 +203,6 @@ def build_payload(provider_type, model, stream, extra_body=None):
             "model": model,
             "messages": [{"role": "user", "content": PROMPT}],
             "max_tokens": MAX_OUTPUT_TOKENS,
-            "stream": stream,
-        }
-    elif provider_type == "ollama":
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": PROMPT}],
-            "options": {"num_predict": MAX_OUTPUT_TOKENS},
             "stream": stream,
         }
     elif provider_type == "gemini":
@@ -300,17 +291,6 @@ def extract_stream_chunk(line, provider_type):
             if reasoning:
                 has_thinking = True
                 thinking_parts.append(reasoning)
-
-    elif provider_type == "ollama":
-        msg = data.get("message", {})
-        content = msg.get("content") or ""
-        thinking = msg.get("thinking") or ""
-        if content:
-            has_content = True
-            content_parts.append(content)
-        if thinking:
-            has_thinking = True
-            thinking_parts.append(thinking)
 
     elif provider_type == "gemini":
         candidates = data.get("candidates", [])
@@ -474,12 +454,6 @@ async def test_single_request(
                         sample_thinking = (reasoning or xml_think).strip()
                         has_thinking = bool(sample_thinking)
                         has_content = bool(sample_content)
-                    elif provider_type == "ollama":
-                        msg = data.get("message", {})
-                        sample_content = (msg.get("content") or "").strip()
-                        sample_thinking = (msg.get("thinking") or "").strip()
-                        has_content = bool(sample_content)
-                        has_thinking = bool(sample_thinking)
                     elif provider_type == "gemini":
                         candidates = data.get("candidates", [])
                         for c in candidates:
