@@ -192,7 +192,7 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 
 - **上方外框工具列＋每把金鑰小卡**：`.proxy-toolbar` 採與下方 `.proxy-key-card` 一致的 `--bg-2`／`--border`／`--radius` 外框並保留內距（桌機 `1.25rem`、手機 `1rem`），使內部控件與外框維持明確間距；下方改以每把金鑰小卡呈現（右上保留與表格一致的 `.copy-btn` 複製明文、右下以 `margin-left: auto` 固定擺放「测试」／「恢复」按鈕、卡片資料簡化為「失败」與相對時間「最近使用」— 60 秒內固定顯示 `60 秒前`，其餘依分鐘／小時／天往上累計且最高單位為天；失效卡片則比照「来源设定」採整卡灰階降不透明度並於左下顯示純粗體文字「已失效」，正常金鑰不再加膠囊徽章），`maskKey()` 採左 6 ＋ 1～3 個 `*` ＋ 右 3（≤9 字元直接顯示），並維持四個分頁一致的卡片語言與 `--control-h`（`2.5rem`）控制項高度。
 - **測試模型選單來自來源設定，但選擇獨立保存**：候選清單直接讀取 `providers[].models` 避免重複輸入，預設選取第一個模型，但仍須按下「保存模型」寫入獨立的 `app_settings.proxy_test_models` 才啟用測試，防止調整來源設定模型順序時意外更改探測對象。
-- **統計配色與對齊層級**：`有效` 與 `无效` 採用比 `14px` 正文大一級的 `--text-base`（桌機 `16px`／`700`）而不搶成第二標題，數字右對齊固定 3 位數寬度（與標籤至少維持 2 個空格、4 位數以上保持 2 個空格並將 `无效` 往右延伸而維持 8 個空格間距），並改用柔和的 `--ok-soft`／`--fail-soft`（淺色主題下反向調整飽和度與亮度以保持白底對比度）。
+- **統計配色與對齊層級**：`有效` 與 `无效` 採用比 `14px` 正文大一級的 `--text-base`（桌機 `16px`／`700`）而不搶成第二標題，數字右對齊固定 2 位數寬度（與標籤保持至少 1 個空格、1 位數自然補成 2 個空格視覺對齊、3 位數以上保持 1 個空格並將 `无效` 往右延伸而維持 8 個空格間距），並改用柔和的 `--ok-soft`／`--fail-soft`（淺色主題下反向調整飽和度與亮度以保持白底對比度）。
 - **單一頁首 Gateway 按鈕**：移至頁首 `重新读取` 右側，因其檢視整家服務商流量而非探測單把金鑰；箭頭 `↗` 使用 `aria-hidden="true"` 保持無障礙名稱為「Gateway 记录」，無可用網址時保持停用不隱藏，維持頁首位置穩定。
 
 ### 11.3 前端 CSS 與互動陷阱紀錄
@@ -202,7 +202,7 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 - **模型選單 `flex: none` 固定寬度**：`.proxy-model-select` 必須使用 `flex: none` 配明確 `15rem` 寬度；若使用可縮減的 `flex-basis`，右側群組計算內在寬度時只會量到選項文字寬度，導致後方按鈕提前換行。
 - **「保存模型」按鈕寬度穩定**：點擊後文字從「保存模型」（4 字）變為「已保存」（3 字）時，`.proxy-save-model` 以縱向 flex（`gap: 0`）搭配零高度 `::after` 錨定四字實際字體寬度（不硬寫 `rem` 或行內 `style`），並以 `content: "保存模型" / ""` 防止螢幕閱讀器重覆唸出；同時於 `app.js` 使用 `proxySaveModelTimer`（與 URL 複製用的 `proxyUrlTimer`）追蹤計時器，在連點或重畫工具列（切換服務商）時清除舊計時器。
 - **控制項高度齊一與手機端按鈕特異性**：`.btn` 統一帶 `1px solid transparent` 邊框使 `.btn-primary`／`.btn-danger-solid` 與有框按鈕完全同高，`.input-select` 與 `.input-text` 一律釘死 `height: var(--control-h)`；在 `@media (max-width: 640px)` 內重新宣告 `.btn-sm`（含 `.dk-filter-actions .btn`）、`.btn-xs` 與 `.btn-icon` 內距與字級，避免手機端 `.btn` 的大內距覆寫小按鈕與複製圖示尺寸；並以 `.dk-filter-panel, .proxy-toolbar`、`.provider-grid, .proxy-key-grid` 及 `.provider-card, .proxy-key-card` 共用外框與間距規則。
-- **批量測試保留單卡結果與請求競態防護**：`runProxyBatch()` 與 `testProxyKey()` 在觸發 `loadProxyState({ preserveResults: true })` 時保留 `state.proxyLastResults`，並保證於 `finally` 解鎖工具列與卡片按鈕；所有分頁載入器皆帶遞增請求序號（`state.reqSeq`）丟棄過期回應，且各彈窗共用 `openModal`/`closeModal` 堆疊維護頂層 `Esc` 關閉、`Tab` 焦點循環與關閉後焦點還原。
+- **批量測試保留單卡結果與請求競態防護**：`runProxyBatch()` 與 `testProxyKey()` 在觸發 `loadProxyState({ preserveResults: true })` 時保留 `state.proxyLastResults`，並保證於 `finally` 解鎖工具列與卡片按鈕；所有分頁載入器皆帶遞增請求序號（`state.reqSeq`）丟棄過期回應；各彈窗以 `openModal`/`closeModal` 堆疊支援頂層 `Esc` 關閉（關閉時僅清除彈窗內殘留焦點，不把焦點退回原按鈕，並移除按鈕／頁籤／折疊表頭的預設黑框焦點標註）。
 
 ### 11.4 尚待正式線上環境複驗項目
 

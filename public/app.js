@@ -46,7 +46,7 @@ const state = {
   proxyLastResults: new Map(), // _uiKey -> Map<String(id), result> across post-test reloads
   mockProxyOverrides: new Map(), // mock provider key -> { test_model, keys: Map }
   reqSeq: { config: 0, results: 0, deadkeys: 0, proxy: 0 },
-  modalStack: [], // active { overlay, prevFocus } stack for Esc & focus restore
+  modalStack: [], // active overlay stack for closing only the topmost modal on Esc
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -513,44 +513,27 @@ function modalFocusableElements(overlay) {
 
 function openModal(overlay, initialFocusEl = null) {
   if (!overlay) return;
-  const idx = state.modalStack.findIndex((item) => item.overlay === overlay);
-  let prevFocus = document.activeElement;
-  if (idx >= 0) {
-    prevFocus = state.modalStack[idx].prevFocus;
-    state.modalStack.splice(idx, 1);
-  }
-  state.modalStack.push({ overlay, prevFocus });
+  const idx = state.modalStack.indexOf(overlay);
+  if (idx >= 0) state.modalStack.splice(idx, 1);
+  state.modalStack.push(overlay);
   overlay.classList.remove("hidden");
 
-  const target =
+  if (
     initialFocusEl &&
     !initialFocusEl.disabled &&
-    initialFocusEl.getClientRects().length > 0
-      ? initialFocusEl
-      : modalFocusableElements(overlay)[0];
-  if (target && typeof target.focus === "function") {
-    target.focus();
+    initialFocusEl.getClientRects().length > 0 &&
+    typeof initialFocusEl.focus === "function"
+  ) {
+    initialFocusEl.focus();
   }
 }
 
-function closeModal(overlay, { fallbackFocusEl = null } = {}) {
+function closeModal(overlay) {
   if (!overlay) return;
   overlay.classList.add("hidden");
-  const idx = state.modalStack.findIndex((item) => item.overlay === overlay);
-  const entry = idx >= 0 ? state.modalStack.splice(idx, 1)[0] : null;
-  const target =
-    entry && entry.prevFocus && entry.prevFocus.isConnected && !entry.prevFocus.disabled
-      ? entry.prevFocus
-      : fallbackFocusEl;
+  const idx = state.modalStack.indexOf(overlay);
+  if (idx >= 0) state.modalStack.splice(idx, 1);
   if (
-    target &&
-    target !== document.body &&
-    target.isConnected &&
-    !target.disabled &&
-    typeof target.focus === "function"
-  ) {
-    target.focus();
-  } else if (
     overlay.contains(document.activeElement) &&
     typeof document.activeElement.blur === "function"
   ) {
@@ -560,7 +543,7 @@ function closeModal(overlay, { fallbackFocusEl = null } = {}) {
 
 function topOpenModal() {
   for (let i = state.modalStack.length - 1; i >= 0; i--) {
-    const { overlay } = state.modalStack[i];
+    const overlay = state.modalStack[i];
     if (overlay && !overlay.classList.contains("hidden")) return overlay;
   }
   return null;
@@ -2434,7 +2417,7 @@ function openErrorDetail(errorCode, detail, subtitle = "") {
     ${errorCode != null ? `<div class="errdetail-code">Error Code: <strong>${esc(errorCode)}</strong></div>` : ""}
     ${rows}
   `;
-  openModal(dom.errDetailOverlay, dom.errDetailClose);
+  openModal(dom.errDetailOverlay);
 }
 
 function closeErrorDetail() {
@@ -3091,13 +3074,13 @@ function openDkConfirm() {
     )
     .join("");
   if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
-  openModal(dom.dkConfirmOverlay, dom.dkConfirmOk);
+  openModal(dom.dkConfirmOverlay);
 }
 
 function closeDkConfirm() {
   state.dkPendingDelete = null;
   if (dom.dkConfirmError) dom.dkConfirmError.textContent = "";
-  closeModal(dom.dkConfirmOverlay, { fallbackFocusEl: dom.dkBulkDelBtn });
+  closeModal(dom.dkConfirmOverlay);
 }
 
 async function confirmDeleteDeadKeys() {
@@ -3188,7 +3171,7 @@ function openSample(model, sample) {
       <pre class="sample-pre">${content ? esc(content) : `<span class="na">（空）</span>`}</pre>
     </div>
   `;
-  openModal(dom.sampleOverlay, dom.sampleClose);
+  openModal(dom.sampleOverlay);
 }
 function closeSample() {
   closeModal(dom.sampleOverlay);

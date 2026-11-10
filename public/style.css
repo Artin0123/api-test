@@ -101,6 +101,15 @@ a:hover {
     text-decoration: underline;
 }
 
+button:focus,
+button:focus-visible,
+a:focus,
+a:focus-visible,
+[tabindex]:focus,
+[tabindex]:focus-visible {
+    outline: none;
+}
+
 /* ── Auth overlay ──────────────────────────────────────────────────────── */
 .auth-overlay {
     display: none;
@@ -1844,13 +1853,13 @@ code {
    one muted sentence. The numbers themselves are enough; no slash, no separator.
    These take the soft pair, not --ok/--fail: at 16px bold the vivid badge
    colours turn into a traffic light, and the point here is a calm readout.
-   Each item keeps a 2-space minimum gap before a right-aligned 3-digit slot;
-   4+ digits grow rightwards while keeping the 8-space gap before 无效. */
+   Each item keeps a 1-space minimum gap before a right-aligned 2-digit slot;
+   3+ digits grow rightwards while keeping the 8-space gap before 无效. */
 .proxy-summary-ok,
 .proxy-summary-fail {
     display: inline-flex;
     align-items: baseline;
-    gap: 0.6rem;
+    gap: 0.3rem;
 }
 
 .proxy-summary-ok {
@@ -1862,7 +1871,7 @@ code {
 }
 
 .proxy-summary-num {
-    min-width: 3ch;
+    min-width: 2ch;
     text-align: right;
 }
 
