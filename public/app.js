@@ -182,11 +182,8 @@ const dom = {
   proxyProvider: $("proxy-provider"),
   proxySummary: $("proxy-summary"),
   proxyUrl: $("proxy-url"),
-  proxyCopyUrl: $("proxy-copy-url"),
-  proxySample: $("proxy-sample"),
   proxyTestModel: $("proxy-test-model"),
   proxySaveModel: $("proxy-save-model"),
-  proxyTestAll: $("proxy-test-all"),
   proxyTestActive: $("proxy-test-active"),
   proxyTestDisabled: $("proxy-test-disabled"),
   proxyLogs: $("proxy-logs"),
@@ -353,6 +350,16 @@ function splitKeyLines(raw) {
   return String(raw || "")
     .split("\n")
     .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Comma list helper, mirroring providerModels() in `_worker.js`: the proxy page
+ *  offers the provider's own Models (来源设定) as the probe model, so both sides
+ *  must split the same string the same way. */
+function splitModels(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((m) => m.trim())
     .filter(Boolean);
 }
 
@@ -1276,6 +1283,7 @@ function mockProxyState(settings) {
         ] || "/chat/completions",
       test_model: "",
       logs_url: "",
+      models: splitModels(p.models),
       keys_total: keys.length,
       keys_available: keys.length,
       keys: keys.map((key, ki) => ({
@@ -1317,6 +1325,7 @@ function renderProxyState(data) {
     dom.proxyToolbar.classList.add("hidden");
     dom.proxyKeyGrid.classList.add("hidden");
     dom.proxyKeyEmpty.classList.add("hidden");
+    renderProxyLogsLink();
     return;
   }
 
@@ -1324,7 +1333,12 @@ function renderProxyState(data) {
   for (const p of providers) {
     const opt = document.createElement("option");
     opt.value = p.fp;
-    opt.textContent = `${p.alias || "（未设别名）"} · ${p.host} · ${p.provider_type}`;
+    // The menu answers two questions at once — which provider, and what API it
+    // speaks. The format used to be a separate pill under the select; folding it
+    // into the option text keeps one row and makes each choice self-describing.
+    const name = p.alias || p.host;
+    const format = String(p.provider_type || "").trim();
+    opt.textContent = format ? `${name} - ${format}` : name;
     if (p.fp === state.proxySelected) opt.selected = true;
     dom.proxyProvider.appendChild(opt);
   }
@@ -1335,7 +1349,50 @@ function renderProxyState(data) {
   renderProxyKeyCards();
 }
 
+/** The probe model options come from the provider's own Models field in 来源设定,
+ *  not from a second text box on this tab. A saved value that is no longer in that
+ *  comma list stays at the top, so an edit over there cannot silently turn the
+ *  current selection into a different model. */
+function proxyModelOptions(p) {
+  const list = Array.isArray(p.models) ? p.models : splitModels(p.models);
+  const models = [
+    ...new Set(list.map((m) => String(m).trim()).filter(Boolean)),
+  ];
+  const saved = String(p.test_model || "").trim();
+  if (saved && !models.includes(saved)) models.unshift(saved);
+  return models;
+}
+
+function renderProxyModelSelect(p) {
+  const models = proxyModelOptions(p);
+  const saved = String(p.test_model || "").trim();
+  dom.proxyTestModel.replaceChildren();
+  if (!models.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "（来源设定未填 Models）";
+    dom.proxyTestModel.appendChild(opt);
+    return;
+  }
+  for (const model of models) {
+    const opt = document.createElement("option");
+    opt.value = model;
+    opt.textContent = model;
+    dom.proxyTestModel.appendChild(opt);
+  }
+  // No saved choice yet: default to the first model. The save button still has to
+  // be pressed before the test buttons treat it as the chosen probe model.
+  dom.proxyTestModel.value = saved || models[0];
+}
+
+let proxySaveModelTimer = null;
+
 function renderProxyToolbar() {
+  if (proxySaveModelTimer) {
+    clearTimeout(proxySaveModelTimer);
+    proxySaveModelTimer = null;
+  }
+  dom.proxySaveModel.textContent = "保存模型";
   const p = selectedProxyProvider();
   if (!p) return;
   const enabled =
@@ -1343,39 +1400,55 @@ function renderProxyToolbar() {
   const url = p.alias ? `${location.origin}${p.proxy_url}` : "";
 
   const available = Number(p.keys_available || 0);
-  dom.proxySummary.textContent = `可用 ${available} / ${Number(p.keys_total || 0)}`;
-  // Colour the one number on this row that means "nothing will be served".
-  dom.proxySummary.className =
-    "proxy-summary" + (available ? "" : " proxy-summary--empty");
+  const total = Number(p.keys_total || 0);
+  // Two separate spans so the healthy and unhealthy counts can carry their own
+  // colour without colouring the whole line. The old "可用 x / y" slash is gone:
+  // 有效 x 無效 y says both numbers in words.
+  const okSpan = document.createElement("span");
+  okSpan.className = "proxy-summary-ok";
+  okSpan.textContent = `有效 ${available}`;
+  const failSpan = document.createElement("span");
+  failSpan.className = "proxy-summary-fail";
+  failSpan.textContent = `无效 ${Math.max(total - available, 0)}`;
+  dom.proxySummary.replaceChildren(okSpan, failSpan);
   dom.proxyUrl.textContent = url || "（尚未设定转发别名）";
-  dom.proxyCopyUrl.dataset.copyVal = url;
-  dom.proxyCopyUrl.disabled = !url;
-  dom.proxySample.textContent = p.alias
-    ? `范例路径：${p.sample_path}`
-    : "未设别名：请到「来源设定」编辑这个服务商";
-  dom.proxyTestModel.value = p.test_model || "";
-  dom.proxySaveModel.disabled = !enabled;
+  dom.proxyUrl.dataset.copyVal = url;
+  // Nothing to copy without an alias, so the field must not look clickable.
+  dom.proxyUrl.classList.toggle("is-disabled", !url);
+  dom.proxyUrl.classList.remove("is-copied");
+  renderProxyModelSelect(p);
+  const hasModels = proxyModelOptions(p).length > 0;
+  dom.proxyTestModel.disabled = !enabled || !hasModels;
+  dom.proxySaveModel.disabled = !enabled || !hasModels;
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
   const canTest = enabled && hasKeys && !!p.test_model;
-  for (const btn of [
-    dom.proxyTestAll,
-    dom.proxyTestActive,
-    dom.proxyTestDisabled,
-  ]) {
+  for (const btn of [dom.proxyTestActive, dom.proxyTestDisabled]) {
     btn.disabled = !canTest;
-    btn.title = !p.test_model ? "请先填写并保存测试模型" : "";
+    btn.title = !p.test_model ? "请先选择并保存测试模型" : "";
   }
+  renderProxyLogsLink();
+}
 
-  if (p.logs_url) {
-    dom.proxyLogs.href = p.logs_url;
+/** The Gateway log shortcut sits in the page header beside 重新读取 now: it is a
+ *  whole-provider view, not one of the probe controls, and putting it with the
+ *  refresh button keeps every "look at this elsewhere" affordance in one place.
+ *  It still follows the selected provider, and without one there is nothing to
+ *  filter, so the link goes back to looking dead instead of pointing anywhere. */
+function renderProxyLogsLink() {
+  const p = selectedProxyProvider();
+  const url = p && p.logs_url;
+  if (url) {
+    dom.proxyLogs.href = url;
     dom.proxyLogs.removeAttribute("aria-disabled");
     dom.proxyLogs.title = "打开 AI Gateway 日志（已按服务商过滤）";
-  } else {
-    dom.proxyLogs.removeAttribute("href");
-    dom.proxyLogs.setAttribute("aria-disabled", "true");
-    dom.proxyLogs.title = "部署设定 AI_GATEWAY_LOGS_URL 后可用";
+    return;
   }
+  dom.proxyLogs.removeAttribute("href");
+  dom.proxyLogs.setAttribute("aria-disabled", "true");
+  dom.proxyLogs.title = p
+    ? "部署设定 AI_GATEWAY_LOGS_URL 后可用"
+    : "尚无服务商，先到「来源设定」添加";
 }
 
 function renderProxyKeyCards() {
@@ -1480,12 +1553,7 @@ async function testProxyKey(fp, id) {
 }
 
 function proxyActionButtons() {
-  return [
-    dom.proxyTestAll,
-    dom.proxyTestActive,
-    dom.proxyTestDisabled,
-    dom.proxySaveModel,
-  ];
+  return [dom.proxyTestActive, dom.proxyTestDisabled, dom.proxySaveModel];
 }
 
 async function runProxyBatch(mode) {
@@ -1494,9 +1562,8 @@ async function runProxyBatch(mode) {
   if (!p) return;
   const keys = (p.keys || []).filter((k) => {
     if (k.id == null) return false;
-    if (mode === "active") return !k.disabled;
-    if (mode === "disabled") return k.disabled;
-    return true;
+    // Only the two scopes the toolbar exposes: healthy keys or disabled keys.
+    return mode === "disabled" ? k.disabled : !k.disabled;
   });
   if (!keys.length) {
     dom.proxyNotice.className = "alert alert-info";
@@ -1537,6 +1604,10 @@ async function saveProxyTestModel() {
   const p = selectedProxyProvider();
   if (!p) return;
   const model = dom.proxyTestModel.value.trim();
+  if (!model) {
+    dom.proxyTestModel.focus();
+    return;
+  }
   dom.proxySaveModel.disabled = true;
   try {
     if (!MOCK) {
@@ -1552,7 +1623,8 @@ async function saveProxyTestModel() {
     renderProxyToolbar();
     renderProxyKeyCards();
     dom.proxySaveModel.textContent = "已保存";
-    setTimeout(() => {
+    proxySaveModelTimer = setTimeout(() => {
+      proxySaveModelTimer = null;
       dom.proxySaveModel.textContent = "保存模型";
     }, 1200);
   } catch (err) {
@@ -2714,6 +2786,25 @@ function copyText(text, btn) {
   }
 }
 
+/** The forwarding URL field is the button: click anywhere on it to copy, and the
+ *  field says 已复制 for a moment instead of a second control beside it. The text
+ *  only goes back if nothing re-rendered meanwhile — switching providers during
+ *  the flash would otherwise put the previous provider's URL back on screen.
+ *  copyText() is given no element on purpose: its button feedback would have
+ *  replaced the URL with 已复制! and then a re-render would have to fight it. */
+function copyProxyUrl() {
+  const url = dom.proxyUrl.dataset.copyVal || "";
+  if (!url) return;
+  copyText(url, null);
+  dom.proxyUrl.textContent = "已复制";
+  dom.proxyUrl.classList.add("is-copied");
+  setTimeout(() => {
+    if (!dom.proxyUrl.classList.contains("is-copied")) return;
+    dom.proxyUrl.textContent = url;
+    dom.proxyUrl.classList.remove("is-copied");
+  }, 1200);
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 function esc(v) {
   return String(v ?? "")
@@ -2891,17 +2982,13 @@ function bindEvents() {
     renderProxyToolbar();
     renderProxyKeyCards();
   });
-  dom.proxyCopyUrl.addEventListener("click", () =>
-    copyText(dom.proxyCopyUrl.dataset.copyVal || "", dom.proxyCopyUrl),
-  );
-  dom.proxySaveModel.addEventListener("click", saveProxyTestModel);
-  dom.proxyTestModel.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      saveProxyTestModel();
-    }
+  dom.proxyUrl.addEventListener("click", copyProxyUrl);
+  dom.proxyUrl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    copyProxyUrl();
   });
-  dom.proxyTestAll.addEventListener("click", () => runProxyBatch("all"));
+  dom.proxySaveModel.addEventListener("click", saveProxyTestModel);
   dom.proxyTestActive.addEventListener("click", () => runProxyBatch("active"));
   dom.proxyTestDisabled.addEventListener("click", () => runProxyBatch("disabled"));
   dom.proxyKeyGrid.addEventListener("click", (e) => {

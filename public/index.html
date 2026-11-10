@@ -249,19 +249,19 @@
                         </div>
                         <div class="panel-head-actions">
                             <button
-                                id="dk-refresh-btn"
-                                class="btn btn-secondary"
-                                type="button"
-                            >
-                                重新读取
-                            </button>
-                            <button
                                 id="dk-bulk-del-btn"
                                 class="btn btn-danger-solid"
                                 type="button"
                                 aria-pressed="false"
                             >
                                 删除密钥
+                            </button>
+                            <button
+                                id="dk-refresh-btn"
+                                class="btn btn-secondary"
+                                type="button"
+                            >
+                                重新读取
                             </button>
                         </div>
                     </div>
@@ -391,6 +391,16 @@
                             >
                                 重新读取
                             </button>
+                            <a
+                                id="proxy-logs"
+                                class="btn btn-primary"
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-disabled="true"
+                                >Gateway 记录<span class="btn-ext" aria-hidden="true"
+                                    >↗</span
+                                ></a
+                            >
                         </div>
                     </div>
 
@@ -405,77 +415,54 @@
                     </div>
 
                     <div id="proxy-toolbar" class="proxy-toolbar hidden">
-                        <div class="proxy-toolbar-row">
-                            <label class="field field--inline">
-                                <span class="field-label">服务商</span>
+                        <div class="proxy-toolbar-row proxy-toolbar-row--provider">
+                            <div class="proxy-provider-col">
                                 <select
                                     id="proxy-provider"
                                     class="input-select"
+                                    aria-label="服务商"
                                 ></select>
-                            </label>
-                            <span id="proxy-summary" class="proxy-summary"></span>
+                            </div>
+                            <code
+                                id="proxy-url"
+                                class="input-text proxy-url"
+                                role="button"
+                                tabindex="0"
+                                title="点击复制转发网址"
+                            ></code>
                         </div>
-                        <div class="proxy-toolbar-row">
-                            <code id="proxy-url" class="proxy-url"></code>
-                            <button
-                                id="proxy-copy-url"
-                                class="btn btn-secondary btn-sm copy-btn"
-                                type="button"
-                                title="复制转发网址"
-                                aria-label="复制转发网址"
-                            >
-                                复制
-                            </button>
-                            <span id="proxy-sample" class="proxy-hint"></span>
-                        </div>
-                        <div class="proxy-toolbar-row">
-                            <label class="field field--inline">
-                                <span class="field-label">测试模型</span>
-                                <input
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div id="proxy-summary" class="proxy-summary"></div>
+                            <div class="proxy-model-group">
+                                <label class="proxy-model-label" for="proxy-test-model"
+                                    >测试模型</label
+                                >
+                                <select
                                     id="proxy-test-model"
-                                    class="input-text"
-                                    type="text"
-                                    placeholder="例如 gpt-4o-mini"
-                                    spellcheck="false"
-                                />
-                            </label>
-                            <button
-                                id="proxy-save-model"
-                                class="btn btn-secondary btn-sm"
-                                type="button"
-                            >
-                                保存模型
-                            </button>
-                            <button
-                                id="proxy-test-all"
-                                class="btn btn-secondary btn-sm"
-                                type="button"
-                            >
-                                测试全部
-                            </button>
-                            <button
-                                id="proxy-test-active"
-                                class="btn btn-secondary btn-sm"
-                                type="button"
-                            >
-                                只测有效
-                            </button>
-                            <button
-                                id="proxy-test-disabled"
-                                class="btn btn-secondary btn-sm"
-                                type="button"
-                            >
-                                只测无效
-                            </button>
-                            <a
-                                id="proxy-logs"
-                                class="btn btn-secondary btn-sm"
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-disabled="true"
-                            >
-                                Gateway 记录
-                            </a>
+                                    class="input-select proxy-model-select"
+                                ></select>
+                                <button
+                                    id="proxy-save-model"
+                                    class="btn btn-secondary btn-sm proxy-save-model"
+                                    type="button"
+                                >
+                                    保存模型
+                                </button>
+                                <button
+                                    id="proxy-test-active"
+                                    class="btn btn-secondary btn-sm"
+                                    type="button"
+                                >
+                                    测试有效密钥
+                                </button>
+                                <button
+                                    id="proxy-test-disabled"
+                                    class="btn btn-secondary btn-sm"
+                                    type="button"
+                                >
+                                    测试无效密钥
+                                </button>
+                            </div>
                         </div>
                     </div>
 

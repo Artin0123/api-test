@@ -836,7 +836,7 @@ test("a successful manual test does not clear a disabled key", async () => {
   assert.equal(after.fail_count, 3);
 });
 
-test("the proxy test model lives separately and is never inherited", async () => {
+test("the proxy test model is stored separately, not auto-borrowed", async () => {
   useUpstream((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end('{"ok":true}');
@@ -850,6 +850,9 @@ test("the proxy test model lives separately and is never inherited", async () =>
     await request(env, "/api/proxy/state", { headers: adminHeaders() }),
   );
   assert.equal(stateBefore.data.providers[0].test_model, "");
+  // The toolbar's model menu is built from this list, so the state has to carry
+  // the whole Models field and not just its first entry.
+  assert.deepEqual(stateBefore.data.providers[0].models, ["m1", "m2"]);
 
   // Without a configured probe model the test endpoint refuses, instead of
   // silently borrowing providers[].models.

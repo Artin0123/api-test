@@ -49,6 +49,8 @@ test("proxy assets referenced by the page exist in style.css", () => {
   for (const cls of [
     "proxy-toolbar",
     "proxy-toolbar-row",
+    "proxy-summary",
+    "proxy-save-model",
     "proxy-key-grid",
     "proxy-key-card",
     "proxy-test-result",

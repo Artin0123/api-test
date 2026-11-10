@@ -2083,7 +2083,10 @@ async function handleGetProxyState(request, env) {
       test_model:
         typeof testModels[fp] === "string" ? testModels[fp] : "",
       logs_url: gatewayLogsUrl(env, alias),
-      model: providerModels(p)[0] || "",
+      // The proxy toolbar offers these as the probe-model menu. Keeping the
+      // whole list (not just the first entry) is what lets 来源设定 stay the one
+      // place where a provider's models are typed.
+      models: providerModels(p),
       keys_total: keys.length,
       keys_available: keys.filter((k) => !k.disabled).length,
       keys,
@@ -2332,9 +2335,10 @@ async function handleProxyRecover(request, env) {
 }
 
 // ─── /api/proxy/test-model ─────────────────────────────────────────────────
-// Stores one model per provider fingerprint. Deliberately separate from
-// providers[].models: this is the *proxy probe* model, and the plan says it must
-// not inherit from 来源设定.
+// Stores which model each provider should probe with, keyed by fingerprint. The
+// *options* come from providers[].models (the Models field in 来源设定), but the
+// choice is kept here so editing that comma list does not silently change a
+// provider's probe model.
 async function handleProxyTestModel(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
