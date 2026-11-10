@@ -1,604 +1,209 @@
 # 決策說明（最後更新 2026-11-10）
 
-**本文持續維護**，記錄「失效密鑰分頁 + 錯誤訊息改造 + 單一 Key 連跑兩輪 + API 認證」及其後續調整中，每個決策的**背景、選項、取捨理由與實測依據**。改動這幾塊行為時請一併更新本文，並把檔名的日期後綴改成當次更新的日期。
-
-搭配 `docs/new_plan-0812.md`（功能規劃草案，細節已被本文取代）閱讀。
+**本文件持續維護**，記錄「失效密鑰分頁」、「錯誤訊息改造」、「單一 Key 連跑兩輪」、「API 認證」以及「KV → D1 與輪詢轉發」中各項設計的**取捨理由、實作陷阱與承受代價**。修改上述行為時請同步更新本文件，並將檔名日期改為當次更新日。
 
 ---
 
 ## 一、測試結果的錯誤訊息
 
-### 1.1 用供應商原文取代人工歸類文字
+### 1.1 以供應商原文取代人工歸類文字
 
-| | |
-|---|---|
-| **問題** | 原本群組標題是人工歸類的說明，例如 `Key 专属硬伤 (Hard Failure - 401)`。402（餘額不足）沒有專屬分類，會落入 `Unknown Error`，使用者看不出真正死因。 |
-| **決策** | `error_reason` 改成供應商回傳的真實訊息，由 `parse_error_body()` + `pick_error_message()` 取得。 |
-| **Fallback** | 只有在連 body 都拿不到（純連線失敗、空 body）時，才退回原本的說明文字。行為與改造前一致，不會出現空白標題。 |
-| **順帶移除** | per-model 的 `failed_models_details`；死因已由原文表達，逐模型清單只是雜訊。 |
+- **問題與決策**：原本人工分類標題會讓未預先對應的狀態碼（如 402 餘額不足）全數落入 `Unknown Error`。改為由 `parse_error_body()` ＋ `pick_error_message()` 擷取供應商原文作為 `error_reason`，僅在完全取不到回應本文（如連線失敗）時退回系統說明；同時移除冗餘的逐模型 `failed_models_details`。
 
-**改造前後對照**
+### 1.2 解析時機：截斷之前
 
-| Status | 改造前 | 改造後 |
-|---|---|---|
-| 401 | `Key 专属硬伤 (Hard Failure - 401)` | `401 · Incorrect API key provided: sk-xxxx...` |
-| 402 | `Unknown Error` | `402 · 余额不足，请充值后重试` |
-| 429 | `频控限流或响应超时 (429)` | `429 · Rate limit reached for requests` |
+- **實作陷阱**：早期先執行 `error_body = err[:512]` 再解析，導致超過 512 字元的 JSON（如 OpenAI 401 回應）被切斷而 `json.loads` 失敗、畫面只剩半截原始字串。改為在錯誤本文仍完整時先解析成結構化 `error_detail`，再將其中**每個欄位**限制上限 512 字元；讀取舊版 checkpoint 缺少 `error_detail` 時退回解析 `error_body`／`error`。
 
-### 1.2 解析時機：**截斷之前**
+### 1.3 分組與去重鍵：`error_code` ＋ 正規化訊息
 
-- **踩到的坑**：原本先存 `error_body = err[:512]`，事後才解析。大於 512 字元的 JSON body 被切斷後就不再是合法 JSON，`json.loads` 失敗 → 退回 `{"raw": ...}` → 顯示半截 JSON 字串，正好毀掉這次改造的目的。OpenAI 的 401 body（含說明網址與 request id）長度已經逼近這個門檻。
-- **決策**：在 record 產生當下、`err` 還完整時就解析，記錄改存結構化的 `error_detail`，不再存 `error_body`。
-- **界線控制**：改在「每個欄位」上限 512 字元，而不是限制整個 body，避免 KV 無限膨脹。
-- **向下相容**：舊 checkpoint 沒有 `error_detail`，讀取時退回解析 `error_body` / `error`。
+**問題**：供應商常在錯誤訊息中嵌入 Key 尾碼（如 `****2fb7`），逐字比對會讓每把 Key 各自成組，只比對 `error_code` 則會把同狀態碼的不同原因誤併（66 把無效 Key 實測含 4 種獨立原因：逐字比對裂成 64 組、只比狀態碼縮成 2 組吃掉 2 種原因、取前 30 字元裂成 11 組、正規化後準確分成 4 組）。
 
-### 1.3 分組與去重鍵：`error_code` + **正規化後的訊息**
+**決策**：`normalize_message()`（Python）與 `normalizeMessage()`（JS）先將 Key 本體／遮罩尾碼換為 `<key>`、8 位以上 hex ID 換為 `<id>`、數字換為 `<n>` 後再比對。
 
-**問題**：許多供應商把 Key 尾碼寫進訊息，例如 `Authentication Fails, Your api key: ****2fb7 is invalid`。逐字比對會讓每一支 Key 各自成組；只比 `error_code` 又會把同一個碼底下兩種真正不同的原因合併掉。
+- **不採用「取前 X 字元」的原因**：動態片段位置不固定（第 28 與第 36 字元皆有實例），縮短 X 又會誤併開頭相同的不同原因（如 `deactivated` 與 `suspended`）。
+- **可接受副作用**：僅差在數字的兩種原因（如 `100/min` 與 `1000/min`）會合併為同一組。
 
-**實測**（66 支無效 Key，內含 4 種真正不同的原因）
+### 1.4 保留各自 `error_reason`，僅對 `error_detail` 去重
 
-| 策略 | 產生組數 | 被吃掉的原因數 |
-|---|---|---|
-| 逐字比對 | 64 | 0 |
-| 只比 `error_code` | 2 | **2** |
-| 取前 30 字元比對 | 11 | 0 |
-| **正規化後比對（採用）** | **4** | **0** |
+覆寫整組 `error_reason` 會永久抹除同組其他失敗原因。單一供應商 66 把 Key 實測顯示：保留各自 `error_reason` ＋ 對多欄位物件 `error_detail` 去重（13,717 bytes），僅比全部覆寫多 1,736 bytes（佔 KV 單值上限 25 MB 的 0.0069%），並較完全不去重（22,816 bytes）省下近 40% 空間。
 
-**決策**：`normalize_message()`（Python）／`normalizeMessage()`（JS）遮蔽會變動的片段後再比對：
+### 1.5 跨語言正規化差異與相容限制
 
-| 遮蔽對象 | 樣式 | 取代為 |
-|---|---|---|
-| Key 本體 | `sk-xxxx`、`api_xxxx` | `<key>` |
-| 遮罩尾碼 | `****2fb7` | `<key>` |
-| hex id / uuid 片段 | 8 位以上十六進位 | `<id>` |
-| 任何數字 | `1234` | `<n>` |
+Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分組（讓 KV 內舊結果不需重跑即可套用新規則）。兩端規則必須同步，且須避開兩個引擎的語法差異：
 
-```
-Authentication Fails, Your api key: ****2fb7 is invalid
-Authentication Fails, Your api key: ****df45 is invalid
-  → 同一組 "authentication fails, your api key: <key> is invalid"
-
-Your account has been deactivated. Please contact support.
-  → 維持獨立一組（同樣是 401，但確實是不同原因）
-```
-
-**為什麼不用「取前 X 字元」**：變動片段不在固定位置（A 供應商的 `sk-<tail>` 在第 28 字元，B 供應商的 `****<tail>` 在第 36 字元），實測裂成 11 組；而把 X 縮短到能合併它們，就會開始誤併 `Your account has been deactivated` 與 `Your account has been suspended for abuse` 這種共用開頭的不同原因。X 得逐家供應商調，兩個方向都脆弱。
-
-**接受的副作用**：只差在數字的兩種原因會被併起來（例如 `quota 100/min` 與 `quota 1000/min`）——這本來就是同一種原因。
-
-### 1.4 保留每支 Key 自己的訊息，只對 `error_detail` 去重
-
-曾經一度把整組的 `error_reason` 覆寫成第一支 Key 的訊息，**這是錯的**：第二種原因會被永久抹除，連 modal 都救不回來。
-
-**空間實測**（66 支 Key／單一供應商）
-
-| 方案 | payload |
-|---|---|
-| 完全不去重 | 22,816 bytes |
-| 覆寫 reason + 依 code 去重 | 11,981 bytes |
-| **保留各自 reason + 正規化去重（採用）** | 13,717 bytes |
-
-保留每支 Key 自己訊息的代價是 **1,736 bytes，佔 KV 單值上限 25 MB 的 0.0069%**。用這個代價換「不遺失任何一種死因」明顯划算。真正值得去重的是 `error_detail` 這個物件（單欄位上限 512 字元 × 多欄位），它讓 payload 從 22.8 KB 降到 13.7 KB。
-
-**結論**：短字串（`error_reason`）保留，重物件（`error_detail`）每種原因只存一份。
-
-### 1.5 正規化邏輯同時存在於 Python 與 JS
-
-- **分工**：Python 端的正規化決定「哪一筆保留 `error_detail`」（儲存），JS 端的決定「畫面怎麼分組」（顯示）。
-- **理由**：前端自己算，已經存在 KV 裡的舊結果不必重跑測試就能正確重新分組。
-- **兩邊規則刻意寫成完全相同**，不是一邊寬一邊嚴。但「寫起來一樣」不等於「跑起來一樣」：
-
-| 語法 | Python `re` | JavaScript RegExp | 實測差異 |
+| 語法 | Python `re` | JavaScript `RegExp` | 實測差異 |
 |---|---|---|---|
-| `\d` | 認得全形數字 `１２３４` | 只認 ASCII `0-9` | `余额 １２３４ 元` → Python 遮成 `<n>`，JS 原樣保留 |
-| `\b` | CJK 算 word 字元，`码abcdef12` 之間**沒有**邊界 | CJK 不算 word 字元，該處**有**邊界 | `错误代码abcdef12` → Python 只遮數字，JS 整段遮成 `<id>` |
+| `\d` | 匹配全形數字 `１２３４` | 僅匹配 ASCII `0-9` | 中文訊息含全形數字時兩端遮蔽結果相反 |
+| `\b` | CJK 算 word 字元，`码abcdef12` 無邊界 | CJK 不算 word 字元，該處有邊界 | 中文後緊接 hex ID 時兩端遮蔽範圍不一致 |
 
-  兩個差異方向相反（一個 Python 較寬、一個 JS 較寬），而且**只在非 ASCII 文字上出現**——正好就是這些供應商會回的中文訊息。
-- **修正**：兩邊都不再用 `\b` 與 `\d`，改成明確字元類別 `[0-9０-９]`，邊界則用「捕獲前導字元」`(^|[^a-z0-9])` + lookahead `(?![a-z0-9])`。27 組對照案例（中文、全形數字、西里爾字母、emoji、空白摺疊、相鄰 token 共用邊界、字串頭尾 token）在兩個引擎下輸出完全一致。順帶讓全形數字也能正確遮蔽。
-- **為什麼不用 lookbehind**：`(?<!...)` 在 Safari 16.4 以下是**解析期語法錯誤**，整個 `app.js` 會直接掛掉（不只是這個函式）。這個檔案其餘語法只需要 Safari 13.1（`?.`／`??`），沒必要為了可讀性把門檻拉高三年。
-- **為什麼不共用同一份程式碼**：本專案刻意沒有 build step（Python 跑測試、JS 跑瀏覽器），無法共用實作。若日後想根絕，可由 Python 把正規化後的 key 一併寫進結果，前端優先採用該欄位、只有舊資料才自行計算。
-- **兩邊判斷不一致時會怎樣**（僅在有人改了其中一邊、忘了改另一邊時發生）：
+- **解法**：兩邊皆改用明確字元類別 `[0-9０-９]`，邊界使用捕獲前導字元 `(^|[^a-z0-9])` ＋ 前瞻 `(?![a-z0-9])`（經 27 組非 ASCII／邊界測試驗證一致）。
+- **不用 lookbehind `(?<!...)`**：Safari 16.4 以下版本會在解析期直接報錯導致整份 `app.js` 無法執行，遠高於其餘程式碼要求的 Safari 13.1 門檻。
+- **不共用的原因與容錯**：專案維持無建置步驟，無法共用模組；若兩邊規則暫時不同步，前端在找不到對應 `error_detail` 時會退回以該組錯誤訊息組成 `{message}`，確保 📋 詳情視窗仍有原文可看。
 
-| 情況 | 後果 | 嚴重度 |
-|---|---|---|
-| Python 判「同一種」→ 只存一份 detail；JS 判「不同種」→ 拆成兩組 | 被拆出去的那組裡沒有任何一筆帶 detail | 該組原本會沒有 📋 按鈕 → **已加保護**：改成退回用該組訊息本身組出 `{message}`，只要標題被截斷就仍然給得出 📋，看得到完整原文，只是少了 `type`／`code` 這些結構化欄位 |
-| Python 判「不同種」→ 存了兩份 detail；JS 判「同一種」→ 併成一組 | 多存一份 detail（約數百 bytes），畫面顯示第一筆 | 純浪費空間，無功能影響 |
+### 1.6 顯示截斷與 `error_code` 來源對齊
 
-- **與 fingerprint 的差別**：fingerprint 三處不同步會直接查不到測試結果（功能壞掉）；正規化不同步只影響分組粒度與結構化欄位的有無，且下次重跑測試就會自我修正。
-
-### 1.6 顯示層截斷
-
-- 群組標題 `{error_code} · {truncate(message, 120)}`，超長加 `...` 後綴。
-- 完整原文放 `title` 屬性（hover 可見）與 📋 錯誤詳情 modal（不截斷）。
-- Python 端另外把 `error_reason` 壓在 200 字元，並壓平換行避免標題破版。
-
-### 1.7 `error_code` 要跟著實際採用的說明文字走
-
-`error_code` 原本固定取「第一筆失敗記錄」的狀態碼，但 fallback 文字取的是「最後一次看到的 401/403」。併發下一支 Key 先 429 再 401，就會顯示 `429 · Key 专属硬伤 (Hard Failure - 401)`。**決策**：走 fallback 分支時，`error_code` 改用該 fallback 自己的狀態碼。
+群組標題截斷至 120 字元（完整原文置於 `title` 與詳情視窗），Python 端將 `error_reason` 壓在 200 字元並去除換行。進入備援說明分支時，`error_code` 必須取該備援文字自身的狀態碼，避免併發下先 429 後 401 時顯示成 `429 · ... 401`。
 
 ---
 
-## 二、失效密鑰分頁
+## 二、失效密鑰分頁（`dead_keys`）
 
-### 2.1 KV 結構：單一 `dead_keys` 陣列
+### 2.1 儲存結構：單一 `dead_keys` 陣列
 
-- **決策**：整份記錄存成一個 KV key 的陣列，而非 `dead_key:{id}` 多筆。
-- **理由**：列表頁一定要全撈；多筆 key 會需要 `list()` + N 次 `get`，讀取放大。單一陣列 1 次讀取解決。
-- **代價**：每次新增／編輯／刪除都是 read-modify-write（1 get + 1 put）。實際量級（數百筆、每日一次自動對帳加上零星手動編輯）完全無壓力，但這代表**不具並發安全**——兩個人同時寫會覆蓋彼此，且同一個 key 有每秒 1 次寫入的限制。單一管理者情境下接受。
+將清單存為單一 KV 鍵，避免拆成多鍵後每次列表讀取都得執行 `list()` ＋ N 次 `get()`。代價是每次 CRUD 皆為「讀取—修改—寫入」（無並發寫入鎖、受同一鍵每秒 1 次寫入限制），在單一管理員情境下接受。
 
-### 2.2 雙重去重
+### 2.2 雙重去重與結構交棒（再平衡）
 
-| 對象 | 規則 | 理由 |
-|---|---|---|
-| `api_key` | 全域比對，重複則 409，保留最早那筆 | 同一支 Key 不該有兩筆失效紀錄 |
-| `error_detail` | 同 `provider_host` + 同 `error_code` 只留第一份 | 同一家、同一個碼＝同一段訊息 |
+`api_key` 全域去重（重複回傳 409），`error_detail` 依 `(provider_host, error_code)` 僅於第一筆保留。刪除或編輯（`provider_host`／`error_code` 變更）時，若原本持有 `error_detail` 的列離開該組，必須透過 `rebalanceErrorDetail()` 將 `error_detail` 轉移給同組下一筆列，否則同組剩餘列會因 `error_detail: null` 而集體遺失詳情資料。
 
-### 2.3 去重後的「再平衡」
+### 2.3 自動對帳與狀態碼同步
 
-只做去重不做再平衡會出事：
+`POST /api/results` 上傳時透過 `syncDeadKeysFromResults()` 自動對帳：來源設定內仍存在且失敗的 Key 自動寫入，已恢復（`valid_keys`）的 Key 自動刪除。**新增與刪除必須成對實作**：有了自動恢復刪除，系統才敢於紀錄 429／500 等暫時性失敗，而不會將正常 Key 永久釘在清單上；同時連手動新增的紀錄也一併受此權威結果清理，但絕不連動修改「来源设定」測試名單。對帳過程包裹 `try/catch`，失敗僅寫 log 以免讓上傳端誤判結果遺失而重跑；無實質變動時不執行 KV 寫入。
 
-- **DELETE**：刪掉持有 detail 的那筆，同組其他筆的 detail 都是 `null`，整組訊息就消失了 → 刪除時把 detail 交棒給同組的下一筆。批次刪除走同一條 `rebalanceErrorDetail()`，對每個被刪的 holder 各交棒一次；同組若刪光則無需交棒。
-- **PUT**：編輯 host 或 code 等於把記錄移出原組，原組會被孤兒化；移入的新組又可能變成兩份 detail → 兩個方向都要處理。
-- 三個 handler 共用 `sameDedupGroup()`，DELETE 與對帳再共用 `rebalanceErrorDetail()`，避免邏輯各自漂移。
+- **殘留紀錄（幽靈 Key）處理**：平行讀取 `app_settings` 並將同 host 所有卡片的 `keys` 取聯集為 `configuredKeysForHost`（不以單次上傳的 `invalid_records` 覆蓋整個 host，以免同 host 多卡片串行上傳時互相誤刪）。若 `app_settings` 缺失或解析失敗則不清空清單，僅在確定為 `{providers: []}` 時清空。
+- **兩階段狀態碼同步**：因 Python 上傳與 KV 現存的 `error_detail` 持有者可能不同，先於換碼階段對變更 `error_code` 的列執行舊組交棒與清空自身 detail，再於群組刷新階段比對本次非空 detail 決定是否更新 KV（空本文不覆寫既有詳情）。
 
-### 2.4 前端顯示
+### 2.4 批次刪除與前端實作注意細節
 
-- 被去重掉（`error_detail: null`）的列，📋 會自動借用同組第一筆的內容，使用者不需要自己去找第一筆在哪。
-- 表格欄位在 `<td>` 上設 `max-width` **無效**（auto table layout 會忽略），必須改設在內層元素上，才做得出單行 + `...` 省略。
-- 單列不再放刪除按鈕。改由面板標題列「删除密钥」（位於「重新读取」右側）進入勾選模式；按鈕切換為「取消删除」（勾選至少一筆後轉為「确认删除」，點擊後跳出既有 modal 二次確認）。表格第一欄平常顯示「编号」（由上到下顯示數字 1, 2, 3...），進入刪除模式時切換為紅框半透明勾選框（表頭為全選），第一欄設有固定欄寬（5rem）且與其它欄一樣靠左、左內距 1rem，避免貼著表格左邊線；其餘文字欄位限縮 max-width，避免切換時表格欄位跳動或產生橫向滾動條。
-
-### 2.5 自動對帳：清單語意是「來源裡目前仍失敗的 Key」，不是永久帳本
-
-（2026-08-13 追加，commit `3dcc7d4`／`1bc79f5`。初版只有手動 CRUD，維護成本落在使用者身上。2026-08-17 改為對帳時一併讀 `app_settings`，見下方「幽靈 Key」。）
-
-**決策**：每次 `POST /api/results` 都拿該次結果對帳一遍（`syncDeadKeysFromResults`）——`invalid_records` 裡、且仍在來源設定中的 Key 自動記入；`valid_keys` 裡的 Key、以及已從該 host 所有卡片移除的 Key，自動從該 `provider_host` 刪掉。
-
-**關鍵在於記入與移除必須成對做**。只做「自動記入」的話，記錄什麼樣的失敗碼就變成一個危險的判斷：429 或 500 這種暫時性失敗會把一支好 Key 永久釘在清單上，於是只敢記 401/403。加上「自動移除」之後，任何失敗碼都可以記——判斷錯了，下一次跑成功就自我修正。清單因此不是歷史帳本，而是「來源設定裡，上一次跑完之後現在還在失敗的 Key」。
-
-| 決策點 | 選擇 | 理由 |
-|---|---|---|
-| 移除範圍 | 連手動新增的記錄一起移除 | 該記錄現在斷言了一件不成立的事（這支 Key 是死的），來源是人或機器不影響它已經錯了 |
-| 是否連帶改 `来源设定` | 否，維持手動 | 從測試清單裡拿掉一支 Key 是使用者的決定，不該由一次測試結果代勞 |
-| 失敗時的處理 | `try/catch` 包住，只 `console.error` | 結果已經寫進 KV 了；對帳失敗若讓整個 `POST /api/results` 回錯，上傳端會以為整批結果掉了而重跑 |
-| 寫入時機 | 只在 `added \|\| removed \|\| updated` 時 `put` | 穩定狀態下每日排程不會產生任何 dead-keys 寫入 |
-| `expired_at` 格式 | 當日 UTC 午夜（`toIsoDay` 的形狀） | UI 當日期讀；精確時刻另存在 `created_at` |
-
-**沿用既有規則**：`api_key` 全域去重（同一支 Key 不新增第二筆）、`error_detail` 依 `sameDedupGroup()` 只留一份、移除或換碼時把 detail 交棒給同組下一筆——與 §2.2／§2.3 完全同一套邏輯。取不到 `error_detail` 時退回 `{message: error_reason}`，確保 📋 至少有東西可看。既有記錄不再整筆略過：`error_code` / `error_detail` 會跟著最新測試走，見下方「狀態碼與訊息同步」。
-
-**可觀測性**：handler 回傳 `dead_keys_added` / `dead_keys_removed` / `dead_keys_updated`，Python 端印出來。舊版 worker 沒有這些欄位，取不到就只印上傳成功，不會炸。
-
-**幽靈 Key（2026-08-17）**
-
-來源裡刪掉一支失效 Key 之後，它不會再被送測，因此下次結果裡既不在 `valid_keys` 也不在 `invalid_records`。只依 `valid_keys` 刪除的話，這筆記錄會永遠留在 `dead_keys`。
-
-不採用「本次 `invalid_records` 覆蓋整個 host」：同 host 多家卡片（聚合閘道不同路徑）串行上傳時，後上傳的那家會把前一家仍在來源裡的失效 Key 當成幽靈清掉。
-
-**採用**：對帳時平行讀 `app_settings`，把該 host 所有卡片的 `keys`（換行字串，與 `normalizeKeys()` 同一形狀，不是 `api_keys[]`）聯集成 `configuredKeysForHost`。同 host 記錄若在本次 `valid_keys`、或不在這個聯集裡，才刪。卡片 A 上傳不會動到卡片 B 仍在來源中的 Key。`invalid_records` 裡已不在聯集的 Key 也不再新增，避免跑測中途改來源時把剛清掉的幽靈加回去。
-
-`app_settings` 缺失或 JSON 壞掉時，**不**把來源當成空的（否則會整 host 清空）；只做 `valid_keys` 恢復刪除，新增也不用聯集過濾。真正存成 `{providers:[]}` 才表示來源空了，該 host 的幽靈可以清。
-
-殘餘：該 host 只剩的那張卡被整張刪掉或 Key 全空時，Python 不會 `POST /api/results`，對帳不會跑，幽靈要等手動刪或同 host 還有別家上傳。
-
-**狀態碼與訊息同步（2026-08-18）**
-
-**問題**：既有對帳用 `known.has(api_key)` 整筆跳過已在清單裡的 Key。同一支 Key 從 402（餘額不足）變成 401（未授權）時，錯誤碼與 📋 會永遠停在初次失敗。
-
-**為什麼不能逐筆覆寫 `rec.error_detail`**：Python 同一個 `(error_code, 正規化訊息)` 只有第一筆帶 `error_detail`，其餘是 `null`。這份 holder 和 KV 裡的 holder 經常不是同一支 Key。把 `null` 當成「訊息變了」會清空整組 📋；把 `null` 當成「沒有新訊息」則新原文進不來。多筆同時換碼時，若等全部改完才交棒，舊組可能丟掉唯一的 detail。
-
-**決策**：二段式，不逐筆相信單筆的 `error_detail`。
-
-1. **換碼**：本 host、且出現在本次 `invalid_records` 的既有記錄，若 `error_code` 變了，當下把舊組 detail 交棒給仍留在舊碼的兄弟，自身 `error_detail` 先清空。`id` / `expired_at` / `created_at` 不動。
-2. **群組刷新**：每個 `(provider_host, error_code)` 只留一個 holder。用本次上傳該碼的第一份非空 detail（`extractRecordDetail`，含 `error_reason` fallback）去比；內容不同才寫入。本次沒抓到 body → 不覆寫既有 📋。
-3. **新增**：真正新出現的失敗 Key 才 `added++`；該組已有 holder 則 detail 為 `null`。
-
-`updated = codeUpdates + detailUpdates`（一支 Key 換碼後新組再填 detail 會算 2，這是計數方式，不是多寫一次 KV）。三者皆 0 則不 `put`。只動本 host。
-
-### 2.6 批次刪除：一次 KV 寫入
-
-（2026-08-16 追加。）
-
-**問題**：`dead_keys` 是單一 KV 陣列，但舊 `DELETE /api/dead-keys?id=` 每刪一筆就是 1 get + 1 put。UI 若對 N 筆各打一次，會變成 N 次寫入，又撞「同一 key 每秒 1 次寫入」限制。
-
-**決策**：同一個 DELETE 接受 `ids: string[]`（body）或重複的 `?id=`（相容舊呼叫）。讀一次、過一遍再平衡、寫一次。N 筆與 1 筆的 KV 成本相同（1 get + 1 put）。回應帶上更新後的 `dead_keys`，前端不必再 GET。
-
-未命中任何 id → 404；空 ids → 400。部分命中則只刪存在的那些。
-
-### 2.7 前端篩選與排序：全在記憶體，0 次 KV
-
-（2026-08-18 追加。）
-
-進入分頁時 `GET /api/dead-keys` 已把整份清單放進 `state.deadKeys`。供應商、Key、日期、Code 篩選與五欄排序都是對這份陣列操作，不打 KV。
-
-| 決策點 | 選擇 | 理由 |
-|---|---|---|
-| Code 篩選 UI | 動態 `<select>`，只列出當前資料裡出現過的碼 | 與「供应商域名」同一套交互；手打 3 位數字容易打錯，也難以表達「沒有 Code」 |
-| 「无 Code」哨兵 | `value="__none__"`；空字串仍是「全部 Code」 | `<select>` 不能用兩個空值；手動新增的記錄 `error_code` 為 `null` |
-| 「无 Code」何時出現 | 只有確實存在 `error_code == null` 的列才加入選項 | 與 host 下拉一樣，不提供當前資料裡不存在的選項 |
-| 排序實作 | 排資料再重繪，不搬 DOM `<tr>` | 编号是顯示序 `i + 1`；勾選靠 `r.id`。結果表那種 DOM 排序會讓编号錯位 |
-| 编号正序 | 既有 `sortByProviderOrder`（設定裡的供應商順序 + 同 host 插入序） | 預設與改造前一致 |
-| 编号倒序 | 把整份正序結果反轉 | 「反轉供應商順序但插入序不動」會讓编号欄的倒序難以理解；整份反轉等於从末列数回来 |
-| 无日期／无 Code | 升序降序都排最後 | 比較結果整段取負會把空值翻到最前 |
-| 批量勾選時的编号欄 | 換成全選核取方塊，不加 `data-sort` | 其它四欄仍可排；`onDkCheckChange` 走同一套 `visibleDeadKeys()`，避免全选状态对不齐 |
-| 表頭箭頭與欄寬 | 失效密钥表 `table-layout:fixed` + `min-width`。只有错误讯息不设 `width`（吃剩余）；其余固定。窄于 min-width 时横滑，不把栏压叠 | 长错误原文才用得上多出来的宽度；供应商长度相对稳定。所有栏都写死时改一栏就要重算；表 `width:100%` 且总和超过屏幕会把栏挤叠 |
+- **批次刪除**：`DELETE /api/dead-keys` 支援 `ids: string[]`，讀一次 KV、執行一次再平衡、寫回一次並直接回傳更新後陣列，避免 N 筆逐一刪除觸發 KV 每秒 1 次寫入限制。
+- **表格與排序細節**：在 `table-layout: auto` 下直接對 `<td>` 設 `max-width` 會被瀏覽器忽略，須設於儲存格內層元素；`dead_keys` 表格改用 `table-layout: fixed` ＋ `min-width` 並僅讓錯誤訊息欄吃剩餘寬度；Code 篩選以 `value="__none__"` 區分「無 Code」與「全部」；排序直接重排資料陣列並重新渲染（而非搬移 DOM `<tr>`），使序號與勾選狀態不致錯亂，且無日期／無 Code 列無論升序降序一律置底。
 
 ---
 
 ## 三、單一 Key 連跑兩輪
 
-| | |
-|---|---|
-| **問題** | 只有一支 Key 時沒有交叉驗證的餘地——沒有別的 Key 能證明模型是健康的，單次抖動就會讓模型被判死。 |
-| **決策** | `len(keys) == 1` 時 `runs_per_pair = 2`，同一個 `(Key, Model)` 連跑兩輪，中間間隔 `SINGLE_KEY_RERUN_DELAY = 2.0` 秒。 |
-| **為什麼不用「把 pair 塞進佇列兩次」** | 併發度 ≥ 2 時兩輪會同時發出，間隔形同虛設。改成在 worker 內依序執行，才能保證順序與暫停。 |
-| **判死就不跑第二輪** | 第一輪觸發熔斷（401/403、balance/quota）後再打一次只是浪費額度，也符合既有「死 Key 跳過所有剩餘模型」的邏輯。實測：死 Key 只發 1 次請求、不浪費 2 秒等待。 |
-| **兩輪都記錄** | 模型要兩輪都失敗才算失敗；Key 只要有一輪成功就算有效；效能統計也多一個樣本。 |
+當服務商只有 1 把 Key 時缺乏交叉驗證，因此設 `runs_per_pair = 2`（兩輪間隔 `SINGLE_KEY_RERUN_DELAY = 2.0` 秒）。
 
-**斷點續跑連帶調整**：原本「有一筆成功就跳過該 pair」會讓中斷後的續跑悄悄退化成只跑一輪。改成要累積到 `runs_per_pair` 筆成功才算完成；未滿額的 pair 連同舊紀錄一起丟棄重跑，避免舊樣本與新兩輪疊成 3 筆。
+- **為何不用「佇列塞入兩次」**：併發 ≥ 2 時兩輪會同時發出而使 2 秒間隔失效，須在單一 worker 迴圈內依序執行。
+- **熔斷與續跑規則**：第一輪觸發不可重試熔斷（如 401/403）時立即停止，不浪費第二輪額度與 2 秒等待；斷點續跑須累計滿 `runs_per_pair` 筆成功才算完成，未滿額組合會捨棄舊紀錄重跑兩輪。
 
 ---
 
 ## 四、樣本長度上限
 
-（2026-08-13 追加，commit `5a5cc2d`。）
+`MAX_OUTPUT_TOKENS = 512` 無法約束忽略該參數或另計推理 Token 的供應商。採 `SAMPLE_MAX_LEN = 2048`（`content` 與 `thinking` 分開計算）作為安全網：
 
-**問題**：`MAX_OUTPUT_TOKENS = 512` 攔不住所有供應商——有的直接無視，有的把推理 token 排除在上限之外。樣本原樣進 KV，單一模型的 sample 就可能膨脹到數十 KB。
-
-| 決策點 | 選擇 | 理由 |
-|---|---|---|
-| 上限值 | `SAMPLE_MAX_LEN = 2048`（content 與 thinking 各一份） | 這是安全網，不是常態裁切線。守規矩的供應商在 512 token 內根本碰不到 2048 字元，只有失控的才會被切 |
-| 切法 | 掐頭留尾，各 1024 | 推理模型想很久、結論落在最後一句。只取前段會把「= 323」切掉，看起來像沒答完 |
-| 不改 `MAX_OUTPUT_TOKENS` | 維持 512 | 放寬只是讓話多的模型改成撞 `TOTAL_TIMEOUT = 20s`，從「被切短」變成「整筆失敗」，更糟 |
-| `answer_verified` 的時機 | **截斷之前**用完整文字判定 | 順序反過來，落在被省略中段的 `323` 會讀成答錯（`async_test_keys.py:754`） |
-| 可重複套用 | 帶 `CLIP_MARK` 的字串原樣返回 | 從舊 checkpoint 恢復的紀錄是加上限之前寫的，進 KV 前會再過一次；沒有這個保護會疊上第二層省略 |
+- **保留頭尾各 1024 字元**：推理模型結論常落在結尾，只留前段會將最終答案裁切掉。
+- **為何不放寬 `MAX_OUTPUT_TOKENS`**：放寬會讓長輸出模型轉為觸發 `TOTAL_TIMEOUT = 20s`，由內容被截斷惡化為整筆超時失敗。
+- **驗證與冪等順序**：`answer_verified` 必須於截斷前以完整回應判斷（`async_test_keys.py:754`）；帶 `CLIP_MARK` 字串直接原樣返回，防止舊 checkpoint 恢復匯總時被二次截斷。
 
 ---
 
 ## 五、KV 操作稽核
 
-**寫入（免費額度 1,000/日）**
-
-| 觸發 | 次數 |
-|---|---|
-| `POST /api/checkpoint` | 每 200 個任務 1 次 + 每個供應商結束 1 次 |
-| `POST /api/results` | 每個供應商 1 put + 1 delete，外加對帳的 2 get（`dead_keys` + `app_settings`）；清單有變動時再 1 put |
-| `POST /api/settings` | 使用者儲存時 1 put + N delete（僅清理已移除的供應商 checkpoint） |
-| dead-keys 增／改／刪 | 各 1 get + 1 put；批次刪除仍是 1 put，與筆數無關 |
-
-單一供應商 600 個任務 ≈ 5–6 次寫入；10 個供應商的每日排程約 60 次，遠低於額度。穩定狀態下（沒有 Key 狀態變化）對帳不寫入，回到約 50 次。
-
-**讀取（免費額度 100,000/日）**
-
-- 測試結果頁：每個供應商 2 次讀取（results + checkpoint），每次切換分頁或按「重新讀取」都會重跑。10 個供應商 = 每次瀏覽 20 次讀取。
-- 來源設定頁：每次切換 1 次讀取。
-- 失效密鑰頁：首次載入 1 次，之後快取，只有「重新讀取」或整頁重載才會再讀。
-- **無任何輪詢**：全專案沒有 `setInterval`／visibilitychange 自動刷新，所有讀取都由使用者動作觸發。
-- **每日排程對帳**：每個供應商上傳結果時多讀 1 次 `app_settings`（與 `dead_keys` 平行）。10 個供應商 = 20 次讀取，可忽略。
-- **認證不佔用量**：session 驗證是純運算（HMAC），不讀 KV；`GET /api/results` 改為需認證後，讀取次數也沒有變化。
-
-**一個已知但不處理的點**
-
-1. `dead_keys` 是單一 key 的 read-modify-write，撞得到「同一 key 每秒 1 次寫入」限制。目前唯一的程式寫入是每個供應商上傳結果時對帳一次，而供應商是串行處理、每個都要跑幾分鐘，不會連續寫。若日後改成並行跑供應商，這裡要重新評估。
+- **寫入量（免費上限 1,000／日）**：單一服務商 600 任務約 5～6 次寫入，10 個服務商每日排程約 60 次（穩定無異動時約 50 次）。
+- **讀取量（免費上限 100,000／日）**：無任何背景自動輪詢（無 `setInterval`／`visibilitychange` 刷新），僅使用者主動切換／重讀與排程對帳時讀取，10 個服務商每次瀏覽結果頁約 20 次讀取。
+- **已知限制**：`dead_keys` 為單一鍵讀改寫，理論受限於每秒 1 次寫入，目前因每日排程依序執行各服務商且耗時數分鐘而不會衝突；若日後改為多服務商並行上傳結果，須重新評估鎖定機制。
 
 ---
 
-## 六、API 認證
+## 六、API 認證與權限隔離
 
-### 6.1 `GET /api/results` 從公開改為需認證
+### 6.1 `GET /api/results` 改為需認證
 
-| | |
+`results` 含明文 Key，且查詢鍵 `fp = SHA-256(api_base + provider_type)` 皆為公開可窮舉資訊；加上頁面載入本就須先驗證 `/api/settings`，補上 `requireAuth` 屬零功能損失的安全修正。
+
+### 6.2 瀏覽器憑證採用無狀態 HttpOnly Session Cookie
+
+| 候選方案 | 不採用或採用理由 |
 |---|---|
-| **問題** | 該端點回傳的是明文 Key —— `valid_keys` 全清單，加上 `invalid_records[].api_key`。唯一的門檻是 `fp`，而 fingerprint = `SHA-256(api_base + provider_type)`，兩個輸入都是公開資訊，任何人離線就能算出來窮舉。 |
-| **關鍵事實** | 這個公開性沒有換到任何功能：結果頁本來就要登入才渲染得出來（`loadResults()` 第一件事就是帶憑證打 `/api/settings`）。 |
-| **決策** | 加上 `requireAuth`，前端該筆呼叫補上 `auth: true`。功能零損失。 |
+| `localStorage` ＋ Bearer | 直接存放 `ADMIN_PASSWORD`，一次 XSS 即永久外洩且無法在網址列直接檢視 API |
+| HTTP Basic Auth | 缺乏標準登出語意，憑證會被快取至關閉瀏覽器且無法使用 `SameSite` |
+| 簽章 Query Token | 會暴露於瀏覽器歷史、Referer 與 Cloudflare 存取日誌 |
+| Cloudflare Access | 強綁 Dashboard 額外設定，GHA 端須改用 Service Token |
+| **無狀態 HttpOnly Cookie（採用）** | XSS 無法竊取、支援即時登出與網址列直開 JSON；採 `<到期毫秒>.<HMAC>` 避免每次請求多讀一次 KV（及受最終一致性影響）。代價是無法個別撤銷單一 cookie，全域撤銷須更換 `ADMIN_PASSWORD` 或調升 `SESSION_VERSION`。 |
 
-### 6.2 瀏覽器憑證：session cookie，而不是 Bearer
+`localStorage` 僅保留不具認證效力的 `atk_signed_in` 旗標，供 `index.html` 在首次繪製前預先隱藏登入遮罩避免畫面閃爍；真正驗證於 `bootstrap()` 請求 `/api/settings` 完成。供腳本與 GHA 使用的 Bearer 路徑維持不變。
 
-**問題**：全部端點都要認證之後，手動檢查任何 API 都得靠會改 header 的工具（Postman、擴充套件）。網址列送不出 `Authorization`。
+### 6.3 CSRF 防護：`SameSite=Strict`
 
-| 選項 | 優點 | 為何不選 |
+因寫入端點 `request.json()` 不檢查 `Content-Type`（跨站 `<form enctype="text/plain">` 仍可送出 JSON 並帶上 cookie），系統完全依賴 `SameSite=Strict; Path=/api` 阻擋跨站請求攜帶 cookie（代價是從外部站點點連結跳轉 `/api/...` 會見 401，刷新即可）。
+
+### 6.4 獨立的轉發密碼（`PROXY_PASSWORD`）
+
+轉發端點須發給外部軟體使用，因此必須與 `ADMIN_PASSWORD` 隔離，且後端明文比對後**明確拒絕兩者設為相同值**（回傳 503）。認證標頭同時支援 `Authorization: Bearer`、`x-api-key`（Anthropic SDK）與 `x-goog-api-key`（Gemini SDK）。
+
+---
+
+## 七、瀏覽器端防護與設定並發
+
+### 7.1 安全標頭寫入 Worker 出口
+
+Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSETS.fetch()` 行為於官方文件中有衝突），故於 worker 出口統一以 `withSecurityHeaders()` 附加 CSP、`nosniff`、`X-Frame-Options`、`Referrer-Policy` 與 `Permissions-Policy`。
+
+### 7.2 嚴格 CSP 的實作陷阱
+
+- **主題預載腳本**：將防閃爍 inline script 獨立至 `public/boot.js`，避免每改一行就得重算 CSP hash。
+- **禁用 `style=""` 與 CSS 特異性回歸**：將所有行內樣式改為 class（CSSOM `_mirror.style` 不受 CSP 限制）。轉換後 `.topbar-menu-close` 曾因宣告順序早於 `.btn-ghost` 而退回有框按鈕，須提升選擇器特異性為 `.btn-ghost.topbar-menu-close` 才能穩定生效。
+- **白名單例外**：`connect-src` 僅放行 `discord.com`／`discordapp.com`（供瀏覽器端測試通知）；`img-src` 須保留 `data:` 以載入 SVG favicon 與下拉箭頭。
+
+### 7.3 設定並發控制與不設登入限流
+
+- **`app_settings` 樂觀鎖**：以 `version` 欄位將跨分頁同時存檔的靜默覆蓋轉為看得見的 `409 Conflict`（前端收到後重拉最新設定）；刻意放行不帶 `version` 的請求以利 `curl` 手動搶修；設定彈窗僅回傳自身管理的兩個欄位避免夾帶過時清單。
+- **`dead_keys` 規模**：因同一把 Key 不重複新增，清單上限僅等於來源設定不重複 Key 總數，不會隨天數膨脹，故不做筆數截斷。
+- **登入不設速率限制**：WAF 免費版只有 1 條 10 秒窗規則效果極弱，而 KV 計數反而會讓攻擊者用幾百次錯誤登入耗盡每日 1,000 次寫入額度（把認證問題變為可用性故障），故依賴高熵密碼防護。
+
+---
+
+## 八、依賴管理與開發環境注意
+
+專案遵守 `AGENTS.md` 約束，不建立 `wrangler.toml`，所有正式設定皆走 Dashboard；本機執行 `npm run dev` 若遇 `workerd` 支援日期比當天慢一天，須手動補充 `--compatibility-date`。此外本機根目錄執行時若受 `.wrangler/` 殘留快取影響，曾觀察到 `/api/*` 未進 worker 而落入靜態 404 的現象（乾淨目錄下正常），異常時可清理本地狀態後重試。
+
+---
+
+## 九、自定義請求頭（Custom Headers）
+
+- **陣列格式 `[{ key, value }]`**：維持 UI 輸入順序並避免編輯同名或特殊字元時發生 JSON 鍵衝突。
+- **後置覆蓋**：於預設標頭（含協定認證標頭）建立完成後注入，使特殊供應商能覆蓋預設 `User-Agent` 或認證標頭。
+- **RFC 7230 與 CRLF 消毒**：前端阻擋不合規範的標頭名稱並移除值內 `\r\n`；Python 端再次過濾並僅略過非法項而不中斷整輪測試。
+
+---
+
+## 十、已知取捨總表
+
+| 取捨項目 | 採用方案 | 承受代價 |
 |---|---|---|
-| 維持 localStorage + Bearer | CSRF 免疫（跨站無法附加自訂 header） | 存的就是 `ADMIN_PASSWORD` 本人，JS 可讀，一次 XSS 即永久外洩且無法撤銷；網址列仍然不能用 |
-| HTTP Basic | 程式碼最少，瀏覽器自動帶 | HTTP 沒有登出語意，憑證由瀏覽器快取到整個關閉為止，做不出可用的登出按鈕；登入 UI 變成原生彈窗，現有 `authOverlay` 與 `?mock` 流程都要重排；沒有 `SameSite` 可用 |
-| 簽章 query token（`?t=...`） | 可分享 | 會進瀏覽器歷史、Referer 與 CF 日誌，等於把憑證灑出去 |
-| Cloudflare Access | 零程式碼，順帶擋掉暴力破解 | 綁定 dashboard 設定，GHA 要改用 Service Token |
-| **cookie session（採用）** | HttpOnly 讓 XSS 偷不走可離線重用的憑證；有到期；登出由伺服器清除，即時可靠；網址列直接開 `/api/...` 就看得到 JSON | 需自行處理 CSRF（見 6.4） |
-
-Bearer 路徑原樣保留給 `async_test_keys.py` 與 GHA，兩者不受影響。
-
-### 6.3 session 為何是無狀態的
-
-cookie 值為 `<到期毫秒>.<HMAC(ADMIN_PASSWORD, 版本.到期)>`。
-
-| | |
-|---|---|
-| **替代方案** | KV 存 `session:{id}`，可個別撤銷 |
-| **不選的理由** | 每個認證請求多一次 KV 讀取，等於把第五節記的用量直接翻倍（結果頁每次瀏覽 20 → 40 次）；另外新寫入的 session 受 KV 最終一致性影響，登入偶發失敗 |
-| **代價** | 單一 cookie 無法個別撤銷，登出只是叫瀏覽器丟掉它；若 cookie 值事先被複製，它在到期前仍然有效 |
-| **全域撤銷手段** | 換 `ADMIN_PASSWORD`，或把 `_worker.js` 的 `SESSION_VERSION` 加一（不必動密碼） |
-
-簽章密鑰直接用 `ADMIN_PASSWORD`，不另外開一個 secret：多一個 secret 就多一處要在 dashboard 與 GHA 同步，而它的外洩後果與密碼本身相同，分開存放並沒有換到隔離性。
-
-### 6.4 CSRF：靠 `SameSite=Strict`，不做 token
-
-寫入端點都用 `request.json()` 解析，而它**不檢查 `Content-Type`**——跨站的 `<form enctype="text/plain">` 送出的 body 一樣會被當成 JSON 吃下去，且瀏覽器會自動附上 cookie。`SameSite=Strict` 是這裡唯一的防線：任何跨站發起的請求都不帶 cookie，而在網址列輸入或按書籤屬於同站導航，照常帶上。代價是從外部網站點連結進 `/api/...` 會看到 401，重新整理即可。
-
-`Path=/api` 讓 cookie 不會跟著每個靜態資源送出去。
-
-### 6.5 前端不再持有任何憑證
-
-localStorage 只剩 `atk_signed_in` 旗標，它不是憑證，唯一用途是讓 `index.html` 在首次繪製前決定要不要藏登入卡片，否則已登入者每次重整都會閃一下登入畫面。真正的驗證由 `bootstrap()` 打一次 `/api/settings` 完成。`api()` 的 `auth: true` 參數改變語意：不再是「加 header」，而是「這支呼叫需要 session，收到 401 就把登入遮罩叫回來」，順帶把 session 過期處理掉。
-
-### 6.6 實測
-
-本機 `wrangler pages dev`，七項全過：無認證讀 `/api/results` → 401；錯誤密碼 → 401；正確密碼 → 200 且 `Set-Cookie` 屬性完整；帶 cookie 讀 results／settings → 200；Bearer 讀 settings → 200；錯誤 Bearer → 401。
-
-> 過程中發現：在 repo 根目錄跑 `npm run dev`，`/api/*` 會全部落到靜態資源 404（body 是 `404 Not Found` 加 `Vary: Origin`），worker 根本沒被呼叫；同一份檔案複製到乾淨目錄跑就正常，改動前的版本也一樣。疑似 `.wrangler/` 殘留狀態，**未驗證**。
-
-### 6.7 轉發密碼獨立於管理密碼（2026-11-09）
-
-| | |
-|---|---|
-| **問題** | 轉發要交給聊天軟體等外部程式使用，若沿用 `ADMIN_PASSWORD`，等於把管理網頁的門禁發出去：拿到轉發密碼的人可以改來源設定、看全部明文 Key。 |
-| **決策** | 另開 `PROXY_PASSWORD`。`/proxy/*` 只認這一個密碼，且**明文比對後拒絕與 `ADMIN_PASSWORD` 相同**（相同時回 503 並說明），避免部署者把兩者設成同一個值而讓隔離失效。 |
-| **三種標頭** | `Authorization: Bearer`、`x-api-key`、`x-goog-api-key` 任一都接受。Anthropic SDK 只送 `x-api-key`、Gemini SDK 只送 `x-goog-api-key`，只認 `Authorization` 會把官方 SDK 全部擋掉。 |
-| **未設定時** | 直接回 503，不留一個無密碼的開放端點。 |
-| **代價** | 多一個 secret 要在 dashboard 維護；轉發密碼外洩時只能換值（所有呼叫方一起受影響），沒有單一用戶撤銷。 |
+| 瀏覽器認證與儲存 | HttpOnly Cookie（無狀態 HMAC） | 依賴 `SameSite=Strict` 防 CSRF；無法撤銷單一 cookie；更換 `ADMIN_PASSWORD` 會使所有已登入瀏覽器失效 |
+| 安全標頭位置 | Worker 出口統一附加 | 多一層包裝（因 `_headers` 對 `_worker.js` 無效） |
+| `app_settings` 並發 | 樂觀鎖 `version` ＋ 409 | 仍存在毫秒級競爭窗，但不再靜默覆蓋 |
+| `dead_keys` 並發與生命週期 | 單一 KV 陣列、每日結果對帳 | 手動編輯與對帳同時發生會遺失單次編輯；不保留失效歷史；若整個 host 無卡片則殘留須手動刪 |
+| 錯誤分組與樣本裁切 | 正規化訊息去重；樣本各限 2048 字元掐頭留尾 | 僅數字不同的原因會合併；超長回應中段省略；Python／JS 正規化須手動同步 |
+| 單一 Key 測試次數 | 依序連跑兩輪、滿額才算續跑完成 | 單 Key 服務商測試耗時與請求數加倍 |
+| 儲存後端預設值 | 未填 `STORAGE_BACKEND` ＝ `d1` | 僅綁定 KV 的舊站台直接升級新版會全數 500；須按 README 順序搬移上線 |
+| `store` 與 `key_state` 分工 | `store` 存 JSON、`key_state` 為關聯表 | 無法對設定內容下 SQL 篩選，換取 KV／D1 共用大部分讀寫邏輯 |
+| 搬移與還原備份 | 先備份 KV 才搬移；`--restore` 前再備份 D1 | 本機備份檔含明文 Key，須由管理員妥善保管權限 |
+| 轉發失敗與恢復 | 非 2xx 一律計數換鑰；每日測試 `valid_keys` 自動恢復 | 上游全面故障會使當次選用 Key 計數禁用；手動「测试」只記失敗不代替恢復，避免成為繞過門檻後門 |
+| Gateway 日誌與快取 | 深連結前往儀表板；預設帶 `cf-aig-skip-cache: true` | 深連結 URL 需先於真實帳號抄錄設定；不啟用快取確保標註與最近使用時間不失真 |
 
 ---
 
-## 七、瀏覽器端防護與設定寫入
+## 十一、KV → D1 與輪詢轉發設計演進（2026-11-09 至 2026-11-10）
 
-### 7.1 安全標頭放在 worker，不用 `_headers`
+### 11.1 後端架構與原子性取捨
 
-Cloudflare 文件明確指出，`_headers` 定義的標頭**不會**套用到 Pages Functions 產生的回應，並點名 advanced mode 的 `_worker.js`；`env.ASSETS.fetch()` 轉手回來的靜態資源算不算例外，文件兩處敘述互相矛盾，**無法從文件確認**。因此不放 `_headers`，改在 worker 出口統一 `withSecurityHeaders()`，靜態資源、API 回應、404 與 500 全部涵蓋。
+- **預設採用 D1 的理由**：輪詢要求每筆請求精準更新最近使用時間與失敗計數，KV 最終一致性與每日 1,000 次寫入上限無法負荷。D1 以單一條 `UPDATE … RETURNING` 同時完成選鑰與推進時間戳；時間戳於**取用當下**寫入並取 `MAX(now, 全域最大值 + 1)`，防止重試迴圈或同毫秒並發選中同一把 Key（`NULL` 在 `ORDER BY ASC` 排最前，讓新金鑰優先輪用）。
+- **無跨語句交易的因應**：每個狀態異動皆設計為單一原子 SQL 語句，中斷最多少記一次帳，不致損壞帳本。
+- **非 2xx 單一失敗規則**：不同供應商對無效金鑰回傳碼不一（Gemini 回 400），依狀態碼分流會讓無效 Key 永不被換掉；重試用完時原樣回傳最後一次上游回應並使用原始位元組重送。
+- **移除 `ollama`**：無實際使用配置且其 `api_base` 不含版本前綴，移除後所有服務商皆一致遵守「填至版本前綴」規則，儲存時對 `ollama` 直接回 400。
+- **標頭淨化順序**：清除呼叫端 `Cookie`、跳躍式標頭與所有 `cf-aig-*` → 換上金鑰認證標頭 → 套用 `Custom Headers`（可覆蓋認證） → 最後寫入系統自有 `cf-aig-*`（其中 `cf-aig-metadata` 嚴格限 ASCII，因 HTTP 標頭僅支援 Latin-1，全形字會讓 `fetch` 拋出 `TypeError`）。
+- **同步失敗防護（B′）與精準還原**：選鑰後立即以 `provider.keys` 複核，已從來源刪除的列即刻刪除重挑（不採「先帳本後設定」以免未存入設定先生效）；僅整個指紋一列都沒有時才自動補列，部分缺列顯示 `synced: false`。`--restore` 採先 upsert 再刪多餘列的精準快照還原，與 `export` 共用 20000 筆上限。
 
-實測三條路徑（`/`、`/boot.js`、`/api/settings`）都帶到 CSP、`nosniff`、`X-Frame-Options`、`Referrer-Policy`、`Permissions-Policy`。
+### 11.2 轉發頁版面與元件設計決策
 
-### 7.2 上 CSP 前必須先做的三件事
+- **上方工具列＋每把金鑰小卡**：避免在金鑰多時出現過長的單欄大卡片；並維持四個分頁使用一致的 `--bg-2`／`--radius`／`1.35rem` 卡片語言與 `--control-h`（`2.5rem`）控制項高度。
+- **測試模型選單來自來源設定，但選擇獨立保存**：候選清單直接讀取 `providers[].models` 避免重複輸入，預設選取第一個模型，但仍須按下「保存模型」寫入獨立的 `app_settings.proxy_test_models` 才啟用測試，防止調整來源設定模型順序時意外更改探測對象。
+- **統計配色與層級**：`有效 X 无效 Y` 採用比 `14px` 正文大一級的 `--text-base`（桌機 `16px`／`700`）而不搶成第二標題，並改用柔和的 `--ok-soft`／`--fail-soft`（淺色主題下反向調整飽和度與亮度以保持白底對比度）。
+- **單一頁首 Gateway 按鈕**：移至頁首 `重新读取` 右側，因其檢視整家服務商流量而非探測單把金鑰；箭頭 `↗` 使用 `aria-hidden="true"` 保持無障礙名稱為「Gateway 记录」，無可用網址時保持停用不隱藏，維持頁首位置穩定。
 
-`script-src 'self'` 與 `style-src 'self'` 不能直接開，會靜默壞掉。
+### 11.3 前端 CSS 與互動陷阱紀錄
 
-| 障礙 | 處理 | 為何這樣選 |
-|---|---|---|
-| `index.html` 有一段避免主題閃爍的 inline script | 搬到 `public/boot.js`，仍是 head 內的阻塞式載入，一樣在首次繪製前執行 | 另一條路是算 hash，但那份 hash 在腳本被編輯的當下就失效，而且是靜默失效 |
-| 9 處 inline `style=`（`index.html` 6、`app.js` 模板 3） | 全改成 class，新增 `.provider-card-badges`、`.badge-spaced`、`.empty-note`、`.field-row`、`.no-shrink`、`.input-concurrency`、`.input-errcode`、`.topbar-menu-title`、`.topbar-menu-close` | 保留 `'unsafe-inline'` 的話 `style-src` 等於沒設。**注意**：`app.js` 量測用的 `_mirror.style.cssText` 不必改，CSP 不管 CSSOM 寫入，只管標記裡的 style 屬性 |
+- **`aria-disabled` 樣式**：`<a class="btn">` 不受 `:disabled` 匹配，須於 `.btn` 與各 `:hover` 規則補上 `[aria-disabled="true"]` 處理，避免無法點擊的連結仍有懸停高亮。
+- **RWD 順序與縱向 `flex-basis`**：轉發樣式必須排在 `── RWD` 區段之前才不會覆蓋手機斷點；`.proxy-toolbar-row` 轉成 `column` 後 `flex-basis` 會變成元素高度，因此 `.proxy-url` 在手機斷點須重設為 `flex: none` 並改為自動換行。
+- **模型選單 `flex: none` 固定寬度**：`.proxy-model-select` 必須使用 `flex: none` 配明確 `15rem` 寬度；若使用可縮減的 `flex-basis`，右側群組計算內在寬度時只會量到選項文字寬度，導致後方按鈕提前換行。
+- **「保存模型」按鈕寬度穩定**：點擊後文字從「保存模型」（4 字）變為「已保存」（3 字）時，`.proxy-save-model` 以縱向 flex（`gap: 0`）搭配零高度 `::after` 錨定四字實際字體寬度（不硬寫 `rem` 或行內 `style`），並以 `content: "保存模型" / ""` 防止螢幕閱讀器重覆唸出；同時於 `app.js` 使用 `proxySaveModelTimer` 追蹤計時器，在連點或重畫工具列（切換服務商）時清除舊計時器。
 
-**這個轉換有一個會靜默壞掉的坑**：inline style 原本永遠贏，換成 class 之後要跟既有規則比特異性與順序。`.topbar-menu-close`（宣告在 Topbar 段）就輸給了後面 Buttons 段的 `.btn-ghost`／`.btn-sm`，關閉鈕從純文字變回有框按鈕——實機量到 `border 1px / padding 6.75px`，而不是預期的 `0 / 3.2px`。改成兩個 class 的選擇器（`.btn-ghost.topbar-menu-close`）後，即使把規則塞到樣式表第 0 條（順序最不利）仍然勝出。其餘 8 處實測都正確。
-| Discord 測試按鈕是從瀏覽器直接 POST 到使用者填的網址 | `connect-src` 放行 `discord.com` 與 `discordapp.com` | 代價是走中繼／代理網域的 webhook 會被擋，需要時在此加白名單 |
+### 11.4 尚待正式線上環境複驗項目
 
-`img-src` 必須留 `data:`：favicon 是 inline SVG data URI，`style.css` 的下拉箭頭也是 data URI 背景圖。
-
-### 7.3 `app_settings`：版本號，不是分拆儲存
-
-**問題**：整包 full-replace 寫入。兩個分頁從同一份快照存檔，後存的會**靜默**蓋掉先存的，連 provider 與 Key 一起。
-
-| 選項 | 為何不選 |
-|---|---|
-| KV 條件寫入 / CAS | KV 沒有這個能力，直接排除 |
-| 每個 provider 一把 KV key | 消除陣列層級碰撞，但 Python 腳本讀的是單一 blob，屬中型重構 |
-| **版本號（採用）** | 約十行。value 帶 `version`，寫入時比對，不一致回 409 |
-
-競爭窗口沒有消失，只是從「分鐘級」縮到「毫秒級」；真正的收穫是**把靜默資料遺失換成看得見的錯誤**。前端收到 409 會先把伺服器上的版本拉回來重繪，再要求使用者重做，避免他對著一份已不存在的快照重存。
-
-**不帶 `version` 的請求放行**是刻意的：唯一的並發寫入者是前端，而它一定會帶；curl 手動修復則不該被版本擋住。
-
-設定 Modal 同時改成只送它自己的兩個欄位，不再回送整包——它手上的 provider 清單可能是舊的。
-
-實測：`v0` → 200（新版本 1）；重送 `v0` → 409；`v1` → 200（2）；不帶 version → 200（3）。
-
-### 7.4 `dead_keys` 全量改寫：查證後維持現狀
-
-先前把它描述成「只增不縮、長期逼近 KV 單值上限」，**查證後這個說法不成立**。`syncDeadKeysFromResults` 對已存在的 `api_key` 不新增第二筆，只刷新 `error_code` / `error_detail`，所以：
-
-- 同一支 Key 每天重跑**不會**新增第二筆，`expired_at` 與 `created_at` 維持第一次失敗那天。
-- 清單規模的上限是「設定裡不重複的 Key 總數」，與天數無關。
-- 錯誤碼與 📋 會跟著最新測試走；無實質變化時仍然 0 寫入。
-
-因此不採用筆數／天數上限——那會犧牲記錄完整性，去換一個不存在的成長問題；也不做 host 分片或搬 D1。**仍然存在的**是丟失更新：使用者在 UI 上編輯記錄的同時，上傳結果觸發對帳，窗口幾秒，代價是一次手動編輯被蓋掉。KV 沒有條件寫入，單值方案在 KV 內無解，接受。
-
-### 7.5 未處理：登入嘗試次數
-
-| 方案 | 為何不做 |
-|---|---|
-| WAF 速率限制規則 | 免費方案上限是 1 條規則、運算式只有 Path 與 Verified Bot、IP 計數、計數窗與封鎖時長都固定 10 秒。5 次/10 秒的設定下，單一 IP 每天仍可嘗試約四萬次 |
-| Worker 內用 KV 計數 | 免費寫入額度 1,000/日，而整個每日排程才用約 50 次。每次失敗登入寫一次計數器，等於讓攻擊者用幾百個請求耗盡當日寫入額度，結果上傳跟著失敗——把認證問題換成可用性問題 |
-| Turnstile | 唯一能真正擋自動化猜測的低成本手段，但要多一個第三方腳本與 secret，並牽動 CSP |
-
-**決策**：依賴密碼熵。線上猜測的速率與離線字典攻擊差好幾個數量級，而實務上密碼失守多半是外洩而非被猜中，節流對外洩沒有任何幫助。
-
----
-
-## 八、依賴更新
-
-| 項目 | 版本 | 說明 |
-|---|---|---|
-| wrangler | 4.95 → 4.121 | 清掉 npm audit 回報的 6 個弱點（2 high / 4 moderate） |
-| actions/checkout | v4 → v7 | v5 起改用 node24；v7 擋掉 fork PR checkout，本工作流是 schedule + workflow_dispatch，不受影響 |
-| actions/setup-python | v5 → v7 | v6 起改用 node24；v7 移除 `pip-install` input，本專案未使用 |
-
-**推送時遇到的衝突**：遠端已合併 Dependabot 的 wrangler `^4.103.0`。採 rebase，`package.json` 保留較新的 `^4.121.0`，`package-lock.json` 直接以解好的 `package.json` 重新產生，而不是手動合併 380 行 lockfile。
-
-**未處理**：`npm run dev` 仍需手動加 `--compatibility-date`。wrangler 預設帶入「今天」，但內建的 workerd 只支援到前一天，永遠差一天。由於「不放 `wrangler.toml`、Cloudflare 設定一律走 dashboard」是既定約束（見 `AGENTS.md`，出處為 `docs/SPEC-0813.md` §13），此處未自作主張修改。
-
----
-
-## 九、驗證方式
-
-| 範圍 | 方式 |
-|---|---|
-| 錯誤解析／去重／單一 Key 兩輪 | Python 腳本對 mock 供應商（本機 aiohttp server）實跑，涵蓋 401 熔斷、flaky 模型第二輪救回、中斷續跑 |
-| dead-keys API | Node 腳本打本機 wrangler，涵蓋 409 重複、PUT／DELETE 再平衡四種情境、批次 DELETE 一次寫入、404／400 邊界 |
-| dead-keys 對帳（Plan B + 狀態同步） | Node 腳本打本機 wrangler：恢復刪除、來源移除的幽靈刪除、同 host 另一張卡保留、停用卡的 Key 仍算在來源、不在來源的 `invalid_records` 不新增、設定缺失時不整 host 清空、他 host 不動、detail 交棒、無變動 0 寫入、402→401 換碼且 `expired_at`/`created_at` 不變、Python holder ≠ KV holder 時仍刷新 📋、無 body 不沖刷、同碼同訊息 0 寫入 |
-| 前端 | jsdom 驅動真實 `index.html` + `app.js`（mock 模式與登入模式），以及 agent-browser 實機 Chrome 檢查版面、RWD、無障礙名稱 |
-| API 認證 | curl 打本機 wrangler，涵蓋無憑證／錯誤密碼／登入發 cookie／cookie 讀取／Bearer 讀取／錯誤 Bearer（見 §6.6） |
-| 設定版本號 | curl 打本機 wrangler，涵蓋首次寫入、重送舊版本得 409、跟上新版本、不帶版本放行（見 §7.3） |
-| 安全標頭 | curl 檢查靜態頁、`/boot.js`、`/api/*` 三條路徑的回應標頭（見 §7.1） |
-| CSP 實機 | agent-browser 開已部署站台的 `?mock`，走過三個分頁：console 與 page errors 全空，`script:not([src])` 為 0，唯一殘留的 style 屬性是 `_mirror`（CSSOM 產生，CSP 不管）。逐一比對 9 個改成 class 的元素的 computed style，抓到 `.topbar-menu-close` 的特異性回歸（見 §7.2）。附帶驗證了 CSP 確實在執行：注入 `<style>` 被擋，改用 `insertRule` 才生效 |
-
-實跑時一律指向本機 mock 供應商或 `?mock`，不使用任何真實 Key，測試產物寫在暫存目錄，不污染 repo。
-
----
-
-## 十、自定義請求頭 (Custom Headers)
-
-### 10.1 儲存格式採物件陣列 `[{ key, value }]`
-
-- **問題**：若採字典 `{ [name]: value }` 儲存，無法維持使用者在 UI 上安排的欄位順序，且使用者暫時輸入相同名稱（如修改過程）或包含特殊字元時可能造成 JSON 鍵衝突或序列化異常。
-- **決策**：儲存為 `[{ key: "...", value: "..." }]` 陣列。
-- **好處**：1:1 對應前端輸入列，維持排序；在 Python 端透過 `sanitize_custom_headers()` 遍歷轉成 tuple 串列，解析直觀。
-
-### 10.2 請求頭覆蓋順序
-
-- **決策**：在 `test_single_request` 中，自定義請求頭在基礎標頭（`Content-Type` / `User-Agent` / `Authorization` 等）建構之後注入。
-- **理由**：讓使用者在有特殊需求（如供應商需要自訂 `User-Agent`、自訂 `Authorization: CustomKey ...` 或特製認證標頭）時能直接覆蓋預設行為，提供最大彈性。
-
-### 10.3 RFC 7230 規格校驗與 CRLF 注入防護
-
-- **問題**：aiohttp 發送 HTTP 請求時，若 Header 名稱包含非法字元（如空格、控制字元或不符合 RFC 規範的字元）或值包含換行符 `\r\n`，aiohttp 會直接拋出例外導致該次測試整筆崩潰。
-- **決策**：
-  - 前端：使用 `HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/` 即時校驗，非法名稱在儲存時報錯阻擋；值自動移除 `\r\n`。
-  - 後端（Python 測試端）：`sanitize_custom_headers()` 再次以 `_HEADER_NAME_RE` 與字元替換把關，若遇非法項目僅印出警告並略過，確保主測試流程不中斷。
-
----
-
-## 十一、已知取捨總表
-
-| 取捨 | 選擇 | 代價 |
-|---|---|---|
-| 瀏覽器認證方式 | HttpOnly session cookie | 需靠 `SameSite=Strict` 擋 CSRF，沒有 token 兜底 |
-| session 儲存 | 無狀態 HMAC，不進 KV | 無法撤銷單一 cookie；被複製的 cookie 到期前仍有效 |
-| session 簽章密鑰 | 沿用 `ADMIN_PASSWORD` | 換密碼會一併踢掉所有已登入的瀏覽器 |
-| 登入嘗試次數 | 未設限，依賴密碼熵 | 沒有任何告警，被嘗試也不會知道 |
-| 安全標頭位置 | worker 出口統一補，不用 `_headers` | 多一層包裝；`_headers` 對 advanced mode 無效 |
-| `connect-src` | 只放行 Discord 兩個網域 | 走中繼網域的 webhook 測試會被 CSP 擋 |
-| 設定並發 | 版本號 + 409 | 競爭窗口仍在（毫秒級），只是不再靜默 |
-| `dead_keys` 並發 | 接受 | 手動編輯與對帳同時發生會丟一次編輯；KV 無條件寫入，單值方案無解 |
-| 訊息去重粒度 | 正規化後比對 | 只差數字的兩種原因會合併 |
-| 每支 Key 的訊息 | 保留 | +1.7 KB／66 支 Key |
-| 正規化邏輯 | Python 與 JS 各一份 | 需手動同步，但漂移只影響外觀 |
-| 自定義請求頭格式 | `[{ key, value }]` 陣列 | 需過濾空行與型別轉換，比純 dict 略多幾行處理 |
-| 自定義標頭覆蓋性 | 在預設標頭之後合併 | 使用者若填入錯誤的 Auth 標頭會覆蓋掉正常的 Key 認證 |
-| dead_keys 儲存 | 單一 KV 陣列 | 無並發安全、每次全量改寫 |
-| dead_keys 語意 | 來源裡目前仍失敗的 Key，每次跑完對帳 | 一支 Key 可能今天進、明天出，不留失效歷史；該 host 已無卡片可上傳時幽靈仍要手動清 |
-| 對帳失敗 | 吞掉錯誤只記 log | 靜默失敗，要靠 `dead_keys_added/removed/updated` 的輸出才看得出來 |
-| 樣本長度 | 各 2048 字元掐頭留尾 | 失控的長回應看不到中段 |
-| 單一 Key 測試 | 連跑兩輪 | 測試時間與請求數加倍 |
-| 續跑判定 | 要求滿額成功 | 中斷後可能重跑已成功的一輪 |
-| 儲存後端預設 | `STORAGE_BACKEND` 未填＝`d1` | 既有純 KV 站台直接部署新版會每個 API 請求 500；上線順序寫進 README |
-| 既有資料搬移 | `store` 表沿用 KV 的「一鍵一 JSON」 | 不能用 SQL 查單一欄位；換來 KV/D1 共用同一套讀寫程式 |
-| 金鑰狀態 | 另開 `key_state` 關聯表 | 多一張表與索引，寫入量略增；但輪用與禁用需要單列原子更新 |
-| 搬移備份 | 指令先寫本機 JSON 才呼叫搬移，回覆前再備份一次 D1 | 備份含明文 Key，檔案權限與保存位置要自己顧 |
-| 失敗分類 | **任何非 2xx 都算失敗**（不區分狀態碼） | 單一規則、不用猜各家狀態碼的含義（Gemini 的死鑰回 400）；代價是一次上游故障或一個壞 body 會把抳到的 Key 全部計數，靠每日測試結果自動恢復兼顧 |
-| 恢復方式 | 每日測試結果的 `valid_keys` 自動恢復＋卡片上的「恢復」按鈕 | 兩條路都需要人手動跑一次（每日一輪／人按一下），沒有分鐘級冷卻 |
-| 手動測試 | 只回報結果，不寫帳本 | 測試三次不會把 Key 禁用；恢復的權威是每日測試，不是按鈕 |
-| Gateway 紀錄 | 不自建紀錄頁，只提供深連結 | 深連結格式官方未保證，先用 `AI_GATEWAY_LOGS_URL` 范本由操作者實測後填入 |
-| 轉發快取 | 一律 `cf-aig-skip-cache: true` | 省 token 的場景要逐筆改標頭；換來金鑰標註與最近使用時間不會失真 |
-
-
----
-
-## 十二、KV → D1 與輪詢轉發（2026-11-09）
-
-### 12.1 為何預設換成 D1
-
-轉發需要「每筆請求即時、精準地更新金鑰狀態」：挑選最久沒用的 Key、記錄連續失敗、達門檻禁用。KV 是最終一致、寫入上限每天 1,000 筆，做不了這種帳本；D1 的單列 `UPDATE … RETURNING` 才能一次完成「挑選＋蓋時間戳」。
-
-代價是既有純 KV 部署不能直接升級：`STORAGE_BACKEND` 沒填時預設 `d1`，沒有 `DB` 時每個 `/api/*` 與 `/proxy/*` 請求都會回可讀的 500，但靜態頁面照常載入（Pages Functions 沒有啟動階段，只能在請求時檢查）。因此上線順序寫進 README：建 D1／綁 `DB` → 以 `STORAGE_BACKEND=kv` 部署 → 搬移 → 切 `d1` 再部署。
-
-### 12.2 為何 `store` 表沿用 JSON
-
-`app_settings`、`results:{fp}`、`checkpoint:{fp}`、`dead_keys` 都是整份讀、整份寫，從來不查其中一列。把它們拆成 SQL 欄位沒有好處，反而讓 KV／D1 兩套模式各寫一份邏輯。`store(k, v)` 只包 get/put/delete/list 四個操作，既有 handler 一行都不用改。
-
-真正需要 SQL 的是 `key_state`：輪用要 `ORDER BY last_used_at, id LIMIT 1`，禁用要 `fail_count + 1 >= threshold`，兩者都必須是單一原子語句。D1 沒有交易 API，本計畫靠「每步一個原子語句」而非多語句交易；中斷只會少記一次帳，不會寫壞帳本。
-
-### 12.3 輪用時間戳為何在「取用當下」就寫
-
-如果等成功才更新 `last_used_at`，重試迴圈會一直挑到剛剛失敗的那一把；而且壞 Key 會永遠排在最前面。`MAX(now, 全域最大值 + 1)` 是為了同一毫秒內的兩次取用仍能得到嚴格遞增的值，否則並發時可能挑回同一把。`ORDER BY last_used_at ASC` 讓 `NULL`（剛搬過來、從沒用過）自然先被挑到。
-
-### 12.4 失敗判定：非 2xx 一律計數（單一規則）
-
-轉發的是「別人的請求」，所以狀態碼本身就不能信任：同一個「金鑰無效」，OpenAI 回 401、Anthropic 回 401、Gemini 回 **400**（`API_KEY_INVALID`），中轉站則可能回 402／403／429。若照著狀態碼分類，就得為每一家寫一份例外，而且還會把 Gemini 的死鑰歸成「不重試、不計數」，導致它永遠不會被換掉。
-
-因此改成單一規則：**只要不是 2xx，就算一次失敗，並換下一把**（重試上限 3 次、共 4 把）。代價是明說的：一次上游故障（全部 500）或一個壞 body（全部 400）會把本次被抳到的 Key 都計數，三輪就達門檻；接住這個代價的是「每日測試結果自動恢復」（見 12.5）與卡片上的計數顯示。
-
-重試用完時回傳**最後一次**的上游回覆，不合成 500。重試用原始位元組重送，只有 `Content-Type: application/json` 才併入 Extra Body。
-
-### 12.5 恢復：每日測試結果的 `valid_keys` 自動恢復
-
-轉發黑名單（`key_state.disabled`）不再只能手動恢復。每日 GHA 跑完上傳結果時，`POST /api/results` 會把 `valid_keys` 裡的 Key 對應的 `key_state` 列清成 `disabled = 0, fail_count = 0`（`recoverKeysFromResults()`），並在回應裡回 `keys_recovered`。
-
-理由：12.4 的單一規則會把「上游故障」的帳誤記在金鑰頭上；每日測試是唯一真正驗過「這把 Key 現在能不能用」的證據，讓它把誤記的帳抹平，比叫人一把一把按恢復實際。代價是最多要等一天（或手動觸發 GHA）才會恢復。
-
-手動的「測試」按鈕仍然**只診斷、不寫帳本**：測試失敗不能讓 Key 被禁用，測試成功也不代替恢復（否則按鈕會變成繞過門檻的後門，而且幫你把死鑰「恢復」回來）。
-
-### 12.6 移除 ollama 型別
-
-Provider Type 只留 `openai`、`gemini`、`anthropic`。理由是沒有一份實際在用的 Ollama 設定，而它需要 own 的認證方式、payload 形狀與回應解析分支；留著只會讓每一處都要多寫一個 `case`，而且它的 `api_base` 不帶版本前綴，是「填到版本前綴」這條規則的唯一例外。儲存時直接擋下 `provider_type: "ollama"`（400），不做資料遷移。
-
-### 12.7 請求標頭的處理順序
-
-丟掉呼叫方的 `Cookie`、跳躍式標頭與所有 `cf-aig-*`；換上選中 Key 的認證標頭；再套用 Custom Headers（同名可覆蓋）；最後才由本專案寫入自己的 `cf-aig-*`。這個順序同時保證：
-
-- 呼叫方不能偽造「這次用了哪把 Key」或塞入自己的 Gateway 權杖。
-- 直連時不會把 Cloudflare 控制標頭送給第三方中轉站。
-- `cf-aig-metadata` 的值只有 ASCII（HTTP 標頭限制；非 ASCII 會讓 `fetch` 直接拋錯），且 `cf-aig-skip-cache: true` 避免回放舊答案。
-
-### 12.8 備份為何是搬移指令的一部分
-
-搬移是破壞性操作：一旦 D1 寫入有誤，KV 可能已經被切換掉。指令因此在**送出 migrate 之前**先下載 KV 並寫成本機 JSON（`0600`），驗證失敗時保留報告；`--restore` 回覆前也會先備份當前 D1。備份含明文 Key，所以目錄列入 gitignore，且只在管理員自己機器上保存。
-
-伺服端的 migrate／export／restore 都掛在 `/api/storage/*`，故意繞過 `STORAGE_BACKEND` 的預檢：只有 KV 也能先備份，這正是後端設錯時最需要的功能。migrate／restore 都需要明確的 `confirm` 字串。
-
-**restore 是精準回滾**：先 upsert 備份內容、再刪掉備份裡沒有的 `store` 列與 `key_state` 列，成功後 D1 等於備份那一刻；中途失敗只留超集。`export` 與 `restore` 共用 `STORAGE_MAX_ENTRIES = 20000`，避免匯出一份還原不了的備份。若只是想退回舊模式，改 `STORAGE_BACKEND=kv` 即可，不必 restore。
-
-**同步失敗的安全方向（B′）**：轉發挑到金鑰後，用同一份 `provider.keys` 驗一次，不在名單就刪列重挑——這讓「設定先寫成功、帳本清理失敗」不再造成「已刪的 Key 被使用」。反方向（整組缺列）會自動補；部分缺列只會在卡片顯示 `synced: false`，等下一次存檔。沒有改成「先帳本後設定」的理由：那會讓尚未存成功的金鑰先被使用，且改 `api_base` 失敗時會讓轉發暫時 503。
-
-### 12.9 尚待真環境確認
-
-- D1 對並發寫入的序列化：本機 SQLite 語意已驗，真實 D1 要用並發請求再測。
-- 轉發標頭外流只在本機 mock 上游上驗過（直連）；經過 AI Gateway 時它怎麼處理 `cf-*`／`x-forwarded-for` 沒有實測，不能拿本機結果推論。
-- AI Gateway custom provider 的路徑拼接、`cf-aig-metadata` 是否出現在儀表板、以及日誌頁深連結 URL 格式（官方只保證可搜尋／篩選，URL 形式要在真實帳號抄下來後填入 `AI_GATEWAY_LOGS_URL`）。
-- 真實 KV `list()` 分頁已用假 KV（每頁 2 筆）驗證迴圈，但仍未對真實 namespace 跑過。
-### 12.10 轉發頁版面與測試模型（2026-11-09 改版）
-
-**版面**：一個服務商一張大卡片會在金鑰多時變成又高又長的柱子，因此改成「上方一整排控制項＋下方每把金鑰一張小卡」：服務商是下拉選單，彙總、轉發網址、範例路徑、測試模型、三個批次按鈕與**統一的 Gateway 記錄按鈕**都在上方。Gateway 按鈕只保留一個：排查時要的是整個服務商的流量，不是逐把 key 各開一次。
-
-**測試模型**：存在 `app_settings.proxy_test_models`（以指紋為鍵），**不繼承** `providers[].models`。理由：每日測試的模型矩陣是「跑一輪看健康度」，轉發頁的測試模型是「用最便宜的一把型號確認 key 活著」，兩者目的不同；繼承會讓改來源設定時意外改變轉發頁的探測行為。未設定時 `/api/proxy/test` 回 400，按鈕停用——不偷偷借第一個模型。
-
-**代價**：多一個設定欄位與一次寫入（`POST /api/proxy/test-model` 會把 settings 版本 +1，其他分頁存檔時可能遇到 409，需重讀後重試）。
-
-### 12.11 轉發頁改用既有的視覺語言（2026-11-10）
-
-**問題**：轉發頁最初自帶一套表面與尺寸。金鑰卡底色用 `--bg`，在深色主題下等於頁面底色（卡片整個消失），在淺色主題下是灰底而不是白底；圓角 `--radius-sm`、內距 `0.6rem`、欄寬 240px、內距間隙 `0.4rem`。四顆分頁因此看起來像兩個不同的產品——同一張「卡片」，來源設定是 340px 寬、白底、1.35rem 內距，轉發頁是 240px、灰底、0.7rem。
-
-**決定：只借用既有的表面與尺度，不新增第三套。**
-
-- **金鑰卡**沿用 `.provider-card` 的量測值：`--bg-2`、`--radius`、`1.35rem` 內距、`1rem` 間隙、`minmax(280px,1fr)` 欄寬、`1rem` 網格間隙、`1.5rem` 下緣。
-- **工具列**沿用 `.dk-filter-panel`：`--bg-2`、`--radius-sm`、`1rem 1.1rem`、`1rem` 下緣。但**保留三列語意**（挑服務商／轉發網址／測試），沒有壓成篩選面板那種一排等寬格子——那三列的必要性見 12.10。
-- **轉發網址 chip** 用全域 `code` 的 `--bg-3`，與其他頁籤的行內程式碼一致。
-- **空狀態**用 `.state-card`，而且必須是金鑰 grid 的**兄弟節點**：塞進 grid 會變成 280px 寬的一格，而不是整條提示。
-- **狀態語意**沿用徽章：正常 `badge-ok`、已禁用 `badge-warn`；禁用卡另加 `--warn` 邊框，**不**整張變淡（來源設定用 `opacity: .5` 表達停用，但這裡「恢復」按鈕還得按）。
-
-`aria-disabled` 的樣式補在 `.btn` 層：`:disabled` 只匹配表單元件，`<a class="btn" aria-disabled="true">`（Gateway 記錄在沒有 `AI_GATEWAY_LOGS_URL` 時就是這個狀態）原本看起來完全可點。同時所有 `.btn-*:hover` 都加上 `:not([aria-disabled="true"])`，否則滑鼠移上去仍會亮。
-
-**RWD 的順序陷阱（兩處都需要知道）**：
-
-1. 媒體查詢寫在基礎規則之前就完全失效——同特異度下後者勝。轉發樣式區塊原本排在 `── RWD` 之後（舊版用區塊內一段額外的 `@media (max-width: 640px)` 補救，結果整個檔案出現兩個 640px 斷點）。這次把整塊移到 RWD 之前，單欄、`1rem` 內距、按鈕 `min-height: 2.6rem` 才真的生效。
-2. `flex-direction: column` 會把 `flex-basis` 變成**高度**：轉發網址 chip 的 `flex: 1 1 16rem` 在手機上長成 245px 高的一塊，因此需要 `flex: none`。
-
-**代價**：卡片尺度是**複製**而非共用（`.proxy-key-card` 與 `.provider-card` 各寫一份 `1.35rem`）。之後若要調卡片尺寸得同時改兩處，或把值抽成變數——共用視覺語言必然的耦合，換來的是四顆分頁不會再各自漂移。
-
-### 12.12 轉發頁工具列收斂（2026-11-10）
-
-**版面**：服務商選單固定成**一個來源設定卡片的寬度**（工作區 1100px、三欄時 340px），轉發網址放在它右邊、和一般文字框同高，整塊可點擊複製；**API 格式改成接在選單選項的名稱後面**（`dashscope - openai`），選單底下不再有格式膠囊。工具列本身**不再包一層底色與邊框**（12.11 的 `.dk-filter-panel` 表面由本節取代）：標題、控制項、金鑰卡直接落在頁面上，只靠行距分開。
-
-**第二列**：左邊是 `有效 X 无效 Y`，**字級比 14px 正文大一級（`--text-base` 16px／700，不搶成第二個標題）**，顏色改用新增的 `--ok-soft`／`--fail-soft`：`--ok`／`--fail` 是為 13px 徽章調的，同一個豔色放到 16px 粗體會變成一組紅綠燈，而這一行要的是平靜的讀數。深色主題用淡色版（`#86efac`／`#fca5a5`）；淺色主題若照用會在白底上幾乎看不見，所以淺色主題改成**同色相、降飽和但保留對比**的一組（`#2f8f5b`／`#c2544f`）——「淡」在深底是往亮走、在白底是往濁走，同一個值不可能兩邊都成立。右邊從 `测试模型` 文字開始，接著模型選單、保存模型、`测试有效密钥`、`测试无效密钥`，**整組靠右對齊**。「测试全部」移除，批次測試只留有效／無效兩種。手機版網址不再硬撐一行，會自動換行。
-
-**保存模型按鈕寬度**：按下「保存模型」後文字會暫時換成三個字的「已保存」（1.2 秒後恢復）。為避免按鈕變窄讓整列控制項跟著左右跳動，`.proxy-save-model` 改成縱向 flex 搭配零高度、不可見的 `::after` 撐寬（內容為 `保存模型`，並以 `/ ""` 避免讀屏重覆唸出），直接依實際渲染字型量出四字寬度，不硬寫固定 `rem` 或行內 `style`。同時用計時器記錄並在重畫工具列時清除，連點或切換服務商都不會提前跳回舊字。
-
-**Gateway 記錄移到頁首**，緊接在 `重新读取` 右邊，改成主色（紫）按鈕、文字右上角加 `↗`。理由有兩個：它是**整個服務商的流量檢視**，不是這一列的探測控制，混在 `测试有效密钥` 旁邊會被讀成「測完再看結果」的同一組動作；而頁首那兩顆都是「離開／重取這個頁面」的性質，放在一起才一致。箭頭用 `aria-hidden` 的 `span`，讀屏唸到的名字仍是「Gateway 记录」。連結仍然跟著選中的服務商走，`renderProxyLogsLink()` 在每次重畫與切換服務商時重設 `href`；沒有服務商時回到停用（而非隱藏），避免頁首在載入前後跳動。
-
-**測試模型**：改成下拉選單，候選清單直接讀 `providers[].models`（來源設定的 Models 文字框），不再在轉發頁重複輸入一次。**選單預設就是第一個模型**，沒有「請選擇模型」的空白項；**選了哪一個仍然存在 `app_settings.proxy_test_models`**（以指紋為鍵），要按「保存模型」才寫入，這樣改 Models 清單不會悄悄把已保存的探測模型換掉；未設定時 `/api/proxy/test` 仍回 400、測試按鈕停用，與 12.10 的安全方向一致。`/api/proxy/state` 因此要多帶 `models` 陣列，而不只是第一個模型。
-
-**尺寸**：工具列裡的選單與按鈕都取 `--control-h`（2.5rem）、間距 0.75rem，和 `.input-text` 同高；`.btn-sm` 只在水平內距與字級上保留原本的緊湊感，垂直尺寸不再由 padding 決定。模型選單用 `flex: none` 加固定 `15rem`：若只寫可收縮的 `flex-basis`，右側群組的內在寬度只會量到選單文字寬，最後兩顆按鈕會被擠到第二行；寬度從 `18rem` 收到 `15rem` 後，群組總寬 660px，右緣仍貼齊 1166，六個元件都在同一行。手機版仍是一欄，按鈕的 `min-height` 也改回同一個 token，避免按鈕比旁邊的選單高 1.6px。
+1. **D1 高並發寫入序列化**：線上以真實並發請求確認同一服務商不會重複挑中同一把 Key。
+2. **AI Gateway 線上行為**：確認 Custom Provider 路徑拼接、`cf-aig-metadata` 篩選，並於真實帳號抄錄日誌深連結格式填入 `AI_GATEWAY_LOGS_URL`。
+3. **每日 GHA 排程、真實 KV `list()` 分頁與真實上游長串流首字延遲**。
