@@ -36,7 +36,10 @@ const state = {
   proxy: null,
   proxySelected: null,
   proxyBusy: false,
-  proxyPlainKeys: new Map(), // fp -> plaintext keys from settings for copy buttons
+  proxyPlainKeys: new Map(), // _uiKey (or fp) -> plaintext keys for copy buttons
+  proxyTestingKeys: new Set(), // `${fp}:${id}` keys currently testing individually
+  proxyRecoveringKeys: new Set(), // `${fp}:${id}` keys currently recovering
+  proxyLastResults: new Map(), // _uiKey -> Map<String(id), result> across post-test reloads
 };
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -596,6 +599,7 @@ function applySettingsToUI() {
 async function loadConfig() {
   dom.configLoading.classList.remove("hidden");
   dom.configError.classList.add("hidden");
+  dom.configSaveError.textContent = "";
   dom.providerGrid.classList.add("hidden");
   dom.providerEmpty.classList.add("hidden");
 
@@ -1156,6 +1160,7 @@ async function saveEditor(confirmed = false) {
     hideEditorConfirm();
     state.editorSnapshot = null;
     state.editorSortMode = "none";
+    dom.configSaveError.textContent = "";
     renderProviderGrid();
     closeEditor();
   } catch (err) {
@@ -1173,6 +1178,7 @@ async function deleteProvider(index) {
   )
     return;
 
+  dom.configSaveError.textContent = "";
   const settings = state.settings || {};
   const providers = (settings.providers || []).filter((_, i) => i !== index);
 
@@ -1205,6 +1211,7 @@ function toggleSelection(index) {
 
 async function bulkToggle(enable) {
   if (state.selectedProviders.size === 0) return;
+  dom.configSaveError.textContent = "";
   const settings = state.settings || {};
   const providers = (settings.providers || []).map((p, i) =>
     state.selectedProviders.has(i) ? { ...p, enabled: enable } : p,
@@ -1221,21 +1228,65 @@ async function bulkToggle(enable) {
 }
 
 // ── Proxy tab (rotation / forwarding) ──────────────────────────────────────
+function assignProxyUiKeys(providers) {
+  const counts = new Map();
+  for (const p of providers || []) {
+    const occ = counts.get(p.fp) || 0;
+    counts.set(p.fp, occ + 1);
+    p._uiKey = `${p.fp}#${occ}`;
+  }
+}
+
 function selectedProxyProvider() {
   const providers = (state.proxy && state.proxy.providers) || [];
-  return providers.find((p) => p.fp === state.proxySelected) || providers[0] || null;
+  return (
+    providers.find((p) => p._uiKey === state.proxySelected) ||
+    providers.find((p) => p.fp === state.proxySelected) ||
+    providers[0] ||
+    null
+  );
+}
+
+function setProxyNotice(text, level = "info") {
+  dom.proxyNotice.className = `alert alert-${level}`;
+  dom.proxyNotice.textContent = text;
+  dom.proxyNotice.classList.remove("hidden");
+}
+
+function clearProxyNotice({ keepGlobal = true } = {}) {
+  if (keepGlobal && state.proxy && !state.proxy.proxy_enabled) {
+    setProxyNotice(state.proxy.proxy_message || "转发功能目前停用", "error");
+    return;
+  }
+  dom.proxyNotice.classList.add("hidden");
+}
+
+function proxyResultStore(uiKey) {
+  if (!uiKey) return null;
+  let store = state.proxyLastResults.get(uiKey);
+  if (!store) {
+    store = new Map();
+    state.proxyLastResults.set(uiKey, store);
+  }
+  return store;
 }
 
 async function syncProxyPlainKeys(proxyProviders) {
   if (MOCK) return;
 
-  const buildMap = async (forceReload = false) => {
+  const listMatchesProvider = (list, pp) => {
+    const keys = pp.keys || [];
+    if (!Array.isArray(list) || list.length !== keys.length) return false;
+    return keys.every((k, i) => maskKey(list[i]) === k.masked);
+  };
+
+  const buildByFp = async (forceReload = false) => {
     if (!state.settings || forceReload) {
       const d = await api("/api/settings", { auth: true });
       state.settings = d.settings || {};
       applySettingsToUI();
     }
-    const map = new Map();
+    const byFp = new Map();
     for (const p of state.settings.providers || []) {
       if (!p || !p.provider_type || !p.api_base) continue;
       const payload = fingerprintPayload(p);
@@ -1244,29 +1295,59 @@ async function syncProxyPlainKeys(proxyProviders) {
         fp = await sha256(payload);
         state.fpCache.set(payload, fp);
       }
-      map.set(fp, splitKeyLines(p.keys));
+      if (!byFp.has(fp)) byFp.set(fp, []);
+      byFp.get(fp).push(splitKeyLines(p.keys));
     }
-    return map;
+    return byFp;
   };
 
-  let map = await buildMap(false);
-  const stale = (proxyProviders || []).some((pp) => {
-    const list = map.get(pp.fp);
-    if (!list || list.length !== (pp.keys || []).length) return true;
-    return (pp.keys || []).some((k, i) => maskKey(list[i]) !== k.masked);
-  });
-  if (stale) map = await buildMap(true);
+  const matchProviders = (byFp) => {
+    const map = new Map();
+    const usedByFp = new Map();
+    let stale = false;
+    for (const pp of proxyProviders || []) {
+      const candidates = byFp.get(pp.fp) || [];
+      let used = usedByFp.get(pp.fp);
+      if (!used) {
+        used = new Set();
+        usedByFp.set(pp.fp, used);
+      }
+      let matchedIdx = candidates.findIndex(
+        (list, idx) => !used.has(idx) && listMatchesProvider(list, pp),
+      );
+      if (matchedIdx < 0) {
+        // Retry once in case cached settings predated an edit in another tab.
+        stale = true;
+        matchedIdx = candidates.findIndex((_, idx) => !used.has(idx));
+      }
+      if (matchedIdx >= 0) {
+        used.add(matchedIdx);
+        map.set(pp._uiKey, candidates[matchedIdx]);
+      } else {
+        map.set(pp._uiKey, []);
+      }
+    }
+    return { map, stale };
+  };
+
+  let { map, stale } = matchProviders(await buildByFp(false));
+  if (stale) {
+    ({ map } = matchProviders(await buildByFp(true)));
+  }
   state.proxyPlainKeys = map;
 }
 
-async function loadProxyState() {
+async function loadProxyState({ preserveResults = false } = {}) {
+  if (!preserveResults) {
+    state.proxyLastResults.clear();
+  }
   dom.proxyLoading.classList.remove("hidden");
   dom.proxyError.classList.add("hidden");
   dom.proxyEmpty.classList.add("hidden");
   dom.proxyKeyEmpty.classList.add("hidden");
   dom.proxyToolbar.classList.add("hidden");
   dom.proxyKeyGrid.classList.add("hidden");
-  dom.proxyNotice.classList.add("hidden");
+  clearProxyNotice({ keepGlobal: false });
 
   try {
     let data;
@@ -1275,28 +1356,39 @@ async function loadProxyState() {
       data = mockProxyState(mock.settings || {});
     } else {
       data = await api("/api/proxy/state", { auth: true });
-      await syncProxyPlainKeys(data.providers || []);
+    }
+    const providers = data.providers || [];
+    assignProxyUiKeys(providers);
+    if (!MOCK) {
+      await syncProxyPlainKeys(providers);
+    } else {
+      state.proxyPlainKeys.clear();
+      for (const p of providers) {
+        state.proxyPlainKeys.set(p._uiKey, p._mockPlainKeys || []);
+      }
     }
     state.proxy = data;
-    const providers = data.providers || [];
-    if (!providers.some((p) => p.fp === state.proxySelected)) {
-      state.proxySelected = providers[0] ? providers[0].fp : null;
-    }
+    const active =
+      providers.find((p) => p._uiKey === state.proxySelected) ||
+      providers.find((p) => p.fp === state.proxySelected) ||
+      providers[0] ||
+      null;
+    state.proxySelected = active ? active._uiKey : null;
     renderProxyState(data);
+    return true;
   } catch (err) {
     dom.proxyError.textContent = `读取失败：${err.message}`;
     dom.proxyError.classList.remove("hidden");
+    return false;
   } finally {
     dom.proxyLoading.classList.add("hidden");
   }
 }
 
 function mockProxyState(settings) {
-  state.proxyPlainKeys.clear();
   const providers = (settings.providers || []).map((p, i) => {
     const fp = `mock-${i}`;
     const keys = splitKeyLines(p.keys);
-    state.proxyPlainKeys.set(fp, keys);
     const keyEntries = keys.map((key, ki) => {
       const disabled = keys.length > 1 && ki === keys.length - 1;
       return {
@@ -1314,6 +1406,7 @@ function mockProxyState(settings) {
     });
     return {
       fp,
+      _mockPlainKeys: keys,
       alias: p.alias || "",
       host: extractHost(p.api_base),
       provider_type: p.provider_type || "openai",
@@ -1367,9 +1460,7 @@ function proxyTimeTitle(ms) {
 function renderProxyState(data) {
   const providers = data.providers || [];
   if (!data.proxy_enabled) {
-    dom.proxyNotice.textContent = data.proxy_message || "转发功能目前停用";
-    dom.proxyNotice.className = "alert alert-error";
-    dom.proxyNotice.classList.remove("hidden");
+    setProxyNotice(data.proxy_message || "转发功能目前停用", "error");
   }
   if (!providers.length) {
     dom.proxyEmpty.classList.remove("hidden");
@@ -1383,14 +1474,14 @@ function renderProxyState(data) {
   dom.proxyProvider.replaceChildren();
   for (const p of providers) {
     const opt = document.createElement("option");
-    opt.value = p.fp;
+    opt.value = p._uiKey;
     // The menu answers two questions at once — which provider, and what API it
     // speaks. The format used to be a separate pill under the select; folding it
     // into the option text keeps one row and makes each choice self-describing.
     const name = p.alias || p.host;
     const format = String(p.provider_type || "").trim();
     opt.textContent = format ? `${name} - ${format}` : name;
-    if (p.fp === state.proxySelected) opt.selected = true;
+    if (p._uiKey === state.proxySelected) opt.selected = true;
     dom.proxyProvider.appendChild(opt);
   }
 
@@ -1510,6 +1601,28 @@ function renderProxyLogsLink() {
     : "尚无服务商，先到「来源设定」添加";
 }
 
+function updateProxyCardButtonsDisabled() {
+  const p = selectedProxyProvider();
+  if (!p) return;
+  const enabled =
+    !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
+  const canAct = enabled && !!p.test_model;
+  for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-test]")) {
+    const id = btn.dataset.proxyTest;
+    const busy =
+      state.proxyBusy ||
+      state.proxyTestingKeys.has(`${btn.dataset.fp}:${id}`);
+    btn.disabled = !canAct || !id || busy;
+  }
+  for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-recover]")) {
+    const id = btn.dataset.proxyRecover;
+    const busy =
+      state.proxyBusy ||
+      state.proxyRecoveringKeys.has(`${btn.dataset.fp}:${id}`);
+    btn.disabled = !enabled || !id || busy;
+  }
+}
+
 function renderProxyKeyCards() {
   const p = selectedProxyProvider();
   if (!p) return;
@@ -1526,7 +1639,8 @@ function renderProxyKeyCards() {
   }
   dom.proxyKeyEmpty.classList.add("hidden");
   const canAct = enabled && !!p.test_model;
-  const plainList = state.proxyPlainKeys.get(p.fp) || [];
+  const plainList =
+    state.proxyPlainKeys.get(p._uiKey) || state.proxyPlainKeys.get(p.fp) || [];
   dom.proxyKeyGrid.innerHTML = keys
     .map((k, ki) => {
       const id = k.id == null ? "" : String(k.id);
@@ -1536,9 +1650,19 @@ function renderProxyKeyCards() {
       const copyBtn = rawKey
         ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rawKey)}">${COPY_ICON_SVG}</button>`
         : "";
+      const recoverDisabled =
+        !enabled ||
+        !id ||
+        state.proxyBusy ||
+        state.proxyRecoveringKeys.has(`${p.fp}:${id}`);
       const recover = k.disabled
-        ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${enabled && id ? "" : " disabled"}>恢复</button>`
+        ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${recoverDisabled ? " disabled" : ""}>恢复</button>`
         : "";
+      const testDisabled =
+        !canAct ||
+        !id ||
+        state.proxyBusy ||
+        state.proxyTestingKeys.has(`${p.fp}:${id}`);
       const stateTag = k.disabled
         ? `<span class="proxy-key-state-tag">已失效</span>`
         : "";
@@ -1551,13 +1675,13 @@ function renderProxyKeyCards() {
             ${copyBtn}
           </div>
           <div class="proxy-key-card-meta">
-            <span>失败 <strong>${Number(k.fail_count || 0)}</strong></span>
+            <span>失败 <strong data-proxy-fail-count>${Number(k.fail_count || 0)}</strong></span>
             <span${timeAttr}>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
           </div>
           <div class="proxy-key-card-actions">
             ${stateTag}
             <div class="proxy-key-card-btns">
-              <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${canAct && id ? "" : " disabled"}>测试</button>
+              <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${testDisabled ? " disabled" : ""}>测试</button>
               ${recover}
             </div>
           </div>
@@ -1565,36 +1689,68 @@ function renderProxyKeyCards() {
         </article>`;
     })
     .join("");
+  const savedResults = state.proxyLastResults.get(p._uiKey);
+  if (savedResults) {
+    for (const [id, result] of savedResults.entries()) {
+      renderProxyTestResult(id, result);
+    }
+  }
   dom.proxyKeyGrid.classList.remove("hidden");
 }
 
 function renderProxyTestResult(id, result) {
   if (id == null) return;
-  const el = dom.proxyKeyGrid.querySelector(`[data-proxy-result="${id}"]`);
-  if (!el) return;
+  const targetId = String(id);
+  const els = Array.from(
+    dom.proxyKeyGrid.querySelectorAll("[data-proxy-result]"),
+  ).filter((el) => el.dataset.proxyResult === targetId);
+  if (!els.length) return;
+  let text;
+  let className;
   if (result && result.ok) {
-    el.textContent = `可用 · ${result.ms} ms · ${result.model || ""}`;
-    el.className = "proxy-test-result ok";
-    return;
+    text = `可用 · ${result.ms} ms · ${result.model || ""}`;
+    className = "proxy-test-result ok";
+  } else {
+    const detail =
+      result && result.error ? ` · ${truncate(result.error, 90)}` : "";
+    const charged =
+      result && result.disabled
+        ? " · 已达门槛，已禁用"
+        : result && typeof result.fail_count === "number"
+          ? ` · 连续失败 ${result.fail_count} 次`
+          : "";
+    text = `不可用 · HTTP ${result && result.status ? result.status : "—"}${detail}${charged}`;
+    className = "proxy-test-result fail";
   }
-  const detail = result && result.error ? ` · ${truncate(result.error, 90)}` : "";
-  const charged =
-    result && result.disabled
-      ? " · 已达门槛，已禁用"
-      : result && typeof result.fail_count === "number"
-        ? ` · 连续失败 ${result.fail_count} 次`
-        : "";
-  el.textContent = `不可用 · HTTP ${result && result.status ? result.status : "—"}${detail}${charged}`;
-  el.className = "proxy-test-result fail";
+  for (const el of els) {
+    el.textContent = text;
+    el.className = className;
+  }
 }
 
 /** Returns the result object so the batch loop can count it. */
-async function testProxyKey(fp, id) {
-  const el = dom.proxyKeyGrid.querySelector(`[data-proxy-result="${id}"]`);
-  if (el) {
+async function testProxyKey(
+  fp,
+  id,
+  { fromBatch = false, uiKey = null } = {},
+) {
+  if (id == null || id === "") return null;
+  if (!fromBatch && state.proxyBusy) return null;
+  const targetId = String(id);
+  const token = `${fp}:${targetId}`;
+  if (state.proxyTestingKeys.has(token)) return null;
+
+  const targetUiKey = uiKey || (selectedProxyProvider() || {})._uiKey || null;
+  state.proxyTestingKeys.add(token);
+  updateProxyCardButtonsDisabled();
+
+  for (const el of Array.from(
+    dom.proxyKeyGrid.querySelectorAll("[data-proxy-result]"),
+  ).filter((node) => node.dataset.proxyResult === targetId)) {
     el.textContent = "测试中...";
     el.className = "proxy-test-result";
   }
+
   let result;
   try {
     if (MOCK) {
@@ -1603,25 +1759,58 @@ async function testProxyKey(fp, id) {
       result = await api("/api/proxy/test", {
         method: "POST",
         auth: true,
-        body: { fp, id: Number(id) },
+        body: { fp, id: Number(targetId) },
       });
     }
-    renderProxyTestResult(id, result);
   } catch (err) {
     result = { ok: false, status: err.status || 0, error: err.message };
-    renderProxyTestResult(id, result);
+  } finally {
+    state.proxyTestingKeys.delete(token);
+    updateProxyCardButtonsDisabled();
   }
-  if (result && result.disabled) {
-    await loadProxyState();
-    dom.proxyNotice.className = "alert alert-error";
-    dom.proxyNotice.textContent = `这把密钥已达门槛并被禁用（连续失败 ${result.fail_count} 次）。`;
-    dom.proxyNotice.classList.remove("hidden");
+
+  const store = proxyResultStore(targetUiKey);
+  if (store) store.set(targetId, result);
+  renderProxyTestResult(targetId, result);
+
+  if (
+    result &&
+    !result.disabled &&
+    result.ok === false &&
+    typeof result.fail_count === "number"
+  ) {
+    const provider = (state.proxy?.providers || []).find(
+      (item) => item._uiKey === targetUiKey || item.fp === fp,
+    );
+    for (const k of provider?.keys || []) {
+      if (String(k.id ?? "") === targetId) k.fail_count = result.fail_count;
+    }
+    for (const card of Array.from(
+      dom.proxyKeyGrid.querySelectorAll("[data-key-id]"),
+    ).filter((node) => node.dataset.keyId === targetId)) {
+      const strong = card.querySelector("[data-proxy-fail-count]");
+      if (strong) strong.textContent = String(result.fail_count);
+    }
+  }
+
+  if (!fromBatch && result && result.disabled) {
+    await loadProxyState({ preserveResults: true });
+    setProxyNotice(
+      `这把密钥已达门槛并被禁用（连续失败 ${result.fail_count} 次）。`,
+      "error",
+    );
   }
   return result;
 }
 
 function proxyActionButtons() {
-  return [dom.proxyTestActive, dom.proxyTestDisabled, dom.proxySaveModel];
+  return [
+    dom.proxyTestActive,
+    dom.proxyTestDisabled,
+    dom.proxySaveModel,
+    dom.proxyRefreshBtn,
+    dom.proxyProvider,
+  ];
 }
 
 async function runProxyBatch(mode) {
@@ -1634,9 +1823,7 @@ async function runProxyBatch(mode) {
     return mode === "disabled" ? k.disabled : !k.disabled;
   });
   if (!keys.length) {
-    dom.proxyNotice.className = "alert alert-info";
-    dom.proxyNotice.textContent = "没有符合这个条件的密钥。";
-    dom.proxyNotice.classList.remove("hidden");
+    setProxyNotice("没有符合这个条件的密钥。", "info");
     return;
   }
 
@@ -1644,27 +1831,42 @@ async function runProxyBatch(mode) {
   proxyActionButtons().forEach((b) => {
     b.disabled = true;
   });
-  dom.proxyNotice.className = "alert alert-info";
-  dom.proxyNotice.classList.remove("hidden");
+  updateProxyCardButtonsDisabled();
+  const targetUiKey = p._uiKey;
+  const store = proxyResultStore(targetUiKey);
+  if (store) {
+    for (const k of keys) store.delete(String(k.id));
+  }
 
   let ok = 0;
   let fail = 0;
   try {
     for (let i = 0; i < keys.length; i++) {
-      dom.proxyNotice.textContent = `批量测试中：${i + 1} / ${keys.length}（可用 ${ok}，不可用 ${fail}）`;
-      const result = await testProxyKey(p.fp, keys[i].id);
+      setProxyNotice(
+        `批量测试中：${i + 1} / ${keys.length}（可用 ${ok}，不可用 ${fail}）`,
+        "info",
+      );
+      const result = await testProxyKey(p.fp, keys[i].id, {
+        fromBatch: true,
+        uiKey: targetUiKey,
+      });
       if (result && result.ok) ok++;
       else fail++;
     }
   } finally {
-    // Reset even if something throws: otherwise the buttons stay disabled forever.
+    // Reset both flag and UI controls even if requests or reload fail.
     state.proxyBusy = false;
+    dom.proxyRefreshBtn.disabled = false;
+    dom.proxyProvider.disabled = false;
+    renderProxyToolbar();
+    updateProxyCardButtonsDisabled();
   }
 
-  await loadProxyState();
-  dom.proxyNotice.className = "alert alert-info";
-  dom.proxyNotice.textContent = `批量测试完成：共 ${keys.length} 把，可用 ${ok}，不可用 ${fail}。`;
-  dom.proxyNotice.classList.remove("hidden");
+  await loadProxyState({ preserveResults: true });
+  setProxyNotice(
+    `批量测试完成：共 ${keys.length} 把，可用 ${ok}，不可用 ${fail}。`,
+    "info",
+  );
 }
 
 async function saveProxyTestModel() {
@@ -1696,28 +1898,39 @@ async function saveProxyTestModel() {
       dom.proxySaveModel.textContent = "保存模型";
     }, 1200);
   } catch (err) {
-    dom.proxyNotice.className = "alert alert-error";
-    dom.proxyNotice.textContent = `保存失败：${err.message}`;
-    dom.proxyNotice.classList.remove("hidden");
+    setProxyNotice(`保存失败：${err.message}`, "error");
   } finally {
     dom.proxySaveModel.disabled = false;
   }
 }
 
 async function recoverProxyKey(fp, id) {
+  if (state.proxyBusy || id == null || id === "") return;
+  const targetId = String(id);
+  const token = `${fp}:${targetId}`;
+  if (state.proxyRecoveringKeys.has(token)) return;
   if (!confirm("恢复这把密钥？恢复后会重新参与轮用。")) return;
+
+  const targetUiKey = (selectedProxyProvider() || {})._uiKey;
+  state.proxyRecoveringKeys.add(token);
+  updateProxyCardButtonsDisabled();
   try {
     if (!MOCK) {
       await api("/api/proxy/recover", {
         method: "POST",
         auth: true,
-        body: { fp, id: Number(id) },
+        body: { fp, id: Number(targetId) },
       });
     }
-    await loadProxyState();
+    const store = state.proxyLastResults.get(targetUiKey);
+    if (store) store.delete(targetId);
+    await loadProxyState({ preserveResults: true });
   } catch (err) {
     dom.proxyError.textContent = `恢复失败：${err.message}`;
     dom.proxyError.classList.remove("hidden");
+  } finally {
+    state.proxyRecoveringKeys.delete(token);
+    updateProxyCardButtonsDisabled();
   }
 }
 
@@ -3105,10 +3318,10 @@ function bindEvents() {
   });
 
   // Proxy tab
-  dom.proxyRefreshBtn.addEventListener("click", loadProxyState);
+  dom.proxyRefreshBtn.addEventListener("click", () => loadProxyState());
   dom.proxyProvider.addEventListener("change", () => {
     state.proxySelected = dom.proxyProvider.value;
-    dom.proxyNotice.classList.add("hidden");
+    clearProxyNotice({ keepGlobal: true });
     renderProxyToolbar();
     renderProxyKeyCards();
   });
@@ -3126,6 +3339,7 @@ function bindEvents() {
     if (copyBtn) {
       return copyText(copyBtn.dataset.copyVal || "", copyBtn);
     }
+    if (state.proxyBusy) return;
     const testBtn = e.target.closest("[data-proxy-test]");
     if (testBtn) {
       return testProxyKey(testBtn.dataset.fp, testBtn.dataset.proxyTest);
