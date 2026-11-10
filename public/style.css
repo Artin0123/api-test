@@ -728,6 +728,30 @@ a:hover {
     font-weight: 600;
 }
 
+/* The counts sit at the right end of the row on every card, with or without a
+   state tag, so the numbers line up down the column of cards instead of jumping
+   left on the enabled ones. The auto margin is the whole mechanism: it soaks up
+   the free space so the block is anchored at the right edge, which means a wider
+   number (three digits instead of one) grows toward the left and never shifts the
+   right edge or the gaps between the items. Laid out in the flow rather than
+   absolutely positioned, so it can never land on top of the state tag. */
+.provider-card-counts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-left: auto;
+}
+
+/* The disabled state sits at the left end of the same row as plain bold text, not
+   as a pill: it reads as one more fact about the provider, in the same size and
+   weight as the counts it faces, instead of as a badge that shouts. */
+.provider-card-state-tag {
+    align-self: center;
+    font-weight: 600;
+    color: var(--text);
+}
+
 .panel-head-actions {
     display: flex;
     align-items: center;
@@ -1331,10 +1355,6 @@ a:hover {
    sets style-src 'self', which blocks inline styles but not CSSOM writes. */
 .empty-note {
     padding: 1rem 0;
-}
-
-.badge-spaced {
-    margin-left: 0.25rem;
 }
 
 .field-row {

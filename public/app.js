@@ -385,7 +385,10 @@ function diffKeyLines(oldText, newText) {
 }
 
 const SORT_MODES = ["none", "asc", "desc"];
-const SORT_LABELS = { none: "预设", asc: "A→Z", desc: "Z→A" };
+// All three labels are the same length so the button keeps one width instead of
+// jumping while you cycle it. The mode is spelled out rather than A→Z / Z→A
+// because the direction is what the user picks, and the arrows read as a value.
+const SORT_LABELS = { none: "预设排序", asc: "递增排序", desc: "递减排序" };
 
 function nextSortMode(mode) {
   const i = SORT_MODES.indexOf(mode);
@@ -659,7 +662,12 @@ function renderProviderGrid() {
 }
 
 function renderProviderCard(p, index) {
+  // With an alias set, the alias is the card's name: it is what the provider is
+  // addressed by (`/proxy/{alias}`), and the upstream domain is then only a
+  // detail. Both stay reachable — the real api_base is the tooltip, the alias
+  // alone when there is one.
   const host = extractHost(p.api_base);
+  const alias = (p.alias || "").trim();
   const keyCount = (p.keys || "").split("\n").filter((l) => l.trim()).length;
   const modelCount = (p.models || "").split(",").filter((m) => m.trim()).length;
   const isEnabled = p.enabled !== false;
@@ -672,19 +680,21 @@ function renderProviderCard(p, index) {
           <input type="checkbox" data-select="${index}"${isSelected ? " checked" : ""} />
         </label>
         <div class="provider-card-badges">
-          <span class="badge${isEnabled ? "" : " badge-warn"}">${isEnabled ? esc(p.provider_type) : "已停用"}</span>
-          ${!isEnabled ? `<span class="badge badge-spaced">${esc(p.provider_type)}</span>` : ""}
+          <span class="badge">${esc(p.provider_type)}</span>
         </div>
         <div class="provider-card-actions">
           <button class="btn btn-secondary btn-sm" data-edit="${index}" type="button">编辑</button>
           <button class="btn btn-danger btn-sm" data-delete="${index}" type="button">删除</button>
         </div>
       </div>
-      <div class="provider-card-host" title="${escAttr(p.api_base)}">${esc(host)}</div>
+      <div class="provider-card-host" title="${escAttr(p.api_base)}">${esc(alias || host)}</div>
       <div class="provider-card-meta">
-        <span><strong>${keyCount}</strong> 个 Key</span>
-        <span><strong>${modelCount}</strong> 个模型</span>
-        ${p.max_concurrency != null ? `<span>并发: <strong>${p.max_concurrency}</strong></span>` : ""}
+        ${isEnabled ? "" : `<span class="provider-card-state-tag">已停用</span>`}
+        <span class="provider-card-counts">
+          <span><strong>${keyCount}</strong> 个 Key</span>
+          <span><strong>${modelCount}</strong> 个模型</span>
+          ${p.max_concurrency != null ? `<span>并发: <strong>${p.max_concurrency}</strong></span>` : ""}
+        </span>
       </div>
     </div>
   `;
@@ -950,7 +960,7 @@ function cycleEditorSort() {
     state.editorSortMode,
     state.editorSortOrigin,
   );
-  dom.edSortKeysBtn.textContent = `排序：${SORT_LABELS[state.editorSortMode]}`;
+  dom.edSortKeysBtn.textContent = SORT_LABELS[state.editorSortMode];
   syncLineNums(dom.edKeys);
   syncKeysHighlight();
 }
@@ -1011,7 +1021,7 @@ function openEditor(index = -1) {
   dom.edExtraBodyStatus.textContent = "";
   dom.edExtraBodyStatus.className = "json-status";
   state.editorSortMode = "none";
-  dom.edSortKeysBtn.textContent = "排序：预设";
+  dom.edSortKeysBtn.textContent = SORT_LABELS.none;
   // A query left over from the last time the editor was open would paint marks
   // on a provider the user never searched in.
   if (dom.edKeysSearch) dom.edKeysSearch.value = "";
