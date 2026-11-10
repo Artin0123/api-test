@@ -1542,7 +1542,7 @@ function renderProxyKeyCards() {
         ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${enabled && id ? "" : " disabled"}>恢复</button>`
         : "";
       const stateTag = k.disabled
-        ? `<span class="proxy-key-state-tag">失效</span>`
+        ? `<span class="proxy-key-state-tag">已失效</span>`
         : "";
       const timeTitle = proxyTimeTitle(k.last_used_at);
       const timeAttr = timeTitle ? ` title="${escAttr(timeTitle)}"` : "";
@@ -1557,11 +1557,11 @@ function renderProxyKeyCards() {
             <span${timeAttr}>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
           </div>
           <div class="proxy-key-card-actions">
+            ${stateTag}
             <div class="proxy-key-card-btns">
               <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${canAct && id ? "" : " disabled"}>测试</button>
               ${recover}
             </div>
-            ${stateTag}
           </div>
           <div class="proxy-test-result" data-proxy-result="${escAttr(id)}"></div>
         </article>`;

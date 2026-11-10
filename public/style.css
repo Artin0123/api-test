@@ -2142,6 +2142,7 @@ code {
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
+    margin-left: auto;
 }
 
 /* No reserved height: an untested key should not look like it is hiding text,
