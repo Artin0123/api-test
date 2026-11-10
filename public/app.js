@@ -69,7 +69,6 @@ const dom = {
   bulkEnableBtn: $("bulk-enable-btn"),
   bulkDisableBtn: $("bulk-disable-btn"),
   configSaveError: $("config-save-error"),
-  configSaveOk: $("config-save-ok"),
 
   // results tab
   refreshBtn: $("refresh-results-btn"),
@@ -160,7 +159,6 @@ const dom = {
   // error detail modal
   errDetailOverlay: $("errdetail-overlay"),
   errDetailClose: $("errdetail-close-btn"),
-  errDetailTitle: $("errdetail-title"),
   errDetailSubtitle: $("errdetail-subtitle"),
   errDetailContent: $("errdetail-content"),
 

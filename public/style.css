@@ -431,14 +431,6 @@ a:hover {
     border-color: var(--accent);
 }
 
-.copy-textarea--horizontal {
-    resize: none;
-    overflow-x: auto;
-    white-space: nowrap;
-    height: 2.8rem;
-    min-height: unset;
-}
-
 /* result page lined editors inherit flex-1 from copy-block */
 .result-lined-editor {
     flex: 1;
@@ -588,36 +580,9 @@ a:hover {
     min-width: 0;
 }
 
-.inv-models-details {
-    margin-top: 0.6rem;
-    padding-left: 0.85rem;
-    border-left: 2px solid var(--border);
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    line-height: 1.9;
-}
-
-/* ── Config form ───────────────────────────────────────────────────────── */
-.config-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.config-cols {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-}
-
-@media (max-width: 640px) {
-    .config-cols {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* ── Provider cards ────────────────────────────────────────────────────── */
-.provider-grid {
+/* ── Cards & grids (shared: 来源设定 + 轮询转发) ───────────────────────── */
+.provider-grid,
+.proxy-key-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1rem;
@@ -625,12 +590,14 @@ a:hover {
 }
 
 @media (max-width: 640px) {
-    .provider-grid {
+    .provider-grid,
+    .proxy-key-grid {
         grid-template-columns: 1fr;
     }
 }
 
-.provider-card {
+.provider-card,
+.proxy-key-card {
     background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -653,7 +620,8 @@ a:hover {
     min-width: 0;
 }
 
-.provider-card-host {
+.provider-card-host,
+.proxy-key-mask {
     font-size: 1rem;
     font-weight: 600;
     overflow: hidden;
@@ -661,7 +629,8 @@ a:hover {
     white-space: nowrap;
 }
 
-.provider-card--disabled {
+.provider-card--disabled,
+.proxy-key-card--disabled {
     opacity: 0.5;
     filter: grayscale(1);
 }
@@ -724,15 +693,17 @@ a:hover {
     flex-shrink: 0;
 }
 
-.provider-card-meta {
+.provider-card-meta,
+.proxy-key-card-meta {
     display: flex;
-    gap: 1rem;
+    gap: 0.25rem 1rem;
     flex-wrap: wrap;
     font-size: var(--text-sm);
     color: var(--text-muted);
 }
 
-.provider-card-meta span strong {
+.provider-card-meta span strong,
+.proxy-key-card-meta span strong {
     color: var(--text);
     font-weight: 600;
 }
@@ -752,13 +723,17 @@ a:hover {
     margin-left: auto;
 }
 
-/* The disabled state sits at the left end of the same row as plain bold text, not
-   as a pill: it reads as one more fact about the provider, in the same size and
-   weight as the counts it faces, instead of as a badge that shouts. */
-.provider-card-state-tag {
-    align-self: center;
+/* The disabled state sits as plain bold text, not a pill: it reads as one more
+   fact about the card, in the same size and weight as the counts beside it. */
+.provider-card-state-tag,
+.proxy-key-state-tag {
+    font-size: var(--text-sm);
     font-weight: 600;
     color: var(--text);
+}
+
+.provider-card-state-tag {
+    align-self: center;
 }
 
 .panel-head-actions {
@@ -774,19 +749,6 @@ a:hover {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-}
-/* Same .field, but sharing a horizontal toolbar row instead of owning a whole
-   modal column: it sizes to its own content (a <select> to its longest option,
-   a text input to a fixed 18rem) and only shrinks when the row runs out of
-   space. Letting it grow turned the provider picker into a 950px-wide bar. */
-.field--inline {
-    flex: 0 1 auto;
-    min-width: 0;
-}
-
-.field--inline > .input-text {
-    width: 18rem;
-    max-width: 100%;
 }
 
 .field-label {
@@ -847,11 +809,11 @@ a:hover {
         box-shadow 0.15s;
 }
 
-/* Pinned so single-line inputs have one exact height on every platform; the
-   toolbar buttons beside them match it through --control-h. Leaving the height
-   to padding + the font's normal line box made it font-dependent (40.8px here,
-   40.0px elsewhere) and the buttons could never line up reliably. */
-.input-text {
+/* Pinned so every single-line input and select shares one exact height on every
+   platform; toolbar buttons beside them match it through --control-h. Leaving
+   <select> to padding + line box made it 40.8px vs 40px on .input-text. */
+.input-text,
+.input-select {
     height: var(--control-h);
 }
 
@@ -1107,21 +1069,6 @@ a:hover {
     gap: 0.6rem;
 }
 
-/* The editor footer also hosts the in-place delete confirmation, so it grows
-   upward while the action row stays right-aligned. Other modals keep the
-   original single-row footer. */
-.modal-footer--editor {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-}
-
-.modal-footer-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.6rem;
-}
-
 /* ── Sample modal content ──────────────────────────────────────────────── */
 .sample-block {
     display: flex;
@@ -1218,7 +1165,9 @@ a:hover {
     font-family: var(--font);
     font-weight: 500;
     cursor: pointer;
-    border: none;
+    /* Transparent 1px border keeps solid variants (.btn-primary, .btn-danger-solid)
+       the exact same height as bordered variants (.btn-secondary, .btn-ghost). */
+    border: 1px solid transparent;
     transition:
         opacity 0.15s,
         background 0.15s,
@@ -1422,16 +1371,21 @@ code {
 }
 
 /* ── Dead keys tab ─────────────────────────────────────────────────────── */
+/* Shared framed panel surface (with .proxy-toolbar defined below) */
+.dk-filter-panel,
+.proxy-toolbar {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
 .dk-filter-panel {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 1rem;
-    padding: 1rem 1.1rem;
-    margin-bottom: 1rem;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
 }
 
 .dk-filter-field--host {
@@ -1480,25 +1434,31 @@ code {
     border: 0;
 }
 
-.dk-date-btn {
+/* Embedded right-side square icon buttons inside inputs (calendar & key clear). */
+.dk-date-btn,
+.keys-search-clear {
     position: absolute;
     top: 50%;
-    right: 0.15rem;
     transform: translateY(-50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
     padding: 0;
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-muted);
-    cursor: pointer;
     transition:
         color 0.15s,
+        opacity 0.15s,
         background 0.15s;
+}
+
+.dk-date-btn {
+    right: 0.15rem;
+    width: 2rem;
+    height: 2rem;
+    cursor: pointer;
 }
 
 .dk-date-btn:hover {
@@ -1859,18 +1819,12 @@ code {
    The provider itself is a <select>, not a card: per-provider cards turned into
    very tall columns once a provider had more than a handful of keys.
 
-   The toolbar sits inside a framed surface matching .proxy-key-card
-   (bg-2 / border / --radius) with inner padding so its controls stay clearly
-   separated from the outer frame, while the empty state reuses .state-card. */
+   The toolbar shares its framed surface with .dk-filter-panel above,
+   while the empty state reuses .state-card. */
 .proxy-toolbar {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
 }
 
 .proxy-summary {
@@ -1919,22 +1873,17 @@ code {
     gap: 0.75rem;
 }
 
-/* Both selects and every button on this block use the same 2.5rem as .input-text,
-   so a row of controls is one clean line instead of a field with a row of shorter
-   pills beside it.
-   .input-select has no fixed height of its own — it is padding + the font's line
-   box, 40.8px on this platform — so it gets the token here rather than globally. */
-.proxy-toolbar-row .input-select {
-    height: var(--control-h);
+/* Controls in these rows share --control-h with single-line inputs/selects.
+   .btn-sm stays on the HTML for tighter horizontal padding, while vertical
+   padding and font size match adjacent selects so the band reads as one line. */
+.proxy-toolbar-row .btn,
+.keys-toolbar .btn,
+.add-header-btn {
+    min-height: var(--control-h);
 }
 
-/* Every button in these rows is exactly one control tall, not merely at least
-   that tall: .btn-sm's own padding is overridden by the height, and the font
-   matches the selects it sits beside. The gap stays .proxy-toolbar-row's, so the
-   band reads as one row of equal boxes. */
 .proxy-toolbar-row .btn {
     height: var(--control-h);
-    min-height: var(--control-h);
     padding-block: 0;
     font-size: var(--text-sm);
 }
@@ -2059,36 +2008,6 @@ code {
     border-color: var(--border);
 }
 
-.proxy-key-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-
-.proxy-key-card {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.35rem;
-    min-width: 0;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-}
-
-/* Match .provider-card--disabled and .provider-card-state-tag in 来源设定. */
-.proxy-key-card--disabled {
-    opacity: 0.5;
-    filter: grayscale(1);
-}
-
-.proxy-key-state-tag {
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--text);
-}
-
 .proxy-key-card-head {
     display: flex;
     align-items: center;
@@ -2097,36 +2016,15 @@ code {
     min-width: 0;
 }
 
-/* Flex item, so the ellipsis needs min-width: 0 to ever kick in. The mask is
-   identity, not content: it must not inherit the `code` chip (bg-3 + padding
-   made it read as a disabled input), so it borrows .provider-card-host instead
-   — same weight and size as the other tabs' card titles. */
+/* Typography & truncation are shared with .provider-card-host above.
+   min-width: 0 + padding: 0 + background: none drop the inline <code> chip box. */
 .proxy-key-mask {
     flex: 1;
     min-width: 0;
     padding: 0;
     background: none;
     font-family: var(--mono);
-    font-size: 1rem;
-    font-weight: 600;
     color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* Same shape as .provider-card-meta: muted labels, solid numbers. */
-.proxy-key-card-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1rem;
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-}
-
-.proxy-key-card-meta span strong {
-    color: var(--text);
-    font-weight: 600;
 }
 
 .proxy-key-card-actions {
@@ -2255,8 +2153,23 @@ code {
         padding: 0.55rem 1rem;
     }
 
-    .btn-sm {
+    .btn-sm,
+    .dk-filter-actions .btn {
         padding: 0.45rem 0.75rem;
+        font-size: var(--text-xs);
+    }
+
+    .btn-xs {
+        padding: 0.3rem 0.55rem;
+        font-size: var(--text-xs);
+    }
+
+    .btn-icon {
+        padding: 0.25rem;
+    }
+
+    .btn.btn-danger-icon {
+        padding: 0;
     }
 
     .tabs {
@@ -2286,24 +2199,10 @@ code {
         align-self: flex-start;
     }
 
-    /* Provider cards: single column, less padding */
-    .provider-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .provider-card {
-        padding: 1rem;
-    }
-    /* Proxy: single column and the same padding drop as provider cards; the
-       toolbar stacks one control per row so nothing sits under a thumb. */
-    .proxy-key-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .proxy-key-card {
-        padding: 1rem;
-    }
-
+    /* Cards and framed panels: single-column grids and compact inner padding. */
+    .provider-card,
+    .proxy-key-card,
+    .dk-filter-panel,
     .proxy-toolbar {
         padding: 1rem;
     }
@@ -2317,15 +2216,6 @@ code {
        block also gives up its fixed card width — there is only one column. */
     .proxy-provider-col {
         flex: 1 1 100%;
-    }
-
-    .field--inline {
-        flex: none;
-        width: 100%;
-    }
-
-    .field--inline > .input-text {
-        width: 100%;
     }
 
     .proxy-toolbar-row .btn {
@@ -2385,11 +2275,6 @@ code {
     .dk-filter-field--key,
     .dk-filter-field--code {
         flex: 1 1 100%;
-    }
-
-    .dk-filter-actions .btn {
-        padding: 0.5rem 0.9rem;
-        font-size: var(--text-xs);
     }
 
     .dk-table {
@@ -2542,30 +2427,13 @@ code {
 }
 
 .keys-search-clear {
-    position: absolute;
-    top: 50%;
     right: 0.3rem;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     width: 1.85rem;
     height: 1.85rem;
-    /* Square, like the marks it clears: a rounded icon button read as a
-       different, softer control than the rest of the band. */
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
     /* Dimmed while there is nothing to clear, so an empty box does not offer a
        dead control, but it never appears and disappears under the cursor. */
-    color: var(--text-muted);
     opacity: 0.45;
     cursor: default;
-    transition:
-        color 0.15s,
-        opacity 0.15s,
-        background 0.15s;
 }
 
 .keys-search-clear.is-active {
@@ -2586,14 +2454,6 @@ code {
     .keys-search-wrap {
         flex: 1 1 100%;
     }
-}
-
-/* "排序" / "导出" / "+ 添加请求头" stand in the same band as a single-line
-   input (beside it, or under the rows it adds), so they take the same height —
-   .btn-xs alone is a 26px strip and looked like a different size class. */
-.keys-toolbar .btn,
-.add-header-btn {
-    min-height: var(--control-h);
 }
 /* Occurrence marks for the keys textarea. A <textarea> cannot colour part of
    its own text, so the marks live in a layer of identical text sitting behind
