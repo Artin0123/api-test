@@ -68,7 +68,7 @@ Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分�
 
 - **批次刪除**：`DELETE /api/dead-keys` 支援 `ids: string[]`，讀一次、執行一次 `rebalanceErrorDetail()`、寫回一次並直接回傳更新後陣列，避免 N 筆逐一刪除。
 - **常駐篩選、移除重讀鈕與響應式金鑰遮罩**：移除獨立篩選收合、手動新增列與「`重新读取`」／單筆編輯鈕，保留常駐 `.dk-filter-panel`、純數字日期格式化（起訖日期預設留空以顯示全部紀錄，需縮小範圍時再填入或點「`清除筛选`」重置）、固定欄寬 `table-layout: fixed`（無日期／無 Code 置底）與切換分頁自動重拉。桌機採用 `maskKey()`（左 6 ＋ 1～3 `*` ＋ 後 3），手機端採用 `maskKeyMobile()`（左 6 ＋ 1～3 `*` ＋ 後 1）；篩選下拉選單統一與輪詢轉發相同格式，依 `fp` 以 `providerFormatLabel()` 呈現「`名稱 - 格式`」，表格欄位則維持單卡顯示 `providerDisplayName()`（`別名 || host`）、同主機多卡加註 `名稱 - 格式`。
-- **桌機乾淨平面下拉選單增強（手機保留原生）**：`enhanceSelect()` 於桌機漸進強化為 `.custom-select-trigger` 搭配依實測寬度鎖定的 `.custom-select-menu`，手機與觸控端退回原生 `<select>`（參考頁 `public/select-preview.html`）。
+- **桌機乾淨平面下拉選單增強（手機保留原生）**：`enhanceSelect()` 於桌機漸進強化為 `.custom-select-trigger` 搭配依實測寬度鎖定的 `.custom-select-menu`，手機與觸控端退回原生 `<select>`（樣式比較預覽頁已於 2026-11 移除）。
 
 ---
 

@@ -180,18 +180,27 @@ test("dead keys provider labels, responsive key masking, and flat desktop select
   const mobileBlock = css.slice(css.indexOf("@media (max-width: 640px)"));
   assert.match(mobileBlock, /\.dk-key-desktop\s*\{\s*display:\s*none/s);
   assert.match(mobileBlock, /\.dk-key-mobile\s*\{\s*display:\s*inline/s);
+});
 
-  const previewHtml = read("select-preview.html");
-  const previewJs = read("select-preview.js");
-  assert.ok(!/<script(?![^>]*\bsrc=)/i.test(previewHtml), "no inline <script> in select-preview.html");
-  assert.ok(!/\sstyle="/i.test(previewHtml), 'no style="" attribute in select-preview.html');
-  assert.ok(!/\sstyle="/i.test(previewJs), 'select-preview.js must not build style="" attributes');
-
-  const summaryPreviewHtml = read("summary-preview.html");
-  const summaryPreviewJs = read("summary-preview.js");
-  assert.ok(!/<script(?![^>]*\bsrc=)/i.test(summaryPreviewHtml), "no inline <script> in summary-preview.html");
-  assert.ok(!/\sstyle="/i.test(summaryPreviewHtml), 'no style="" attribute in summary-preview.html');
-  assert.ok(!/\sstyle="/i.test(summaryPreviewJs), 'summary-preview.js must not build style="" attributes');
+test("the design-comparison preview pages stay removed", () => {
+  // The /select-preview and /summary-preview pages were design-phase helpers
+  // deleted in 2026-11; as static assets they must never come back silently.
+  for (const name of [
+    "select-preview.html",
+    "select-preview.css",
+    "select-preview.js",
+    "summary-preview.html",
+    "summary-preview.css",
+    "summary-preview.js",
+  ]) {
+    let exists = true;
+    try {
+      read(name);
+    } catch {
+      exists = false;
+    }
+    assert.ok(!exists, `public/${name} should stay deleted`);
+  }
 });
 
 test("proxy toolbar places recover-all button next to test-disabled and scopes by fp", () => {
