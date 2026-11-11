@@ -34,6 +34,18 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: python -u async_test_keys.py
 
+      - name: Clear run status
+        if: always()
+        env:
+          PAGES_URL: ${{ secrets.PAGES_URL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          BASE="${PAGES_URL%/}"
+          curl -sf -X DELETE \
+            -H "Authorization: Bearer $ADMIN_PASSWORD" \
+            "$BASE/api/run-status" \
+            >/dev/null || echo "Clear run status failed (non-fatal)"
+
       - name: Notify Discord
         if: always()
         env:
