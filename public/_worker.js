@@ -589,17 +589,31 @@ function settingsVersion(settings) {
 // 400 here, not turn into a mystery 404 at forward time.
 const PROXY_ALIAS_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/** Normalize comma/newline-separated model names into canonical comma-separated form. */
-function normalizeModelsString(raw) {
-  if (typeof raw !== "string") return "";
-  return raw
-    .split(/[,\r\n]+/)
-    .map((m) => m.trim())
-    .filter(Boolean)
-    .join(",");
+/** Split trimmed non-empty items while preserving first occurrence order. */
+function splitUniqueDelimited(raw, splitRe) {
+  if (typeof raw !== "string") return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw.split(splitRe)) {
+    const trimmed = item.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }
 
-/** Normalize alias and models formatting and drop empty/removed legacy proxy fields. */
+/** Normalize comma/newline-separated model names into canonical deduplicated CSV form. */
+function normalizeModelsString(raw) {
+  return splitUniqueDelimited(raw, /[,\r\n]+/).join(",");
+}
+
+/** Normalize newline-separated API keys into canonical deduplicated LF form. */
+function normalizeKeysString(raw) {
+  return splitUniqueDelimited(raw, "\n").join("\n");
+}
+
+/** Normalize keys, alias, and models formatting and drop removed legacy proxy fields. */
 function normalizeProviderForStorage(p) {
   if (!p || typeof p !== "object") return p;
   const out = { ...p };
@@ -607,6 +621,9 @@ function normalizeProviderForStorage(p) {
     const alias = p.alias.trim();
     if (alias) out.alias = alias;
     else delete out.alias;
+  }
+  if (typeof p.keys === "string") {
+    out.keys = normalizeKeysString(p.keys);
   }
   if (typeof p.models === "string") {
     out.models = normalizeModelsString(p.models);
@@ -742,7 +759,11 @@ async function handleGetSettings(request, env) {
   const raw = await kv.get(SETTINGS_KEY);
   const settings = withSettingsDefaults(parseJsonOrNull(raw));
   settings.version = settingsVersion(settings);
-  return json({ ok: true, settings });
+  return json({
+    ok: true,
+    settings,
+    storage_backend: storageBackendName(env),
+  });
 }
 
 async function handlePostSettings(request, env) {
@@ -945,7 +966,11 @@ async function handlePostSettings(request, env) {
     }
   }
 
-  return json({ ok: true, version: next.version });
+  return json({
+    ok: true,
+    version: next.version,
+    storage_backend: storageBackendName(env),
+  });
 }
 
 // ─── /api/results ────────────────────────────────────────────────────────────
@@ -1603,18 +1628,12 @@ function sanitizeHeaderAscii(value) {
 
 function providerKeys(provider) {
   if (!provider || typeof provider.keys !== "string") return [];
-  return provider.keys
-    .split("\n")
-    .map((k) => k.trim())
-    .filter(Boolean);
+  return splitUniqueDelimited(provider.keys, "\n");
 }
 
 function providerModels(provider) {
   if (!provider || typeof provider.models !== "string") return [];
-  return provider.models
-    .split(/[,\r\n]+/)
-    .map((m) => m.trim())
-    .filter(Boolean);
+  return splitUniqueDelimited(provider.models, /[,\r\n]+/);
 }
 
 function parseExtraBody(provider) {
@@ -1931,13 +1950,19 @@ async function resetKeyFailure(db, id) {
 
 // ─── /proxy/{alias}/… ───────────────────────────────────────────────────────
 
-async function handleProxy(request, env, url) {
+function rejectIfProxyDisabled(env) {
   if (storageBackendName(env) !== "d1") {
     return json(
       { error: proxyConfigError(env, null), code: "PROXY_DISABLED" },
       503,
     );
   }
+  return null;
+}
+
+async function handleProxy(request, env, url) {
+  const blocked = rejectIfProxyDisabled(env);
+  if (blocked) return blocked;
 
   const kv = store(env);
   const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
@@ -2120,6 +2145,8 @@ async function handleGetProxyState(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
   }
+  const blocked = rejectIfProxyDisabled(env);
+  if (blocked) return blocked;
 
   const backend = storageBackendName(env);
   const kv = store(env);
@@ -2283,9 +2310,8 @@ async function handleProxyTest(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
   }
-  if (storageBackendName(env) !== "d1") {
-    return json({ error: proxyConfigError(env, null) }, 503);
-  }
+  const blocked = rejectIfProxyDisabled(env);
+  if (blocked) return blocked;
 
   let body;
   try {
@@ -2439,9 +2465,8 @@ async function handleProxyRecover(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
   }
-  if (storageBackendName(env) !== "d1") {
-    return json({ error: "Recover requires STORAGE_BACKEND=d1" }, 503);
-  }
+  const blocked = rejectIfProxyDisabled(env);
+  if (blocked) return blocked;
   let body;
   try {
     body = await request.json();
@@ -2503,6 +2528,8 @@ async function handleProxyTestModel(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
   }
+  const blocked = rejectIfProxyDisabled(env);
+  if (blocked) return blocked;
   let body;
   try {
     body = await request.json();

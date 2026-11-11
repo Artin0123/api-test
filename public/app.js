@@ -6,6 +6,8 @@ const MOCK = new URLSearchParams(location.search).has("mock");
 const COPY_ICON_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
 const CHECK_ICON_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 const TRASH_ICON_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+const EYE_ICON_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const EYE_OFF_ICON_SVG = `<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 // RFC 7230 token. Must match _HEADER_NAME_RE in async_test_keys.py — aiohttp
 // rejects anything else and the whole request would fail.
 const HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
@@ -105,6 +107,7 @@ function syncMockSettings(settings) {
 const state = {
   signedIn: false,
   settings: null,
+  storageBackend: "d1",
   fpCache: new Map(), // api_base + provider_type -> sha256 fingerprint
   selectedProviders: new Set(), // indices of currently selected provider cards
   deadKeys: [], // dead key records loaded from /api/dead-keys
@@ -148,6 +151,8 @@ const dom = {
 
   tabBtns: Array.from(document.querySelectorAll(".tab-btn")),
   tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
+  proxyTabBtn: document.querySelector('.tab-btn[data-tab="proxy"]'),
+  tabProxy: $("tab-proxy"),
 
   // config tab
   configLoading: $("config-loading"),
@@ -193,6 +198,7 @@ const dom = {
 
   // app settings modal
   settingsOverlay: $("settings-overlay"),
+  settingsProxyFields: $("settings-proxy-fields"),
   settingsCancel: $("settings-cancel-btn"),
   settingsSave: $("settings-save-btn"),
   settingsError: $("settings-error"),
@@ -200,8 +206,12 @@ const dom = {
   setGithubUrl: $("set-github-url"),
   setDiscordUrl: $("set-discord-url"),
   setProxyPassword: $("set-proxy-password"),
+  setProxyPasswordToggle: $("set-proxy-password-toggle"),
+  setProxyPasswordCopy: $("set-proxy-password-copy"),
   setGatewayLogsUrl: $("set-gateway-logs-url"),
   setGatewayToken: $("set-gateway-token"),
+  setGatewayTokenToggle: $("set-gateway-token-toggle"),
+  setGatewayTokenCopy: $("set-gateway-token-copy"),
   setProxyFailThreshold: $("set-proxy-fail-threshold"),
   setProxyMaxRetries: $("set-proxy-max-retries"),
   setProxyTimeoutMs: $("set-proxy-timeout-ms"),
@@ -294,11 +304,21 @@ async function api(path, { method = "GET", auth = false, body } = {}) {
 // carries the version this tab last read. A 409 means another tab saved first
 // and this tab's copy is stale — pull the winning copy in before the user
 // retries, so they are never looking at a snapshot that no longer exists.
+function isKvStorageMode() {
+  return state.storageBackend === "kv";
+}
+
+function applyFetchedSettings(payload) {
+  state.settings = payload?.settings || {};
+  state.storageBackend =
+    payload?.storage_backend || state.storageBackend || "d1";
+  applySettingsToUI();
+}
+
 async function reloadSettingsFromServer() {
   const d = await api("/api/settings", { auth: true });
-  state.settings = d.settings || {};
+  applyFetchedSettings(d);
   state.selectedProviders.clear();
-  applySettingsToUI();
   renderProviderGrid();
 }
 
@@ -398,23 +418,27 @@ function bindLineNums(textarea) {
   sync();
 }
 
-// ── Models normalization ──────────────────────────────────────────────────
+// ── Models & keys normalization ───────────────────────────────────────────
+function splitUniqueDelimited(raw, splitRe) {
+  const seen = new Set();
+  const out = [];
+  for (const item of String(raw || "").split(splitRe)) {
+    const trimmed = item.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 // Accepts comma-separated and/or newline-separated model names; trims items,
-// drops empties, and joins as canonical comma-separated string.
+// drops empties, deduplicates keeping first occurrence, and joins with commas.
 function normalizeModels(raw) {
-  return String(raw || "")
-    .split(/[,\r\n]+/)
-    .map((m) => m.trim())
-    .filter(Boolean)
-    .join(",");
+  return splitUniqueDelimited(raw, /[,\r\n]+/).join(",");
 }
 
 function normalizeKeys(raw) {
-  return raw
-    .split("\n")
-    .map((k) => k.trim())
-    .filter(Boolean)
-    .join("\n");
+  return splitUniqueDelimited(raw, "\n").join("\n");
 }
 
 /** Newline list helper shared by the editor tools and the proxy page. */
@@ -576,6 +600,7 @@ async function logout() {
     await api("/api/logout", { method: "POST" });
   } catch {}
   state.settings = null;
+  state.storageBackend = "d1";
   state.deadKeys = [];
   state.proxy = null;
   state.proxyPlainKeys.clear();
@@ -1080,6 +1105,7 @@ function toggleMobileMenu(force) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
+  if (name === "proxy" && isKvStorageMode()) name = "config";
   closeOpenCustomSelect();
   dom.tabBtns.forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name),
@@ -1115,12 +1141,65 @@ function isValidGatewayLogsUrl(url) {
 }
 
 // ── Settings modal ────────────────────────────────────────────────────────
+function settingsSecretFields() {
+  return [
+    {
+      input: dom.setProxyPassword,
+      toggle: dom.setProxyPasswordToggle,
+      copy: dom.setProxyPasswordCopy,
+      showLabel: "显示密码",
+      hideLabel: "隐藏密码",
+    },
+    {
+      input: dom.setGatewayToken,
+      toggle: dom.setGatewayTokenToggle,
+      copy: dom.setGatewayTokenCopy,
+      showLabel: "显示 Token",
+      hideLabel: "隐藏 Token",
+    },
+  ];
+}
+
+function setSecretVisibility(field, visible) {
+  if (!field?.input || !field?.toggle) return;
+  field.input.type = visible ? "text" : "password";
+  field.toggle.innerHTML = visible ? EYE_OFF_ICON_SVG : EYE_ICON_SVG;
+  field.toggle.setAttribute("aria-pressed", String(visible));
+  const label = visible ? field.hideLabel : field.showLabel;
+  field.toggle.setAttribute("aria-label", label);
+  field.toggle.title = label;
+}
+
+function syncSecretCopyState(field) {
+  if (!field?.input || !field?.copy) return;
+  if (copyBtnTimers.has(field.copy)) return;
+  field.copy.disabled = !field.input.value.trim();
+}
+
+function resetSettingsSecrets() {
+  for (const field of settingsSecretFields()) {
+    if (field.copy) {
+      const pending = copyBtnTimers.get(field.copy);
+      if (pending) {
+        clearTimeout(pending);
+        copyBtnTimers.delete(field.copy);
+      }
+      field.copy.innerHTML = COPY_ICON_SVG;
+      delete field.copy.dataset.origHtml;
+      field.copy.classList.remove("copied");
+    }
+    setSecretVisibility(field, false);
+    syncSecretCopyState(field);
+  }
+}
+
 function openSettings() {
   const s = state.settings || {};
-  dom.setGithubUrl.value = s.github_url || "";
+  applySettingsToUI();
   dom.setDiscordUrl.value = s.discord_webhook_url || "";
-  dom.setProxyPassword.value = s.proxy_password || "";
+  dom.setGithubUrl.value = s.github_url || "";
   dom.setGatewayLogsUrl.value = s.ai_gateway_logs_url || "";
+  dom.setProxyPassword.value = s.proxy_password || "";
   dom.setGatewayToken.value = s.ai_gateway_token || "";
   dom.setProxyFailThreshold.value = String(
     s.proxy_fail_threshold ?? PROXY_SETTING_SPECS.proxy_fail_threshold.fallback,
@@ -1131,12 +1210,14 @@ function openSettings() {
   dom.setProxyTimeoutMs.value = String(
     s.proxy_upstream_timeout_ms ?? PROXY_SETTING_SPECS.proxy_upstream_timeout_ms.fallback,
   );
+  resetSettingsSecrets();
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
-  openModal(dom.settingsOverlay, dom.setGithubUrl);
+  openModal(dom.settingsOverlay, dom.setDiscordUrl);
 }
 
 function closeSettings() {
+  resetSettingsSecrets();
   closeModal(dom.settingsOverlay);
 }
 
@@ -1144,23 +1225,28 @@ async function saveSettings() {
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
 
-  const githubUrl = dom.setGithubUrl.value.trim();
-  if (githubUrl && !HTTP_URL_RE.test(githubUrl)) {
-    dom.settingsError.textContent =
-      "GitHub Actions URL 必须以 http:// 或 https:// 开头";
-    return;
-  }
   const discordUrl = dom.setDiscordUrl.value.trim();
   if (discordUrl && !HTTP_URL_RE.test(discordUrl)) {
     dom.settingsError.textContent =
       "Discord Webhook URL 必须以 http:// 或 https:// 开头";
     return;
   }
-  const logsUrl = dom.setGatewayLogsUrl.value.trim();
-  if (logsUrl && !isValidGatewayLogsUrl(logsUrl)) {
+  const githubUrl = dom.setGithubUrl.value.trim();
+  if (githubUrl && !HTTP_URL_RE.test(githubUrl)) {
     dom.settingsError.textContent =
-      "AI Gateway Logs URL 格式无效，请填写 https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs";
+      "GitHub Actions URL 必须以 http:// 或 https:// 开头";
     return;
+  }
+
+  const kvMode = isKvStorageMode();
+  let logsUrl = "";
+  if (!kvMode) {
+    logsUrl = dom.setGatewayLogsUrl.value.trim();
+    if (logsUrl && !isValidGatewayLogsUrl(logsUrl)) {
+      dom.settingsError.textContent =
+        "AI Gateway Logs URL 格式无效，请填写 https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs";
+      return;
+    }
   }
 
   const parseSettingInt = (input, spec) => {
@@ -1179,22 +1265,24 @@ async function saveSettings() {
     patch = {
       github_url: githubUrl,
       discord_webhook_url: discordUrl,
-      proxy_password: dom.setProxyPassword.value.trim(),
-      ai_gateway_logs_url: logsUrl,
-      ai_gateway_token: dom.setGatewayToken.value.trim(),
-      proxy_fail_threshold: parseSettingInt(
+    };
+    if (!kvMode) {
+      patch.ai_gateway_logs_url = logsUrl;
+      patch.proxy_password = dom.setProxyPassword.value.trim();
+      patch.ai_gateway_token = dom.setGatewayToken.value.trim();
+      patch.proxy_fail_threshold = parseSettingInt(
         dom.setProxyFailThreshold,
         PROXY_SETTING_SPECS.proxy_fail_threshold,
-      ),
-      proxy_max_retries: parseSettingInt(
+      );
+      patch.proxy_max_retries = parseSettingInt(
         dom.setProxyMaxRetries,
         PROXY_SETTING_SPECS.proxy_max_retries,
-      ),
-      proxy_upstream_timeout_ms: parseSettingInt(
+      );
+      patch.proxy_upstream_timeout_ms = parseSettingInt(
         dom.setProxyTimeoutMs,
         PROXY_SETTING_SPECS.proxy_upstream_timeout_ms,
-      ),
-    };
+      );
+    }
   } catch (err) {
     dom.settingsError.textContent = err.message;
     return;
@@ -1210,7 +1298,7 @@ async function saveSettings() {
     syncMockSettings(state.settings);
     applySettingsToUI();
     closeSettings();
-    if (state.proxy) loadProxyState({ preserveResults: true });
+    if (!kvMode && state.proxy) loadProxyState({ preserveResults: true });
   } catch (err) {
     dom.settingsError.textContent = err.message;
   } finally {
@@ -1252,11 +1340,30 @@ async function testDiscordWebhook() {
 
 function applySettingsToUI() {
   const s = state.settings || {};
+  const kvMode = isKvStorageMode();
+  if (dom.proxyTabBtn) {
+    dom.proxyTabBtn.classList.toggle("hidden", kvMode);
+  }
+  if (dom.tabProxy) {
+    if (kvMode && dom.tabProxy.classList.contains("active")) {
+      switchTab("config");
+    } else if (kvMode) {
+      dom.tabProxy.classList.add("hidden");
+      dom.tabProxy.classList.remove("active");
+    }
+  }
+  if (dom.settingsProxyFields) {
+    dom.settingsProxyFields.classList.toggle("hidden", kvMode);
+  }
+  if (kvMode) {
+    state.proxy = null;
+  }
+
   const url = String(s.github_url || "").trim();
   if (url && HTTP_URL_RE.test(url)) {
     dom.runNowBtn.href = url;
     dom.runNowBtn.removeAttribute("aria-disabled");
-    dom.runNowBtn.title = "前往 GitHub Actions 立即执行测试";
+    dom.runNowBtn.title = "前往 GitHub Actions 立即执行测试或查看记录";
   } else {
     dom.runNowBtn.removeAttribute("href");
     dom.runNowBtn.setAttribute("aria-disabled", "true");
@@ -1277,14 +1384,16 @@ async function loadConfig() {
     let data;
     if (MOCK) {
       const mock = await getMock();
-      data = { settings: state.settings || mock.settings };
+      data = {
+        settings: state.settings || mock.settings,
+        storage_backend: mock.storage_backend || state.storageBackend || "d1",
+      };
     } else {
       data = await api("/api/settings", { auth: true });
     }
     if (reqId !== state.reqSeq.config) return;
-    state.settings = data.settings || {};
+    applyFetchedSettings(data);
     syncMockSettings(state.settings);
-    applySettingsToUI();
     renderProviderGrid();
   } catch (err) {
     if (reqId !== state.reqSeq.config) return;
@@ -1932,8 +2041,7 @@ async function syncProxyPlainKeys(proxyProviders) {
   const buildByFp = async (forceReload = false) => {
     if (!state.settings || forceReload) {
       const d = await api("/api/settings", { auth: true });
-      state.settings = d.settings || {};
-      applySettingsToUI();
+      applyFetchedSettings(d);
     }
     await ensureProviderFps(state.settings.providers || []);
     const byFp = new Map();
@@ -1962,6 +2070,10 @@ async function syncProxyPlainKeys(proxyProviders) {
 
 async function loadProxyState({ preserveResults = false } = {}) {
   const reqId = ++state.reqSeq.proxy;
+  if (isKvStorageMode()) {
+    dom.proxyLoading.classList.add("hidden");
+    return false;
+  }
   if (!preserveResults) {
     state.proxyLastResults.clear();
   }
@@ -1978,8 +2090,12 @@ async function loadProxyState({ preserveResults = false } = {}) {
     if (MOCK) {
       const mock = await getMock();
       if (!state.settings) {
-        state.settings = mock.settings || {};
+        applyFetchedSettings({
+          settings: mock.settings || {},
+          storage_backend: mock.storage_backend || "d1",
+        });
       }
+      if (isKvStorageMode()) return false;
       await ensureProviderFps(state.settings.providers || []);
       data = mockProxyState(state.settings);
     } else {
@@ -2751,13 +2867,14 @@ async function loadResults() {
       if (MOCK) {
         const mock = await getMock();
         if (reqId !== state.reqSeq.results) return;
-        state.settings = mock.settings;
-        applySettingsToUI();
+        applyFetchedSettings({
+          settings: mock.settings,
+          storage_backend: mock.storage_backend || "d1",
+        });
       } else {
         const d = await api("/api/settings", { auth: true });
         if (reqId !== state.reqSeq.results) return;
-        state.settings = d.settings || {};
-        applySettingsToUI();
+        applyFetchedSettings(d);
       }
     }
 
@@ -3297,12 +3414,14 @@ async function loadDeadKeys(force = false) {
       if (MOCK) {
         const mock = await getMock();
         if (reqId !== state.reqSeq.deadkeys) return;
-        state.settings = mock.settings;
+        applyFetchedSettings({
+          settings: mock.settings,
+          storage_backend: mock.storage_backend || "d1",
+        });
       } else {
         const d = await api("/api/settings", { auth: true });
         if (reqId !== state.reqSeq.deadkeys) return;
-        state.settings = d.settings || {};
-        applySettingsToUI();
+        applyFetchedSettings(d);
       }
     }
 
@@ -3884,7 +4003,7 @@ function fallbackCopy(text) {
   document.body.removeChild(ta);
 }
 
-function copyText(text, btn) {
+function copyText(text, btn, { shouldDisable } = {}) {
   const doFeedback = () => {
     if (!btn || !btn.isConnected) return;
     const prevTimer = copyBtnTimers.get(btn);
@@ -3901,7 +4020,8 @@ function copyText(text, btn) {
       btn.innerHTML = origHtml;
       delete btn.dataset.origHtml;
       btn.classList.remove("copied");
-      btn.disabled = false;
+      btn.disabled =
+        typeof shouldDisable === "function" ? !!shouldDisable() : false;
     }, 1500);
     copyBtnTimers.set(btn, timer);
   };
@@ -4363,6 +4483,24 @@ function bindEvents() {
   dom.settingsCancel.addEventListener("click", closeSettings);
   dom.settingsSave.addEventListener("click", saveSettings);
   dom.testDiscordBtn.addEventListener("click", testDiscordWebhook);
+  for (const field of settingsSecretFields()) {
+    setSecretVisibility(field, false);
+    if (field.copy) field.copy.innerHTML = COPY_ICON_SVG;
+    syncSecretCopyState(field);
+    field.toggle?.addEventListener("mousedown", (e) => e.preventDefault());
+    field.toggle?.addEventListener("click", () => {
+      setSecretVisibility(field, field.input.type === "password");
+    });
+    field.copy?.addEventListener("click", () => {
+      const val = field.input?.value.trim() || "";
+      if (val) {
+        copyText(val, field.copy, {
+          shouldDisable: () => !(field.input?.value.trim()),
+        });
+      }
+    });
+    field.input?.addEventListener("input", () => syncSecretCopyState(field));
+  }
   dom.settingsOverlay.addEventListener("click", (e) => {
     if (e.target.dataset.closeModal === "settings") closeSettings();
   });
@@ -4445,7 +4583,8 @@ async function bootstrap() {
   // The hint says there was a session; only the server knows if the cookie is
   // still valid, so probe it. A 401 here is handled by api() → sessionEnded().
   try {
-    await api("/api/settings", { auth: true });
+    const probe = await api("/api/settings", { auth: true });
+    applyFetchedSettings(probe);
     markSignedIn();
     dom.authOverlay.classList.remove("active");
     await initApp();

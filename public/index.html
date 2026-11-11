@@ -129,7 +129,7 @@
                         </div>
                         <div class="panel-head-actions">
                             <a id="run-now-btn" class="btn btn-primary" target="_blank" rel="noreferrer"
-                                aria-disabled="true">立即执行<span class="btn-ext" aria-hidden="true">↗</span></a>
+                                aria-disabled="true">立即执行 / 查看记录<span class="btn-ext" aria-hidden="true">↗</span></a>
                         </div>
                     </div>
 
@@ -514,11 +514,6 @@
                 </div>
                 <div class="modal-body">
                     <label class="field">
-                        <span class="field-label">GitHub Actions URL</span>
-                        <input type="url" id="set-github-url" class="input-text"
-                            placeholder="https://github.com/owner/repo/actions/workflows/main.yml" />
-                    </label>
-                    <label class="field">
                         <span class="field-label">Discord Webhook URL</span>
                         <div class="field-row">
                             <input type="url" id="set-discord-url" class="input-text"
@@ -529,59 +524,85 @@
                         </div>
                     </label>
                     <label class="field">
-                        <span class="field-label">
-                            代理转发密码
-                            <span class="info-icon" tabindex="0">
-                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
-                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                                </svg>
-                                <span class="info-tooltip">必须与 ADMIN_PASSWORD 不同</span>
+                        <span class="field-label">GitHub Actions URL</span>
+                        <input type="url" id="set-github-url" class="input-text"
+                            placeholder="https://github.com/owner/repo/actions/workflows/main.yml" />
+                    </label>
+                    <div id="settings-proxy-fields" class="settings-proxy-fields">
+                        <label class="field">
+                            <span class="field-label">
+                                AI Gateway Logs URL
+                                <span class="info-icon" tabindex="0">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor"
+                                        stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                    </svg>
+                                    <span class="info-tooltip">也用于提取 Account ID / Gateway ID</span>
+                                </span>
                             </span>
-                        </span>
-                        <input type="password" id="set-proxy-password" class="input-text"
-                            placeholder="设定 PROXY_PASSWORD" autocomplete="new-password" spellcheck="false" />
-                    </label>
-                    <label class="field">
-                        <span class="field-label">
-                            AI Gateway Logs URL
-                            <span class="info-icon" tabindex="0">
-                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
-                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="16" x2="12" y2="12"></line>
-                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                                </svg>
-                                <span class="info-tooltip">也用于提取 Account ID / Gateway ID</span>
-                            </span>
-                        </span>
-                        <input type="url" id="set-gateway-logs-url" class="input-text"
-                            placeholder="https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs" />
-                    </label>
-                    <label class="field">
-                        <span class="field-label">AI Gateway Token</span>
-                        <input type="password" id="set-gateway-token" class="input-text"
-                            placeholder="cf-aig-authorization Bearer Token" autocomplete="new-password"
-                            spellcheck="false" />
-                    </label>
-                    <div class="settings-grid-3">
-                        <label class="field">
-                            <span class="field-label">失败禁用门槛</span>
-                            <input type="number" id="set-proxy-fail-threshold" class="input-text" min="1" step="1"
-                                placeholder="3" />
+                            <input type="url" id="set-gateway-logs-url" class="input-text"
+                                placeholder="https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs" />
                         </label>
-                        <label class="field">
-                            <span class="field-label">最多重试次数</span>
-                            <input type="number" id="set-proxy-max-retries" class="input-text" min="0" max="3" step="1"
-                                placeholder="3" />
-                        </label>
-                        <label class="field">
-                            <span class="field-label">上游超时 (ms)</span>
-                            <input type="number" id="set-proxy-timeout-ms" class="input-text" min="1000" max="600000"
-                                step="1000" placeholder="120000" />
-                        </label>
+                        <div class="field">
+                            <label class="field-label" for="set-proxy-password">
+                                代理转发密码
+                                <span class="info-icon" tabindex="0">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor"
+                                        stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                    </svg>
+                                    <span class="info-tooltip">必须与 ADMIN_PASSWORD 不同</span>
+                                </span>
+                            </label>
+                            <div class="field-row">
+                                <div class="input-secret-wrap">
+                                    <input type="password" id="set-proxy-password" class="input-text input-secret"
+                                        placeholder="设定 PROXY_PASSWORD" autocomplete="new-password"
+                                        spellcheck="false" />
+                                    <button id="set-proxy-password-toggle" class="input-secret-toggle" type="button"
+                                        aria-label="显示密码" aria-pressed="false" title="显示密码"></button>
+                                </div>
+                                <button id="set-proxy-password-copy"
+                                    class="btn btn-ghost btn-icon copy-btn proxy-url-copy no-shrink" type="button"
+                                    aria-label="复制代理转发密码" title="复制代理转发密码"></button>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label class="field-label" for="set-gateway-token">AI Gateway Token</label>
+                            <div class="field-row">
+                                <div class="input-secret-wrap">
+                                    <input type="password" id="set-gateway-token" class="input-text input-secret"
+                                        placeholder="cf-aig-authorization Bearer Token" autocomplete="new-password"
+                                        spellcheck="false" />
+                                    <button id="set-gateway-token-toggle" class="input-secret-toggle" type="button"
+                                        aria-label="显示 Token" aria-pressed="false" title="显示 Token"></button>
+                                </div>
+                                <button id="set-gateway-token-copy"
+                                    class="btn btn-ghost btn-icon copy-btn proxy-url-copy no-shrink" type="button"
+                                    aria-label="复制 AI Gateway Token" title="复制 AI Gateway Token"></button>
+                            </div>
+                        </div>
+                        <div class="settings-grid-3">
+                            <label class="field">
+                                <span class="field-label">失败禁用门槛</span>
+                                <input type="number" id="set-proxy-fail-threshold" class="input-text" min="1" step="1"
+                                    placeholder="3" />
+                            </label>
+                            <label class="field">
+                                <span class="field-label">最多重试次数</span>
+                                <input type="number" id="set-proxy-max-retries" class="input-text" min="0" max="3"
+                                    step="1" placeholder="3" />
+                            </label>
+                            <label class="field">
+                                <span class="field-label">上游超时 (ms)</span>
+                                <input type="number" id="set-proxy-timeout-ms" class="input-text" min="1000"
+                                    max="600000" step="1000" placeholder="120000" />
+                            </label>
+                        </div>
                     </div>
                     <p id="settings-error" class="form-error" role="alert"></p>
                     <p id="settings-ok" class="form-ok hidden" role="status">

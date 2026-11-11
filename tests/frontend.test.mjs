@@ -373,3 +373,60 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   assert.match(invalidGroupsFn, /复制本组全部 KEY/);
   assert.doesNotMatch(invalidGroupsFn, /title="复制 KEY"/);
 });
+
+test("editor deduplicates keys/models keeping first occurrence, results CTA updated, KV hides proxy UI, and settings fields reordered with secret controls", () => {
+  const css = read("style.css");
+
+  // 1. Key/Model deduplication preserving first occurrence
+  const sliceFn = (startMarker, endMarker) =>
+    app.slice(app.indexOf(startMarker), app.indexOf(endMarker));
+  const normBlock = sliceFn(
+    "function splitUniqueDelimited(",
+    "/** Newline list helper",
+  );
+  const { normalizeKeys, normalizeModels } = new Function(
+    `${normBlock}\nreturn { normalizeKeys, normalizeModels };`,
+  )();
+  assert.equal(normalizeKeys("k1\n k2 \n\nk1\nk3\nk2"), "k1\nk2\nk3");
+  assert.equal(normalizeModels("gpt-4o, m2\ngpt-4o\r\nm3, m2"), "gpt-4o,m2,m3");
+
+  // 2. Results header CTA text
+  assert.match(html, /id="run-now-btn"[^>]*>立即执行 \/ 查看记录<span class="btn-ext"/);
+
+  // 3. KV mode hides proxy tab, panel, and settings block + skips proxy fields on save
+  assert.ok(html.includes('id="settings-proxy-fields"'), "index.html missing #settings-proxy-fields");
+  assert.match(css, /\.settings-proxy-fields\s*\{[^}]*flex-direction:\s*column;[^}]*gap:\s*1\.25rem;/s);
+  assert.match(app, /function isKvStorageMode\(\)/);
+  assert.match(app, /if \(name === "proxy" && isKvStorageMode\(\)\) name = "config";/);
+  assert.match(app, /dom\.proxyTabBtn\.classList\.toggle\("hidden",\s*kvMode\)/);
+  assert.match(app, /dom\.settingsProxyFields\.classList\.toggle\("hidden",\s*kvMode\)/);
+  assert.match(app, /if \(isKvStorageMode\(\)\) \{\s*dom\.proxyLoading\.classList\.add\("hidden"\);\s*return false;/s);
+
+  // 4 & 5. Settings field order (Discord before GitHub, Logs URL before Proxy Password) + secret eye/copy controls
+  const settingsBody = html.match(/<div id="settings-overlay"[\s\S]*?<div class="modal-body">([\s\S]*?)<\/div>\s*<div class="modal-footer">/);
+  assert.ok(settingsBody, "#settings-overlay .modal-body not found");
+  const body = settingsBody[1];
+  const discordIdx = body.indexOf('id="set-discord-url"');
+  const githubIdx = body.indexOf('id="set-github-url"');
+  const proxyWrapIdx = body.indexOf('id="settings-proxy-fields"');
+  const logsIdx = body.indexOf('id="set-gateway-logs-url"');
+  const passIdx = body.indexOf('id="set-proxy-password"');
+  const tokenIdx = body.indexOf('id="set-gateway-token"');
+  const gridIdx = body.indexOf('class="settings-grid-3"');
+  assert.ok(discordIdx >= 0 && githubIdx > discordIdx, "Discord Webhook URL must sit before GitHub Actions URL");
+  assert.ok(proxyWrapIdx > githubIdx, "#settings-proxy-fields must sit after GitHub Actions URL");
+  assert.ok(logsIdx > proxyWrapIdx && passIdx > logsIdx && tokenIdx > passIdx && gridIdx > tokenIdx,
+    "Proxy settings order inside #settings-proxy-fields must be Logs URL -> Proxy Password -> Gateway Token -> grid-3");
+
+  for (const secretId of ["set-proxy-password", "set-gateway-token"]) {
+    assert.ok(body.includes(`id="${secretId}-toggle"`), `missing #${secretId}-toggle`);
+    assert.ok(body.includes(`id="${secretId}-copy"`), `missing #${secretId}-copy`);
+    const copyTag = body.match(new RegExp(`<button[^>]*id="${secretId}-copy"[^>]*>`));
+    assert.ok(copyTag && /\bproxy-url-copy\b/.test(copyTag[0]), `#${secretId}-copy must share .proxy-url-copy square geometry`);
+  }
+  assert.match(app, /const EYE_ICON_SVG\s*=/);
+  assert.match(app, /const EYE_OFF_ICON_SVG\s*=[\s\S]*?<line x1="1" y1="1" x2="23" y2="23"><\/line>/);
+  assert.match(css, /\.input-secret::-ms-reveal/);
+  assert.match(css, /\.input-secret-toggle\s*\{/);
+  assert.match(app, /openModal\(dom\.settingsOverlay,\s*dom\.setDiscordUrl\)/);
+});

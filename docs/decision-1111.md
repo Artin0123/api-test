@@ -31,9 +31,9 @@
 
 Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分組（讓 KV 內舊結果不需重跑即可套用新規則）。兩端規則必須同步，且須避開兩個引擎的語法差異：
 
-| 語法 | Python `re` | JavaScript `RegExp` | 實測差異 |
-|---|---|---|---|
-| `\d` | 匹配全形數字 `１２３４` | 僅匹配 ASCII `0-9` | 中文訊息含全形數字時兩端遮蔽結果相反 |
+| 語法 | Python `re`                           | JavaScript `RegExp`            | 實測差異                               |
+| ---- | ------------------------------------- | ------------------------------ | -------------------------------------- |
+| `\d` | 匹配全形數字 `１２３４`               | 僅匹配 ASCII `0-9`             | 中文訊息含全形數字時兩端遮蔽結果相反   |
 | `\b` | CJK 算 word 字元，`码abcdef12` 無邊界 | CJK 不算 word 字元，該處有邊界 | 中文後緊接 hex ID 時兩端遮蔽範圍不一致 |
 
 - **解法**：兩邊皆改用明確字元類別 `[0-9０-９]`，邊界使用捕獲前導字元 `(^|[^a-z0-9])` ＋ 前瞻 `(?![a-z0-9])`（經 27 組非 ASCII／邊界測試驗證一致）。
@@ -109,12 +109,12 @@ Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分�
 
 ### 6.2 瀏覽器憑證採用無狀態 HttpOnly Session Cookie
 
-| 候選方案 | 不採用或採用理由 |
-|---|---|
-| `localStorage` ＋ Bearer | 直接存放 `ADMIN_PASSWORD`，一次 XSS 即永久外洩且無法在網址列直接檢視 API |
-| HTTP Basic Auth | 缺乏標準登出語意，憑證會被快取至關閉瀏覽器且無法使用 `SameSite` |
-| 簽章 Query Token | 會暴露於瀏覽器歷史、Referer 與 Cloudflare 存取日誌 |
-| Cloudflare Access | 強綁 Dashboard 額外設定，GHA 端須改用 Service Token |
+| 候選方案                           | 不採用或採用理由                                                                                                                                                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `localStorage` ＋ Bearer           | 直接存放 `ADMIN_PASSWORD`，一次 XSS 即永久外洩且無法在網址列直接檢視 API                                                                                                                                     |
+| HTTP Basic Auth                    | 缺乏標準登出語意，憑證會被快取至關閉瀏覽器且無法使用 `SameSite`                                                                                                                                              |
+| 簽章 Query Token                   | 會暴露於瀏覽器歷史、Referer 與 Cloudflare 存取日誌                                                                                                                                                           |
+| Cloudflare Access                  | 強綁 Dashboard 額外設定，GHA 端須改用 Service Token                                                                                                                                                          |
 | **無狀態 HttpOnly Cookie（採用）** | XSS 無法竊取、支援即時登出與網址列直開 JSON；採 `<到期毫秒>.<HMAC>` 避免每次請求多讀一次 KV（及受最終一致性影響）。代價是無法個別撤銷單一 cookie，全域撤銷須更換 `ADMIN_PASSWORD` 或調升 `SESSION_VERSION`。 |
 
 `localStorage` 僅保留不具認證效力的 `atk_signed_in` 旗標，供 `index.html` 在首次繪製前預先隱藏登入遮罩避免畫面閃爍；真正驗證於 `bootstrap()` 請求 `/api/settings` 完成。供腳本與 GHA 使用的 Bearer 路徑維持不變。
@@ -165,19 +165,19 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 
 ## 十、已知取捨總表
 
-| 取捨項目 | 採用方案 | 承受代價 |
-|---|---|---|
-| 瀏覽器認證與儲存 | HttpOnly Cookie（無狀態 HMAC） | 依賴 `SameSite=Strict` 防 CSRF；無法撤銷單一 cookie；更換 `ADMIN_PASSWORD` 會使所有已登入瀏覽器失效 |
-| 安全標頭位置 | Worker 出口統一附加 | 多一層包裝（因 `_headers` 對 `_worker.js` 無效） |
-| `app_settings` 並發 | 樂觀鎖 `version` ＋ 409 | 仍存在毫秒級競爭窗，但不再靜默覆蓋 |
-| `dead_keys` 並發與生命週期 | 單一 KV 陣列、每日結果依 `fp` 對帳 ＋ 刪卡清理 | 不保留已恢複歷史；刪卡與刪除金鑰時由 `POST /api/settings` 同步掃除並交棒 `error_detail` |
-| 錯誤分組與樣本裁切 | 正規化訊息去重；樣本各限 2048 字元掐頭留尾 | 僅數字不同的原因會合併；超長回應中段省略；Python／JS 正規化須手動同步 |
-| 單一 Key 測試次數 | 純非串流連跑兩輪；`Ctrl+C` 本機斷點＋全局 `run-status` | 單 Key 服務商請求數加倍；正常跑完不寫進度檔，改靠全局執行狀態指示與 90 分鐘過期保底 |
-| 儲存後端預設值 | 未填 `STORAGE_BACKEND` ＝ `d1` | 僅綁定 KV 的舊站台直接升級新版會全數 500；須按 README 順序搬移上線 |
-| `store` 與 `key_state` 分工 | `store` 存 JSON、`key_state` 為關聯表；D1 批次交易 | 設定更新、過期結果／死鑰清除與 `key_state` 同步由 `db.batch()` 原子執行，失敗直接回滾不留幽靈列 |
-| 搬移與還原備份 | 先備份 KV 才搬移；`--restore` 前再備份 D1 | 本機備份檔含明文 Key，須由管理員妥善保管權限 |
-| 轉發與手動探測通道 | 100% 強制經 Cloudflare AI Gateway（`custom-{alias}`） | 未設定 Gateway 或缺 `alias` 時禁止轉發與手動測試（無直連退回，確保流量可觀測）；手動成功即歸零並解禁 |
-| Gateway 日誌與快取 | 由 Logs URL 反拆雙 ID；`cf-aig-max-attempts: 1` ＋ `skip-cache` ＋ 明文 `key` | 需於 CF Dashboard 將 Custom Provider `slug` 對齊 `alias`；`cf-aig-metadata.key` 送完整 ASCII 金鑰以便日誌追查 |
+| 取捨項目                    | 採用方案                                                                      | 承受代價                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 瀏覽器認證與儲存            | HttpOnly Cookie（無狀態 HMAC）                                                | 依賴 `SameSite=Strict` 防 CSRF；無法撤銷單一 cookie；更換 `ADMIN_PASSWORD` 會使所有已登入瀏覽器失效           |
+| 安全標頭位置                | Worker 出口統一附加                                                           | 多一層包裝（因 `_headers` 對 `_worker.js` 無效）                                                              |
+| `app_settings` 並發         | 樂觀鎖 `version` ＋ 409                                                       | 仍存在毫秒級競爭窗，但不再靜默覆蓋                                                                            |
+| `dead_keys` 並發與生命週期  | 單一 KV 陣列、每日結果依 `fp` 對帳 ＋ 刪卡清理                                | 不保留已恢複歷史；刪卡與刪除金鑰時由 `POST /api/settings` 同步掃除並交棒 `error_detail`                       |
+| 錯誤分組與樣本裁切          | 正規化訊息去重；樣本各限 2048 字元掐頭留尾                                    | 僅數字不同的原因會合併；超長回應中段省略；Python／JS 正規化須手動同步                                         |
+| 單一 Key 測試次數           | 純非串流連跑兩輪；`Ctrl+C` 本機斷點＋全局 `run-status`                        | 單 Key 服務商請求數加倍；正常跑完不寫進度檔，改靠全局執行狀態指示與 90 分鐘過期保底                           |
+| 儲存後端預設值              | 未填 `STORAGE_BACKEND` ＝ `d1`                                                | 僅綁定 KV 的舊站台直接升級新版會全數 500；須按 README 順序搬移上線                                            |
+| `store` 與 `key_state` 分工 | `store` 存 JSON、`key_state` 為關聯表；D1 批次交易                            | 設定更新、過期結果／死鑰清除與 `key_state` 同步由 `db.batch()` 原子執行，失敗直接回滾不留幽靈列               |
+| 搬移與還原備份              | 先備份 KV 才搬移；`--restore` 前再備份 D1                                     | 本機備份檔含明文 Key，須由管理員妥善保管權限                                                                  |
+| 轉發與手動探測通道          | 100% 強制經 Cloudflare AI Gateway（`custom-{alias}`）                         | 未設定 Gateway 或缺 `alias` 時禁止轉發與手動測試（無直連退回，確保流量可觀測）；手動成功即歸零並解禁          |
+| Gateway 日誌與快取          | 由 Logs URL 反拆雙 ID；`cf-aig-max-attempts: 1` ＋ `skip-cache` ＋ 明文 `key` | 需於 CF Dashboard 將 Custom Provider `slug` 對齊 `alias`；`cf-aig-metadata.key` 送完整 ASCII 金鑰以便日誌追查 |
 
 ---
 
@@ -197,7 +197,10 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 - **測試模型選單來自來源設定，但選擇獨立保存**：候選清單直接讀取 `providers[].models` 避免重複輸入，預設選取第一個模型，但仍須按下「保存模型」寫入獨立的 `app_settings.proxy_test_models` 才啟用測試，防止調整來源設定模型順序時意外更改探測對象。
 - **工具列「恢复所有密钥」按指紋批次恢復**：在「测试无效密钥」旁新增「恢复所有密钥」，於後端 `POST /api/proxy/recover` 支援 `{ fp, all: true }` 執行單條 `UPDATE key_state SET disabled = 0, fail_count = 0 ... WHERE fp = ? AND disabled = 1`，僅恢復當前選中服務商已禁用的金鑰而不影響該服務商仍有效金鑰的 `fail_count` 或其他服務商狀態；按鈕本身不依賴測試模型即可操作，僅於轉發啟用且當前服務商存在已禁用金鑰時可點擊。
 - **統計配色與對齊層級**：左側標題簡化為中性文字「`密钥状态`」（`--text`、`--text-sm`）搭配與右側選單／按鈕同高（`--control-h`）且同底色（`--bg-3`）的分隔雙格框（`.proxy-summary-group` ＋ `.proxy-summary-cell`，單格預設寬度 `calc(3ch + 1.5rem)` 可直接容納 3 位數並於 4 位數以上自動加寬，中間以 `1px solid var(--border)` 隔線區分左右格），兩個數字維持 `--text-base`／`700` 與 `--ok-soft`／`--fail-soft`（淺色主題下反向調整飽和度與亮度以保持白底對比度），懸停時透過 `title` 分別顯示「有效数量」／「无效数量」。
-- **單一頁首連結與全站統一複製圖示按鈕**：在「`轮询转发`」頁首保留「`Gateway 记录 ↗`」、在「`测试结果`」頁首放置「`立即执行 ↗`」（`aria-disabled="true"` 停用未設網址時；箭頭附 `aria-hidden="true"` 保持名稱純淨）；移除所有分頁的「`重新读取`」鈕；將原本文字「一键复制」鈕與整行點擊的轉發網址框（`copyProxyUrl()`）**全面改為統一的 `COPY_ICON_SVG`（`.copy-btn.btn-icon`）與 1.5 秒綠色勾勾回饋**，其中轉發網址列複製鈕採與控制項同高的 `--control-h` 正方形搭配放大圖示，測試結果「`有效 Key`」／「`有效模型`」改將複製鈕置於標題列右側，「`失效 Key`」則僅保留群組標題的整組複製鈕並移除各列個別複製鈕。
+- **單一頁首連結與全站統一複製圖示按鈕**：在「`轮询转发`」頁首保留「`Gateway 记录 ↗`」、在「`测试结果`」頁首放置「`立即执行 / 查看记录 ↗`」（`aria-disabled="true"` 停用未設網址時；箭頭附 `aria-hidden="true"` 保持名稱純淨）；移除所有分頁的「`重新读取`」鈕；將原本文字「一键复制」鈕與整行點擊的轉發網址框（`copyProxyUrl()`）**全面改為統一的 `COPY_ICON_SVG`（`.copy-btn.btn-icon`）與 1.5 秒綠色勾勾回饋**，其中轉發網址列複製鈕採與控制項同高的 `--control-h` 正方形搭配放大圖示，測試結果「`有效 Key`」／「`有效模型`」改將複製鈕置於標題列右側，「`失效 Key`」則僅保留群組標題的整組複製鈕並移除各列個別複製鈕。
+- **編輯器與儲存端自動去重（保留首次出現）**：「`编辑服务商`」的 API Keys 與 Models 於失焦與儲存時以 `splitUniqueDelimited()` 去重並保留首次出現順序，後端 `normalizeProviderForStorage()`／`providerKeys()`／`providerModels()` 亦同步去重，避免 D1 `key_state` 重複寫入或殘留重複模型名稱；既有 `diffKeyLines()` 維持原有多重集合比對邏輯。
+- **`STORAGE_BACKEND=kv` 模式隱藏轉發介面並全面於後端拒絕**：由 `GET`／`POST /api/settings` 回傳頂層 `storage_backend` 供前端零額外請求判斷後端類型；當為 `kv` 時隱藏頂部「`轮询转发`」分頁籤、`#tab-proxy` 與「`设定`」彈窗內的轉發相關欄位區塊（`#settings-proxy-fields`），`saveSettings()` 亦略過送出未顯示的轉發欄位以避免覆寫既定值或阻止保存；後端則於 `handleProxy()`、`handleGetProxyState()`、`handleProxyTest()`、`handleProxyRecover()` 與 `handleProxyTestModel()` 一律透過 `rejectIfProxyDisabled()` 回傳 `503`（`PROXY_DISABLED`）。
+- **「`设定`」彈窗欄位順序與機密欄位顯示／複製控制項**：經確認 `github_url` 於全專案僅供結果頁首連結鈕 `#run-now-btn` 使用，將 `Discord Webhook URL` 移至首位並於 `openSettings()` 預設聚焦（次為 `GitHub Actions URL`）；轉發區塊依序調整為 `AI Gateway Logs URL` → `代理转发密码` → `AI Gateway Token` → `.settings-grid-3`。其中 `代理转发密码` 與 `AI Gateway Token` 輸入框內建右置眼睛圖示切換明文／密碼（開啟明文時切換為帶斜線眼睛 `EYE_OFF_ICON_SVG`，開／關彈窗重設為密碼狀態，並以 `.input-secret::-ms-reveal` 隱藏瀏覽器內建眼睛防重疊），右側配置共用 `.proxy-url-copy` 幾何規則的 `--control-h` 正方形 `.copy-btn`。
 
 ### 11.3 前端 CSS 與互動陷阱紀錄
 

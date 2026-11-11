@@ -1510,6 +1510,12 @@ a:focus-visible,
     gap: 0.5rem;
 }
 
+.settings-proxy-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
 .settings-grid-3 {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1617,9 +1623,10 @@ code {
     border: 0;
 }
 
-/* Embedded right-side square icon buttons inside inputs (calendar & key clear). */
+/* Embedded right-side square icon buttons inside inputs (calendar, key clear & reveal eye). */
 .dk-date-btn,
-.keys-search-clear {
+.keys-search-clear,
+.input-secret-toggle {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
@@ -1635,6 +1642,37 @@ code {
         color 0.15s,
         opacity 0.15s,
         background 0.15s;
+}
+
+.input-secret-wrap {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    align-items: center;
+}
+
+.input-secret-wrap .input-secret {
+    padding-right: 2.4rem;
+}
+
+/* Edge/IE draw their own reveal eye inside type="password" inputs; hide it so our
+   cross-browser eye toggle sits alone in that corner. */
+.input-secret::-ms-reveal,
+.input-secret::-ms-clear {
+    display: none;
+}
+
+.input-secret-toggle {
+    right: 0.3rem;
+    width: 1.85rem;
+    height: 1.85rem;
+    cursor: pointer;
+}
+
+.input-secret-toggle:hover {
+    color: var(--text);
+    background: var(--bg-3);
 }
 
 .dk-date-btn {

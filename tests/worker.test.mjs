@@ -406,24 +406,35 @@ test("kv mode keeps existing settings/results behaviour", async () => {
   const saved = await postSettings(env, [provider()]);
   assert.equal(saved.status, 200);
   assert.equal(saved.data.version, 1);
+  assert.equal(saved.data.storage_backend, "kv");
 
   const got = await asJson(await request(env, "/api/settings", { headers: adminHeaders() }));
+  assert.equal(got.data.storage_backend, "kv");
   assert.equal(got.data.settings.providers.length, 1);
   assert.match(got.data.settings.providers[0].keys, /k1/);
 });
 
 // ── R1: forwarding + auth ──────────────────────────────────────────────────
 
-test("kv mode disables the proxy with an explicit message and no outbound request", async () => {
+test("kv mode disables the proxy and all /api/proxy/* endpoints without outbound requests", async () => {
   const env = makeEnv({ vars: { STORAGE_BACKEND: "kv" } });
-  const response = await request(env, "/proxy/abc/chat/completions", {
-    method: "POST",
-    headers: proxyHeaders(),
-    body: "{}",
-  });
-  const result = await asJson(response);
-  assert.equal(result.status, 503);
-  assert.match(result.data.error, /d1/i);
+
+  const unauthState = await asJson(await request(env, "/api/proxy/state"));
+  assert.equal(unauthState.status, 401);
+
+  const checks = [
+    ["/proxy/abc/chat/completions", { method: "POST", headers: proxyHeaders(), body: "{}" }],
+    ["/api/proxy/state", { headers: adminHeaders() }],
+    ["/api/proxy/test", { method: "POST", headers: adminHeaders(), body: "{}" }],
+    ["/api/proxy/recover", { method: "POST", headers: adminHeaders(), body: "{}" }],
+    ["/api/proxy/test-model", { method: "POST", headers: adminHeaders(), body: "{}" }],
+  ];
+  for (const [path, init] of checks) {
+    const result = await asJson(await request(env, path, init));
+    assert.equal(result.status, 503, `${path} should return 503 in KV mode`);
+    assert.equal(result.data.code, "PROXY_DISABLED");
+    assert.match(result.data.error, /d1/i);
+  }
   assert.equal(captured.length, 0);
 });
 
@@ -1795,26 +1806,31 @@ test("settings reject unsafe URL schemes and proxy retry preserves merged extra_
   }
 });
 
-test("settings normalize newline/mixed models to comma-separated and reject missing models", async () => {
+test("settings deduplicate keys/models preserving first occurrence and reject missing models", async () => {
   const env = makeEnv();
   const saved = await postSettings(env, [
     provider({
       alias: "multiline-models",
-      models: "gpt-4o\ngpt-4.1, o3\r\n  , claude-3-7 ",
+      keys: "k-first\n k-second \n\nk-first\nk-third\nk-second",
+      models: "gpt-4o\ngpt-4.1, gpt-4o, o3\r\n  , claude-3-7, o3 ",
     }),
   ]);
   assert.equal(saved.status, 200);
+  assert.equal(saved.data.storage_backend, "d1");
 
   const got = await asJson(
     await request(env, "/api/settings", { headers: adminHeaders() }),
   );
   assert.equal(got.status, 200);
+  assert.equal(got.data.storage_backend, "d1");
+  assert.equal(got.data.settings.providers[0].keys, "k-first\nk-second\nk-third");
   assert.equal(got.data.settings.providers[0].models, "gpt-4o,gpt-4.1,o3,claude-3-7");
 
   const proxyState = await asJson(
     await request(env, "/api/proxy/state", { headers: adminHeaders() }),
   );
   assert.equal(proxyState.status, 200);
+  assert.equal(proxyState.data.providers[0].keys_total, 3);
   assert.deepEqual(proxyState.data.providers[0].models, [
     "gpt-4o",
     "gpt-4.1",
