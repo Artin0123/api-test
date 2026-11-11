@@ -378,6 +378,18 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   assert.match(summaryLabelCss[1], /\bfont-size:\s*var\(--text-sm\);/);
   assert.match(summaryLabelCss[1], /\bfont-weight:\s*600;/);
 
+  // The two toolbar rows must read as parallel columns: the 测试模型 heading
+  // is 33.6px wider than the 供应商 label (extra glyph + info icon), so the
+  // provider select compensates at 15rem + 2.1rem = 17.1rem and both rows'
+  // groups end on the same x — 转发地址 and 密钥状态 line up vertically with
+  // no blank gap after the 供应商 label.
+  const providerColCss = css.match(/\.proxy-provider-col\s*\{([^}]+)\}/);
+  assert.ok(providerColCss, ".proxy-provider-col rule not found");
+  assert.match(providerColCss[1], /\bflex:\s*0 0 17\.1rem;/,
+    "provider select must be the model select's 15rem + 2.1rem label compensation");
+  assert.doesNotMatch(css, /\.proxy-provider-group > \.proxy-toolbar-label\s*\{/,
+    "the 供应商 label must keep its natural width (no blank label box)");
+
   const rowProvider = html.match(/<div class="proxy-toolbar-row proxy-toolbar-row--provider">([\s\S]*?)<\/div>\s*<div class="proxy-toolbar-row proxy-toolbar-row--model">/);
   assert.ok(rowProvider, "proxy-toolbar-row--provider not found");
   assert.match(rowProvider[1], /class="proxy-toolbar-label"[^>]*for="proxy-provider">供应商<\/label>[\s\S]*?id="proxy-provider"/);

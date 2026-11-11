@@ -92,13 +92,15 @@
     font-size: var(--text-sm);
 }
 
-/* The provider select is one block, as wide as a provider card in the other tab
-   (340px at the 1280 three-column layout), and the forwarding URL fills the rest
-   of the line. A fixed width rather than a share of the row: the select is the
-   same object here as a card is there, so it should look the same size. The API
-   format lives inside each option now, so there is no caption under the select. */
+/* The two rows must end on the same x so 转发地址 and 密钥状态 sit in one
+   parallel column. The 测试模型 heading is 33.6px wider than the 供应商 label
+   (one more CJK glyph + the info icon), so the provider select compensates by
+   being 33.6px wider than the model select: 15rem + 2.1rem = 17.1rem. Both
+   selects then share the same right edge and no blank gap opens after the
+   shorter label. (The old 21.25rem card-parity width is gone: parallel
+   columns win.) */
 .proxy-provider-col {
-    flex: 0 0 21.25rem;
+    flex: 0 0 17.1rem;
     min-width: 0;
     max-width: 100%;
 }
