@@ -791,7 +791,7 @@ async def main():
                 rk = p["keys"]
                 rm = p["models"]
                 k_list = [line.strip() for line in rk.splitlines() if line.strip()]
-                m_list = [m.strip() for m in rm.split(",") if m.strip()]
+                m_list = [m.strip() for m in re.split(r"[,\r\n]+", rm) if m.strip()]
 
                 if not k_list or not m_list:
                     print(f"\n[跳过] 服务商 {pt} | {ab} (缺少 Key 或 Model)")
@@ -830,7 +830,7 @@ async def main():
         with open(INPUT_FILE_PATH, "r", encoding="utf-8") as f:
             keys = [line.strip() for line in f if line.strip()]
         with open(MODELS_FILE_PATH, "r", encoding="utf-8") as f:
-            models = [m.strip() for m in f.read().split(",") if m.strip()]
+            models = [m.strip() for m in re.split(r"[,\r\n]+", f.read()) if m.strip()]
 
         if not keys or not models:
             return print("[错误] 本地 fallback 缺少 Key 或 Model。")

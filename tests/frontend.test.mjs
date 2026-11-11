@@ -292,3 +292,28 @@ test("editor modal marks required fields, places error left of save button, and 
   assert.match(app, /document\.body\.appendChild\(tip\)/);
   assert.match(app, /e\.target\.closest\("\.custom-select, \.info-icon"\)/);
 });
+
+test("editor and settings modals replace inline hint text with info tooltips and support multiline models", () => {
+  const editorMatch = html.match(/<div id="editor-overlay"[\s\S]*?<!-- App settings modal -->/);
+  const settingsMatch = html.match(/<div id="settings-overlay"[\s\S]*?<!-- Sample modal -->/);
+  assert.ok(editorMatch && settingsMatch, "editor and settings modals must exist");
+
+  assert.doesNotMatch(editorMatch[0], /<small\s+class="muted"/, "editor modal must not have inline <small class=\"muted\"> hints");
+  assert.doesNotMatch(settingsMatch[0], /<small\s+class="muted"/, "settings modal must not have inline <small class=\"muted\"> hints");
+
+  const editorTips = [...editorMatch[0].matchAll(/class="info-tooltip"/g)];
+  const settingsTips = [...settingsMatch[0].matchAll(/class="info-tooltip"/g)];
+  assert.equal(editorTips.length, 7, "editor modal should have 7 info tooltips");
+  assert.equal(settingsTips.length, 2, "settings modal should have 2 info tooltips");
+  assert.match(editorMatch[0], /id="ed-extra-body-status"/, "Extra Body live JSON status must stay intact");
+
+  assert.match(app, /function normalizeModels[\s\S]*?\.split\(\/\[,\\r\\n\]\+\/\)/);
+  assert.match(app, /function splitModels[\s\S]*?\.split\(\/\[,\\r\\n\]\+\/\)/);
+  assert.match(app, /modelCount = splitModels\(p\.models\)\.length/);
+  assert.match(app, /positionInfoTooltip[\s\S]*?icon\.closest\("\.modal-body"\)/);
+  assert.match(app, /dom\.edModels\.addEventListener\("blur"/);
+  assert.match(app, /dom\.edKeys\.addEventListener\("blur"/);
+  const saveBody = app.slice(app.indexOf("async function saveEditor()"), app.indexOf("async function deleteProvider("));
+  assert.doesNotMatch(saveBody, /dom\.edModels\.value\s*=/, "saveEditor should only validate, not rewrite edModels display");
+  assert.doesNotMatch(saveBody, /dom\.edKeys\.value\s*=/, "saveEditor should only validate, not rewrite edKeys display");
+});

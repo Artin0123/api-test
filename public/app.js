@@ -399,10 +399,11 @@ function bindLineNums(textarea) {
 }
 
 // ── Models normalization ──────────────────────────────────────────────────
-// Strips spaces around commas, trailing commas/spaces; collapses runs of commas.
+// Accepts comma-separated and/or newline-separated model names; trims items,
+// drops empties, and joins as canonical comma-separated string.
 function normalizeModels(raw) {
-  return raw
-    .split(",")
+  return String(raw || "")
+    .split(/[,\r\n]+/)
     .map((m) => m.trim())
     .filter(Boolean)
     .join(",");
@@ -429,7 +430,7 @@ function splitKeyLines(raw) {
  *  must split the same string the same way. */
 function splitModels(raw) {
   return String(raw || "")
-    .split(",")
+    .split(/[,\r\n]+/)
     .map((m) => m.trim())
     .filter(Boolean);
 }
@@ -928,18 +929,40 @@ function positionInfoTooltip(icon, tip) {
   const gap = 6;
   const tipW = tipRect.width || tip.offsetWidth || 210;
   const tipH = tipRect.height || tip.offsetHeight || 120;
-  const rawLeft = rect.left - 80;
-  const left = Math.max(
-    margin,
-    Math.min(rawLeft, window.innerWidth - tipW - margin),
-  );
+
+  // Keep tooltips inside the modal body frame (between header bottom border,
+  // footer top border, and left/right modal edges) with at least `margin` px.
+  const body = icon.closest(".modal-body");
+  const panel = icon.closest(".modal-panel");
+  const bounds = body
+    ? body.getBoundingClientRect()
+    : panel
+      ? panel.getBoundingClientRect()
+      : {
+          left: 0,
+          right: window.innerWidth,
+          top: 0,
+          bottom: window.innerHeight,
+        };
+  const minX = Math.max(bounds.left, 0) + margin;
+  const contentRight = body
+    ? Math.min(bounds.right, bounds.left + body.clientLeft + body.clientWidth)
+    : bounds.right;
+  const maxX = Math.min(contentRight, window.innerWidth) - margin;
+  const minY = Math.max(bounds.top, 0) + margin;
+  const maxY = Math.min(bounds.bottom, window.innerHeight) - margin;
+
+  let left = rect.left + rect.width / 2 - tipW / 2;
+  if (left + tipW > maxX) left = maxX - tipW;
+  if (left < minX) left = minX;
+
   let top = rect.bottom + gap;
-  if (
-    top + tipH > window.innerHeight - margin &&
-    rect.top - gap - tipH >= margin
-  ) {
-    top = rect.top - gap - tipH;
+  if (top + tipH > maxY) {
+    const aboveTop = rect.top - gap - tipH;
+    top = aboveTop >= minY ? aboveTop : Math.max(minY, maxY - tipH);
   }
+  if (top < minY) top = minY;
+
   tip.style.left = `${left}px`;
   tip.style.top = `${top}px`;
 }
@@ -1304,7 +1327,7 @@ function renderProviderCard(p, index) {
   const host = extractHost(p.api_base);
   const alias = (p.alias || "").trim();
   const keyCount = (p.keys || "").split("\n").filter((l) => l.trim()).length;
-  const modelCount = (p.models || "").split(",").filter((m) => m.trim()).length;
+  const modelCount = splitModels(p.models).length;
   const isEnabled = p.enabled !== false;
   const isSelected = state.selectedProviders.has(index);
 
@@ -1700,13 +1723,6 @@ async function saveEditor() {
   const extraBodyRaw = dom.edExtraBody.value.trim();
   const { headers: customHeaders, invalid: invalidHeaders } = getEditorHeaders();
   const maxConcurrencyRaw = dom.edMaxConcurrency.value.trim();
-
-  // Update UI immediately so the user sees the cleaned up data if they reopen
-  dom.edKeys.value = keys;
-  dom.edModels.value = models;
-  syncLineNums(dom.edKeys);
-  syncLineNums(dom.edModels);
-  syncKeysHighlight();
 
   if (!apiBase) return failValidation("请填写 API Base URL");
   const dupIdx = existingProviders.findIndex(
@@ -4024,6 +4040,32 @@ function bindEvents() {
   bindLineNums(dom.edModels);
   bindLineNums(dom.edExtraBody);
   bindKeysHighlight();
+
+  // Normalize editor fields on blur so displayed formatting updates when leaving
+  // the field, while Save focuses on validation and submission.
+  dom.edApiBase.addEventListener("blur", () => {
+    const normalized = dom.edApiBase.value.trim().replace(/\/+$/, "");
+    if (dom.edApiBase.value !== normalized) dom.edApiBase.value = normalized;
+  });
+  dom.edAlias.addEventListener("blur", () => {
+    const normalized = dom.edAlias.value.trim();
+    if (dom.edAlias.value !== normalized) dom.edAlias.value = normalized;
+  });
+  dom.edKeys.addEventListener("blur", () => {
+    const normalized = normalizeKeys(dom.edKeys.value);
+    if (dom.edKeys.value !== normalized) {
+      dom.edKeys.value = normalized;
+      syncLineNums(dom.edKeys);
+      syncKeysHighlight();
+    }
+  });
+  dom.edModels.addEventListener("blur", () => {
+    const normalized = normalizeModels(dom.edModels.value);
+    if (dom.edModels.value !== normalized) {
+      dom.edModels.value = normalized;
+      syncLineNums(dom.edModels);
+    }
+  });
 
   // Extra Body JSON live validation
   dom.edExtraBody.addEventListener("input", () => {

@@ -589,7 +589,17 @@ function settingsVersion(settings) {
 // 400 here, not turn into a mystery 404 at forward time.
 const PROXY_ALIAS_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/** Normalize alias formatting and drop empty/removed legacy proxy fields. */
+/** Normalize comma/newline-separated model names into canonical comma-separated form. */
+function normalizeModelsString(raw) {
+  if (typeof raw !== "string") return "";
+  return raw
+    .split(/[,\r\n]+/)
+    .map((m) => m.trim())
+    .filter(Boolean)
+    .join(",");
+}
+
+/** Normalize alias and models formatting and drop empty/removed legacy proxy fields. */
 function normalizeProviderForStorage(p) {
   if (!p || typeof p !== "object") return p;
   const out = { ...p };
@@ -597,6 +607,9 @@ function normalizeProviderForStorage(p) {
     const alias = p.alias.trim();
     if (alias) out.alias = alias;
     else delete out.alias;
+  }
+  if (typeof p.models === "string") {
+    out.models = normalizeModelsString(p.models);
   }
   delete out.gateway_provider;
   return out;
@@ -682,6 +695,20 @@ function validateProviderKeys(providers) {
     if (!p || typeof p !== "object") continue;
     if (!providerKeys(p).length) {
       return `providers[${i}] 没有任何 API Key；至少要保留一把，要停用请把 enabled 设为 false`;
+    }
+  }
+  return null;
+}
+
+function validateProviderModels(providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    if (typeof p.models !== "string" || !providerModels(p).length) {
+      return `providers[${i}] 没有任何模型；至少要保留一个模型`;
+    }
+    if (/[\r\n]/.test(p.models)) {
+      return `providers[${i}].models 格式不正确：请以逗号分隔`;
     }
   }
   return null;
@@ -841,6 +868,9 @@ async function handlePostSettings(request, env) {
 
   const keyError = validateProviderKeys(next.providers || []);
   if (keyError) return json({ error: keyError }, 400);
+
+  const modelError = validateProviderModels(next.providers || []);
+  if (modelError) return json({ error: modelError }, 400);
 
   const dupError = validateProviderDuplicates(next.providers || []);
   if (dupError) return json({ error: dupError }, 400);
@@ -1582,7 +1612,7 @@ function providerKeys(provider) {
 function providerModels(provider) {
   if (!provider || typeof provider.models !== "string") return [];
   return provider.models
-    .split(",")
+    .split(/[,\r\n]+/)
     .map((m) => m.trim())
     .filter(Boolean);
 }

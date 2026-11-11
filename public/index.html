@@ -1,20 +1,16 @@
 <!doctype html>
 <html lang="zh-TW" data-theme="dark">
+
     <head>
         <meta charset="UTF-8" />
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-        />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
         <title>API Key Tester</title>
-        <link
-            rel="icon"
-            type="image/svg+xml"
-            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E"
-        />
+        <link rel="icon" type="image/svg+xml"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E" />
         <script src="/boot.js"></script>
         <link rel="stylesheet" href="/style.css" />
     </head>
+
     <body>
         <!-- Auth overlay -->
         <div id="auth-overlay" class="auth-overlay active">
@@ -24,13 +20,8 @@
                     <p class="muted">输入管理密码以继续。</p>
                 </div>
                 <div class="auth-row">
-                    <input
-                        type="password"
-                        id="auth-input"
-                        class="input-text"
-                        placeholder="ADMIN_PASSWORD"
-                        autocomplete="current-password"
-                    />
+                    <input type="password" id="auth-input" class="input-text" placeholder="ADMIN_PASSWORD"
+                        autocomplete="current-password" />
                     <button id="auth-btn" class="btn btn-primary" type="button">
                         登入
                     </button>
@@ -46,95 +37,45 @@
                 <div class="topbar-left">
                     <h1>API Key Tester</h1>
                 </div>
-                <button
-                    id="mobile-menu-btn"
-                    class="mobile-menu-btn"
-                    type="button"
-                    aria-label="Menu"
-                    aria-expanded="false"
-                >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="24"
-                        height="24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        fill="none"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
+                <button id="mobile-menu-btn" class="mobile-menu-btn" type="button" aria-label="Menu"
+                    aria-expanded="false">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"
+                        stroke-linecap="round" stroke-linejoin="round">
                         <line x1="3" y1="12" x2="21" y2="12"></line>
                         <line x1="3" y1="6" x2="21" y2="6"></line>
                         <line x1="3" y1="18" x2="21" y2="18"></line>
                     </svg>
                 </button>
-                <div
-                    id="topbar-menu-backdrop"
-                    class="topbar-menu-backdrop hidden-desktop"
-                ></div>
+                <div id="topbar-menu-backdrop" class="topbar-menu-backdrop hidden-desktop"></div>
                 <div id="topbar-menu" class="topbar-menu">
                     <div class="topbar-menu-header hidden-desktop">
                         <span class="topbar-menu-title">选单</span>
-                        <button
-                            id="mobile-menu-close"
-                            class="btn-ghost btn-sm topbar-menu-close"
-                            type="button"
-                        >
+                        <button id="mobile-menu-close" class="btn-ghost btn-sm topbar-menu-close" type="button">
                             关闭
                         </button>
                     </div>
                     <nav class="tabs">
-                        <button
-                            class="tab-btn active"
-                            data-tab="config"
-                            type="button"
-                        >
+                        <button class="tab-btn active" data-tab="config" type="button">
                             来源设定
                         </button>
-                        <button
-                            class="tab-btn"
-                            data-tab="results"
-                            type="button"
-                        >
+                        <button class="tab-btn" data-tab="results" type="button">
                             测试结果
                         </button>
-                        <button
-                            class="tab-btn"
-                            data-tab="deadkeys"
-                            type="button"
-                        >
+                        <button class="tab-btn" data-tab="deadkeys" type="button">
                             失效密钥
                         </button>
-                        <button
-                            class="tab-btn"
-                            data-tab="proxy"
-                            type="button"
-                        >
+                        <button class="tab-btn" data-tab="proxy" type="button">
                             轮询转发
                         </button>
                     </nav>
                     <div class="topbar-actions">
-                        <button
-                            id="settings-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
+                        <button id="settings-btn" class="btn btn-secondary" type="button">
                             设定
                         </button>
-                        <button
-                            id="theme-toggle"
-                            class="theme-toggle"
-                            type="button"
-                            title="切换深浅色"
-                            aria-label="切换深浅色模式"
-                        >
+                        <button id="theme-toggle" class="theme-toggle" type="button" title="切换深浅色" aria-label="切换深浅色模式">
                             🌙
                         </button>
-                        <button
-                            id="logout-btn"
-                            class="btn btn-ghost"
-                            type="button"
-                        >
+                        <button id="logout-btn" class="btn btn-ghost" type="button">
                             登出
                         </button>
                     </div>
@@ -152,27 +93,13 @@
                             </p>
                         </div>
                         <div class="panel-head-actions">
-                            <button
-                                id="bulk-enable-btn"
-                                class="btn btn-secondary"
-                                type="button"
-                                disabled
-                            >
+                            <button id="bulk-enable-btn" class="btn btn-secondary" type="button" disabled>
                                 启用选中
                             </button>
-                            <button
-                                id="bulk-disable-btn"
-                                class="btn btn-ghost"
-                                type="button"
-                                disabled
-                            >
+                            <button id="bulk-disable-btn" class="btn btn-ghost" type="button" disabled>
                                 停用选中
                             </button>
-                            <button
-                                id="add-provider-btn"
-                                class="btn btn-primary"
-                                type="button"
-                            >
+                            <button id="add-provider-btn" class="btn btn-primary" type="button">
                                 新增服务商
                             </button>
                         </div>
@@ -181,21 +108,14 @@
                     <div id="config-loading" class="state-card">
                         读取设定中...
                     </div>
-                    <div
-                        id="config-error"
-                        class="alert alert-error hidden"
-                    ></div>
+                    <div id="config-error" class="alert alert-error hidden"></div>
 
                     <div id="provider-grid" class="provider-grid hidden"></div>
                     <div id="provider-empty" class="state-card hidden">
                         尚未添加任何服务商，点击「新增服务商」开始。
                     </div>
 
-                    <p
-                        id="config-save-error"
-                        class="form-error"
-                        role="alert"
-                    ></p>
+                    <p id="config-save-error" class="form-error" role="alert"></p>
                 </section>
 
                 <!-- ── Results tab ── -->
@@ -204,36 +124,19 @@
                         <div>
                             <div class="results-title-row">
                                 <h2>测试结果</h2>
-                                <span
-                                    id="results-running-badge"
-                                    class="badge badge-warn hidden"
-                                    >⏳ 执行中</span
-                                >
+                                <span id="results-running-badge" class="badge badge-warn hidden">⏳ 执行中</span>
                             </div>
                         </div>
                         <div class="panel-head-actions">
-                            <a
-                                id="run-now-btn"
-                                class="btn btn-primary"
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-disabled="true"
-                                >立即执行<span
-                                    class="btn-ext"
-                                    aria-hidden="true"
-                                    >↗</span
-                                ></a
-                            >
+                            <a id="run-now-btn" class="btn btn-primary" target="_blank" rel="noreferrer"
+                                aria-disabled="true">立即执行<span class="btn-ext" aria-hidden="true">↗</span></a>
                         </div>
                     </div>
 
                     <div id="results-loading" class="state-card">
                         读取结果中...
                     </div>
-                    <div
-                        id="results-error"
-                        class="alert alert-error hidden"
-                    ></div>
+                    <div id="results-error" class="alert alert-error hidden"></div>
                     <div id="results-empty" class="state-card hidden">
                         尚无测试结果，请先执行一次测试。
                     </div>
@@ -258,13 +161,7 @@
                         </label>
                         <label class="field dk-filter-field--key">
                             <span class="field-label">Key 搜寻</span>
-                            <input
-                                type="text"
-                                id="dk-f-key"
-                                class="input-text"
-                                placeholder="模糊匹配"
-                                autocomplete="off"
-                            />
+                            <input type="text" id="dk-f-key" class="input-text" placeholder="模糊匹配" autocomplete="off" />
                         </label>
                         <label class="field dk-filter-field--code">
                             <span class="field-label">错误代码</span>
@@ -273,38 +170,13 @@
                         <div class="field dk-filter-field--date">
                             <label class="field-label" for="dk-f-from">失效时间（起）</label>
                             <div class="dk-date-wrap">
-                                <input
-                                    type="text"
-                                    id="dk-f-from"
-                                    class="input-text dk-date-input"
-                                    inputmode="numeric"
-                                    maxlength="10"
-                                    autocomplete="off"
-                                    spellcheck="false"
-                                />
-                                <input
-                                    type="date"
-                                    class="dk-date-picker"
-                                    tabindex="-1"
-                                    aria-hidden="true"
-                                />
-                                <button
-                                    type="button"
-                                    class="dk-date-btn"
-                                    aria-label="选择起始日期"
-                                    title="选择日期"
-                                >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        width="15"
-                                        height="15"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                        fill="none"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        aria-hidden="true"
-                                    >
+                                <input type="text" id="dk-f-from" class="input-text dk-date-input" inputmode="numeric"
+                                    maxlength="10" autocomplete="off" spellcheck="false" />
+                                <input type="date" class="dk-date-picker" tabindex="-1" aria-hidden="true" />
+                                <button type="button" class="dk-date-btn" aria-label="选择起始日期" title="选择日期">
+                                    <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor"
+                                        stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"
+                                        aria-hidden="true">
                                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                                         <line x1="16" y1="2" x2="16" y2="6"></line>
                                         <line x1="8" y1="2" x2="8" y2="6"></line>
@@ -316,38 +188,13 @@
                         <div class="field dk-filter-field--date">
                             <label class="field-label" for="dk-f-to">失效时间（迄）</label>
                             <div class="dk-date-wrap">
-                                <input
-                                    type="text"
-                                    id="dk-f-to"
-                                    class="input-text dk-date-input"
-                                    inputmode="numeric"
-                                    maxlength="10"
-                                    autocomplete="off"
-                                    spellcheck="false"
-                                />
-                                <input
-                                    type="date"
-                                    class="dk-date-picker"
-                                    tabindex="-1"
-                                    aria-hidden="true"
-                                />
-                                <button
-                                    type="button"
-                                    class="dk-date-btn"
-                                    aria-label="选择结束日期"
-                                    title="选择日期"
-                                >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        width="15"
-                                        height="15"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                        fill="none"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        aria-hidden="true"
-                                    >
+                                <input type="text" id="dk-f-to" class="input-text dk-date-input" inputmode="numeric"
+                                    maxlength="10" autocomplete="off" spellcheck="false" />
+                                <input type="date" class="dk-date-picker" tabindex="-1" aria-hidden="true" />
+                                <button type="button" class="dk-date-btn" aria-label="选择结束日期" title="选择日期">
+                                    <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor"
+                                        stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"
+                                        aria-hidden="true">
                                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                                         <line x1="16" y1="2" x2="16" y2="6"></line>
                                         <line x1="8" y1="2" x2="8" y2="6"></line>
@@ -357,19 +204,10 @@
                             </div>
                         </div>
                         <div class="dk-filter-actions">
-                            <button
-                                id="dk-bulk-del-btn"
-                                class="btn btn-danger"
-                                type="button"
-                                aria-pressed="false"
-                            >
+                            <button id="dk-bulk-del-btn" class="btn btn-danger" type="button" aria-pressed="false">
                                 删除密钥
                             </button>
-                            <button
-                                id="dk-f-reset"
-                                class="btn btn-secondary"
-                                type="button"
-                            >
+                            <button id="dk-f-reset" class="btn btn-secondary" type="button">
                                 清除筛选
                             </button>
                         </div>
@@ -392,16 +230,8 @@
                             </p>
                         </div>
                         <div class="panel-head-actions">
-                            <a
-                                id="proxy-logs"
-                                class="btn btn-primary"
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-disabled="true"
-                                >Gateway 记录<span class="btn-ext" aria-hidden="true"
-                                    >↗</span
-                                ></a
-                            >
+                            <a id="proxy-logs" class="btn btn-primary" target="_blank" rel="noreferrer"
+                                aria-disabled="true">Gateway 记录<span class="btn-ext" aria-hidden="true">↗</span></a>
                         </div>
                     </div>
 
@@ -418,63 +248,30 @@
                     <div id="proxy-toolbar" class="proxy-toolbar hidden">
                         <div class="proxy-toolbar-row proxy-toolbar-row--provider">
                             <div class="proxy-provider-col">
-                                <select
-                                    id="proxy-provider"
-                                    class="input-select"
-                                    aria-label="服务商"
-                                ></select>
+                                <select id="proxy-provider" class="input-select" aria-label="服务商"></select>
                             </div>
                             <div class="proxy-url-wrap">
-                                <code
-                                    id="proxy-url"
-                                    class="input-text proxy-url"
-                                ></code>
-                                <button
-                                    id="proxy-url-copy"
-                                    class="btn btn-ghost btn-xs btn-icon copy-btn"
-                                    type="button"
-                                    title="复制转发网址"
-                                    aria-label="复制转发网址"
-                                    disabled
-                                ></button>
+                                <code id="proxy-url" class="input-text proxy-url"></code>
+                                <button id="proxy-url-copy" class="btn btn-ghost btn-xs btn-icon copy-btn" type="button"
+                                    title="复制转发网址" aria-label="复制转发网址" disabled></button>
                             </div>
                         </div>
                         <div class="proxy-toolbar-row proxy-toolbar-row--model">
                             <div id="proxy-summary" class="proxy-summary"></div>
                             <div class="proxy-model-group">
-                                <label class="proxy-model-label" for="proxy-test-model"
-                                    >测试模型</label
-                                >
-                                <select
-                                    id="proxy-test-model"
-                                    class="input-select proxy-model-select"
-                                ></select>
-                                <button
-                                    id="proxy-save-model"
-                                    class="btn btn-secondary btn-sm proxy-save-model"
-                                    type="button"
-                                >
+                                <label class="proxy-model-label" for="proxy-test-model">测试模型</label>
+                                <select id="proxy-test-model" class="input-select proxy-model-select"></select>
+                                <button id="proxy-save-model" class="btn btn-secondary btn-sm proxy-save-model"
+                                    type="button">
                                     保存模型
                                 </button>
-                                <button
-                                    id="proxy-test-active"
-                                    class="btn btn-secondary btn-sm"
-                                    type="button"
-                                >
+                                <button id="proxy-test-active" class="btn btn-secondary btn-sm" type="button">
                                     测试有效密钥
                                 </button>
-                                <button
-                                    id="proxy-test-disabled"
-                                    class="btn btn-secondary btn-sm"
-                                    type="button"
-                                >
+                                <button id="proxy-test-disabled" class="btn btn-secondary btn-sm" type="button">
                                     测试无效密钥
                                 </button>
-                                <button
-                                    id="proxy-recover-all"
-                                    class="btn btn-secondary btn-sm"
-                                    type="button"
-                                >
+                                <button id="proxy-recover-all" class="btn btn-secondary btn-sm" type="button">
                                     恢复所有密钥
                                 </button>
                             </div>
@@ -489,12 +286,7 @@
         <!-- Provider editor modal -->
         <div id="editor-overlay" class="modal-overlay hidden">
             <div class="modal-backdrop" data-close-modal="editor"></div>
-            <section
-                class="modal-panel"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="editor-title"
-            >
+            <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="editor-title">
                 <div class="modal-header">
                     <div>
                         <h3 id="editor-title">新增服务商</h3>
@@ -505,54 +297,22 @@
 
                     <label class="field">
                         <span class="field-label">
-                            <span class="field-label-title"
-                                >Provider Type<span
-                                    class="field-required"
-                                    aria-hidden="true"
-                                    >*</span
-                                ></span
-                            >
+                            <span class="field-label-title">Provider Type<span class="field-required"
+                                    aria-hidden="true">*</span></span>
                             <span class="info-icon" tabindex="0">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    width="14"
-                                    height="14"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                    fill="none"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                >
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
-                                    <line
-                                        x1="12"
-                                        y1="16"
-                                        x2="12"
-                                        y2="12"
-                                    ></line>
-                                    <line
-                                        x1="12"
-                                        y1="8"
-                                        x2="12.01"
-                                        y2="8"
-                                    ></line>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
                                 </svg>
-                                <span class="info-tooltip"
-                                    >只会补全端点后缀，<b>版本前缀要自己填进 API Base</b
-                                    >（例：<code>https://api.openai.com/v1</code>）：<br />OpenAI:
+                                <span class="info-tooltip">会补全端点后缀<br />OpenAI:
                                     <code>/chat/completions</code><br />Gemini:
-                                    <code
-                                        >/models/{model}:streamGenerateContent</code
-                                    ><br />Anthropic:
-                                    <code>/messages</code></span
-                                >
+                                    <code>/models/{model}:streamGenerateContent</code><br />Anthropic:
+                                    <code>/messages</code></span>
                             </span>
                         </span>
-                        <select
-                            id="ed-provider-type"
-                            class="input-select"
-                            aria-required="true"
-                        >
+                        <select id="ed-provider-type" class="input-select" aria-required="true">
                             <option value="openai">openai</option>
                             <option value="gemini">gemini</option>
                             <option value="anthropic">anthropic</option>
@@ -561,103 +321,68 @@
 
                     <label class="field">
                         <span class="field-label">
-                            <span class="field-label-title"
-                                >API Base URL<span
-                                    class="field-required"
-                                    aria-hidden="true"
-                                    >*</span
-                                ></span
-                            >
+                            <span class="field-label-title">API Base URL<span class="field-required"
+                                    aria-hidden="true">*</span></span>
                         </span>
-                        <input
-                            type="url"
-                            id="ed-api-base"
-                            class="input-text"
-                            placeholder="https://api.openai.com/v1"
-                            aria-required="true"
-                        />
+                        <input type="url" id="ed-api-base" class="input-text" placeholder="https://api.openai.com/v1"
+                            aria-required="true" />
                     </label>
 
                     <label class="field">
                         <span class="field-label">
                             转发别名
-                            <small class="muted"
-                                >小写英文、数字与连字号；留空表示不转发</small
-                            >
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">小写英文、数字与连字号；留空表示不转发</span>
+                            </span>
                         </span>
-                        <input
-                            type="text"
-                            id="ed-alias"
-                            class="input-text"
-                            placeholder="例如 openai-main"
-                            spellcheck="false"
-                            autocomplete="off"
-                        />
+                        <input type="text" id="ed-alias" class="input-text" placeholder="例如 openai-main"
+                            spellcheck="false" autocomplete="off" />
                     </label>
 
                     <div class="field">
                         <label class="field-label" for="ed-keys">
-                            <span class="field-label-title"
-                                >API Keys<span
-                                    class="field-required"
-                                    aria-hidden="true"
-                                    >*</span
-                                ></span
-                            >
-                            <small class="muted">一行一个</small>
+                            <span class="field-label-title">API Keys<span class="field-required"
+                                    aria-hidden="true">*</span></span>
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">一行一个</span>
+                            </span>
                         </label>
                         <div class="keys-toolbar">
                             <div class="keys-search-wrap">
-                                <input
-                                    type="search"
-                                    id="ed-keys-search"
-                                    class="input-text keys-search"
-                                    placeholder="搜索密钥，标橘色"
-                                    aria-label="搜索密钥"
-                                    spellcheck="false"
-                                    autocomplete="off"
-                                />
+                                <input type="search" id="ed-keys-search" class="input-text keys-search"
+                                    placeholder="搜索密钥，标橘色" aria-label="搜索密钥" spellcheck="false" autocomplete="off" />
                                 <!-- Clear button, drawn as the backspace key it does
                                      the work of: a pentagon pointing left with an
                                      × in it. Sits inside the box's right end, so
                                      the browser's own search × is switched off in
                                      style.css — two clear buttons would overlap. -->
-                                <button
-                                    id="ed-keys-search-clear"
-                                    class="keys-search-clear"
-                                    type="button"
-                                    aria-label="清除搜索"
-                                    title="清除搜索"
-                                >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        width="20"
-                                        height="20"
-                                        stroke="currentColor"
-                                        stroke-width="2"
-                                        fill="none"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        aria-hidden="true"
-                                    >
+                                <button id="ed-keys-search-clear" class="keys-search-clear" type="button"
+                                    aria-label="清除搜索" title="清除搜索">
+                                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor"
+                                        stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"
+                                        aria-hidden="true">
                                         <polygon points="21 5 21 19 8 19 2 12 8 5"></polygon>
                                         <line x1="11.5" y1="9.5" x2="16.5" y2="14.5"></line>
                                         <line x1="16.5" y1="9.5" x2="11.5" y2="14.5"></line>
                                     </svg>
                                 </button>
                             </div>
-                            <button
-                                id="ed-sort-keys-btn"
-                                class="btn btn-secondary btn-xs"
-                                type="button"
-                            >
+                            <button id="ed-sort-keys-btn" class="btn btn-secondary btn-xs" type="button">
                                 预设排序
                             </button>
-                            <button
-                                id="ed-export-keys-btn"
-                                class="btn btn-secondary btn-xs"
-                                type="button"
-                            >
+                            <button id="ed-export-keys-btn" class="btn btn-secondary btn-xs" type="button">
                                 导出
                             </button>
                         </div>
@@ -674,89 +399,72 @@
                                  boxes on purpose — the outer one clips and stays
                                  put, the inner one carries the marks and is
                                  translated to follow the textarea's scroll. -->
-                            <div
-                                id="ed-keys-highlight"
-                                class="keys-highlight"
-                                aria-hidden="true"
-                            >
+                            <div id="ed-keys-highlight" class="keys-highlight" aria-hidden="true">
                                 <div class="keys-highlight-inner"></div>
                             </div>
-                            <textarea
-                                id="ed-keys"
-                                class="input-textarea lined-textarea"
-                                spellcheck="false"
+                            <textarea id="ed-keys" class="input-textarea lined-textarea" spellcheck="false"
                                 placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"
-                                aria-required="true"
-                            ></textarea>
+                                aria-required="true"></textarea>
                         </div>
                     </div>
 
                     <label class="field">
                         <span class="field-label">
-                            <span class="field-label-title"
-                                >Models<span
-                                    class="field-required"
-                                    aria-hidden="true"
-                                    >*</span
-                                ></span
-                            >
-                            <small class="muted">逗号分隔（一行）</small>
+                            <span class="field-label-title">Models<span class="field-required"
+                                    aria-hidden="true">*</span></span>
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">逗号分隔或一行一个，保存时会自动转为逗号分隔</span>
+                            </span>
                         </span>
-                        <div
-                            class="lined-editor lined-editor--wrap modal-editor-box"
-                        >
+                        <div class="lined-editor lined-editor--wrap modal-editor-box">
                             <div class="line-nums" aria-hidden="true"></div>
-                            <textarea
-                                id="ed-models"
-                                class="input-textarea lined-textarea"
-                                spellcheck="false"
-                                placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini"
-                                aria-required="true"
-                            ></textarea>
+                            <textarea id="ed-models" class="input-textarea lined-textarea" spellcheck="false"
+                                placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini" aria-required="true"></textarea>
                         </div>
                     </label>
 
                     <label class="field">
                         <span class="field-label">
                             Extra Body
-                            <small class="muted"
-                                >选填，键直接覆盖请求体同名键</small
-                            >
-                            <span
-                                id="ed-extra-body-status"
-                                class="json-status"
-                                aria-live="polite"
-                            ></span>
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">选填，键直接覆盖请求体同名键</span>
+                            </span>
+                            <span id="ed-extra-body-status" class="json-status" aria-live="polite"></span>
                         </span>
-                        <div
-                            class="lined-editor lined-editor--wrap modal-editor-box modal-editor-box--sm"
-                        >
+                        <div class="lined-editor lined-editor--wrap modal-editor-box modal-editor-box--sm">
                             <div class="line-nums" aria-hidden="true"></div>
-                            <textarea
-                                id="ed-extra-body"
-                                class="input-textarea lined-textarea"
-                                spellcheck="false"
-                                placeholder='{"temperature": 0.7, "enable_thinking": true}'
-                            ></textarea>
+                            <textarea id="ed-extra-body" class="input-textarea lined-textarea" spellcheck="false"
+                                placeholder='{"temperature": 0.7, "enable_thinking": true}'></textarea>
                         </div>
                     </label>
 
                     <div class="field">
                         <span class="field-label">
                             Headers
-                            <small class="muted"
-                                >选填，附加的请求头</small
-                            >
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">选填，附加的请求头</span>
+                            </span>
                         </span>
-                        <div
-                            id="ed-headers-container"
-                            class="custom-headers-container"
-                        ></div>
-                        <button
-                            id="ed-add-header-btn"
-                            class="btn btn-secondary btn-xs add-header-btn"
-                            type="button"
-                        >
+                        <div id="ed-headers-container" class="custom-headers-container"></div>
+                        <button id="ed-add-header-btn" class="btn btn-secondary btn-xs add-header-btn" type="button">
                             + 添加请求头
                         </button>
                     </div>
@@ -764,47 +472,31 @@
                     <label class="field">
                         <span class="field-label">
                             Max Concurrency
-                            <small class="muted"
-                                >选填，正整数，覆盖全局预设值（脚本默认:
-                                2）</small
-                            >
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">选填，正整数，覆盖全局预设值（脚本默认: 2）</span>
+                            </span>
                         </span>
-                        <input
-                            type="number"
-                            id="ed-max-concurrency"
-                            class="input-text input-concurrency"
-                            placeholder="2"
-                            min="1"
-                            max="200"
-                        />
+                        <input type="number" id="ed-max-concurrency" class="input-text input-concurrency"
+                            placeholder="2" min="1" max="200" />
                     </label>
                 </div>
                 <div class="modal-footer modal-footer-stack">
                     <div id="editor-confirm" class="editor-confirm hidden">
-                        <ul
-                            id="editor-confirm-list"
-                            class="editor-confirm-list"
-                        ></ul>
+                        <ul id="editor-confirm-list" class="editor-confirm-list"></ul>
                     </div>
                     <div class="modal-footer-row">
-                        <p
-                            id="editor-error"
-                            class="form-error modal-footer-error"
-                            role="alert"
-                        ></p>
+                        <p id="editor-error" class="form-error modal-footer-error" role="alert"></p>
                         <div class="modal-footer-actions">
-                            <button
-                                class="btn btn-primary"
-                                id="editor-save-btn"
-                                type="button"
-                            >
+                            <button class="btn btn-primary" id="editor-save-btn" type="button">
                                 储存
                             </button>
-                            <button
-                                class="btn btn-ghost"
-                                id="editor-cancel-btn"
-                                type="button"
-                            >
+                            <button class="btn btn-ghost" id="editor-cancel-btn" type="button">
                                 取消
                             </button>
                         </div>
@@ -816,39 +508,22 @@
         <!-- App settings modal -->
         <div id="settings-overlay" class="modal-overlay hidden">
             <div class="modal-backdrop" data-close-modal="settings"></div>
-            <section
-                class="modal-panel"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="settings-title"
-            >
+            <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
                 <div class="modal-header">
                     <h3 id="settings-title">应用设定</h3>
                 </div>
                 <div class="modal-body">
                     <label class="field">
                         <span class="field-label">GitHub Actions URL</span>
-                        <input
-                            type="url"
-                            id="set-github-url"
-                            class="input-text"
-                            placeholder="https://github.com/owner/repo/actions/workflows/main.yml"
-                        />
+                        <input type="url" id="set-github-url" class="input-text"
+                            placeholder="https://github.com/owner/repo/actions/workflows/main.yml" />
                     </label>
                     <label class="field">
                         <span class="field-label">Discord Webhook URL</span>
                         <div class="field-row">
-                            <input
-                                type="url"
-                                id="set-discord-url"
-                                class="input-text"
-                                placeholder="https://discord.com/api/webhooks/..."
-                            />
-                            <button
-                                id="test-discord-btn"
-                                class="btn btn-secondary no-shrink"
-                                type="button"
-                            >
+                            <input type="url" id="set-discord-url" class="input-text"
+                                placeholder="https://discord.com/api/webhooks/..." />
+                            <button id="test-discord-btn" class="btn btn-secondary no-shrink" type="button">
                                 测试
                             </button>
                         </div>
@@ -856,80 +531,56 @@
                     <label class="field">
                         <span class="field-label">
                             代理转发密码
-                            <small class="muted"
-                                >外部客户端调用 /proxy/{别名} 使用，须与
-                                ADMIN_PASSWORD 不同</small
-                            >
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">必须与 ADMIN_PASSWORD 不同</span>
+                            </span>
                         </span>
-                        <input
-                            type="password"
-                            id="set-proxy-password"
-                            class="input-text"
-                            placeholder="设定 PROXY_PASSWORD"
-                            autocomplete="new-password"
-                            spellcheck="false"
-                        />
+                        <input type="password" id="set-proxy-password" class="input-text"
+                            placeholder="设定 PROXY_PASSWORD" autocomplete="new-password" spellcheck="false" />
                     </label>
                     <label class="field">
                         <span class="field-label">
                             AI Gateway Logs URL
-                            <small class="muted"
-                                >Cloudflare AI Gateway 日志网址，用于提取 Account / Gateway ID</small
-                            >
+                            <span class="info-icon" tabindex="0">
+                                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2"
+                                    fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                                <span class="info-tooltip">也用于提取 Account ID / Gateway ID</span>
+                            </span>
                         </span>
-                        <input
-                            type="url"
-                            id="set-gateway-logs-url"
-                            class="input-text"
-                            placeholder="https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs"
-                        />
+                        <input type="url" id="set-gateway-logs-url" class="input-text"
+                            placeholder="https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs" />
                     </label>
                     <label class="field">
                         <span class="field-label">AI Gateway Token</span>
-                        <input
-                            type="password"
-                            id="set-gateway-token"
-                            class="input-text"
-                            placeholder="cf-aig-authorization Bearer Token"
-                            autocomplete="new-password"
-                            spellcheck="false"
-                        />
+                        <input type="password" id="set-gateway-token" class="input-text"
+                            placeholder="cf-aig-authorization Bearer Token" autocomplete="new-password"
+                            spellcheck="false" />
                     </label>
                     <div class="settings-grid-3">
                         <label class="field">
                             <span class="field-label">失败禁用门槛</span>
-                            <input
-                                type="number"
-                                id="set-proxy-fail-threshold"
-                                class="input-text"
-                                min="1"
-                                step="1"
-                                placeholder="3"
-                            />
+                            <input type="number" id="set-proxy-fail-threshold" class="input-text" min="1" step="1"
+                                placeholder="3" />
                         </label>
                         <label class="field">
                             <span class="field-label">最多重试次数</span>
-                            <input
-                                type="number"
-                                id="set-proxy-max-retries"
-                                class="input-text"
-                                min="0"
-                                max="3"
-                                step="1"
-                                placeholder="3"
-                            />
+                            <input type="number" id="set-proxy-max-retries" class="input-text" min="0" max="3" step="1"
+                                placeholder="3" />
                         </label>
                         <label class="field">
                             <span class="field-label">上游超时 (ms)</span>
-                            <input
-                                type="number"
-                                id="set-proxy-timeout-ms"
-                                class="input-text"
-                                min="1000"
-                                max="600000"
-                                step="1000"
-                                placeholder="120000"
-                            />
+                            <input type="number" id="set-proxy-timeout-ms" class="input-text" min="1000" max="600000"
+                                step="1000" placeholder="120000" />
                         </label>
                     </div>
                     <p id="settings-error" class="form-error" role="alert"></p>
@@ -938,18 +589,10 @@
                     </p>
                 </div>
                 <div class="modal-footer">
-                    <button
-                        class="btn btn-primary"
-                        id="settings-save-btn"
-                        type="button"
-                    >
+                    <button class="btn btn-primary" id="settings-save-btn" type="button">
                         储存
                     </button>
-                    <button
-                        class="btn btn-ghost"
-                        id="settings-cancel-btn"
-                        type="button"
-                    >
+                    <button class="btn btn-ghost" id="settings-cancel-btn" type="button">
                         取消
                     </button>
                 </div>
@@ -959,22 +602,14 @@
         <!-- Sample modal -->
         <div id="sample-overlay" class="modal-overlay hidden">
             <div class="modal-backdrop" data-close-modal="sample"></div>
-            <section
-                class="modal-panel modal-panel--wide"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="sample-title"
-            >
+            <section class="modal-panel modal-panel--wide" role="dialog" aria-modal="true"
+                aria-labelledby="sample-title">
                 <div class="modal-header">
                     <div>
                         <h3 id="sample-title">Sample</h3>
                         <p id="sample-subtitle" class="muted"></p>
                     </div>
-                    <button
-                        class="btn btn-ghost btn-sm"
-                        id="sample-close-btn"
-                        type="button"
-                    >
+                    <button class="btn btn-ghost btn-sm" id="sample-close-btn" type="button">
                         关闭
                     </button>
                 </div>
@@ -985,12 +620,7 @@
         <!-- Dead key bulk-delete confirm -->
         <div id="dkconfirm-overlay" class="modal-overlay hidden">
             <div class="modal-backdrop" data-close-modal="dkconfirm"></div>
-            <section
-                class="modal-panel"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="dkconfirm-title"
-            >
+            <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="dkconfirm-title">
                 <div class="modal-header">
                     <h3 id="dkconfirm-title">确认删除</h3>
                 </div>
@@ -1000,18 +630,10 @@
                     <p id="dkconfirm-error" class="form-error" role="alert"></p>
                 </div>
                 <div class="modal-footer">
-                    <button
-                        class="btn btn-danger-solid"
-                        id="dkconfirm-ok-btn"
-                        type="button"
-                    >
+                    <button class="btn btn-danger-solid" id="dkconfirm-ok-btn" type="button">
                         确认删除
                     </button>
-                    <button
-                        class="btn btn-ghost"
-                        id="dkconfirm-cancel-btn"
-                        type="button"
-                    >
+                    <button class="btn btn-ghost" id="dkconfirm-cancel-btn" type="button">
                         取消
                     </button>
                 </div>
@@ -1021,22 +643,14 @@
         <!-- Error detail modal (shared: results tab + dead keys tab) -->
         <div id="errdetail-overlay" class="modal-overlay hidden">
             <div class="modal-backdrop" data-close-modal="errdetail"></div>
-            <section
-                class="modal-panel modal-panel--wide"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="errdetail-title"
-            >
+            <section class="modal-panel modal-panel--wide" role="dialog" aria-modal="true"
+                aria-labelledby="errdetail-title">
                 <div class="modal-header">
                     <div>
                         <h3 id="errdetail-title">错误详情</h3>
                         <p id="errdetail-subtitle" class="muted"></p>
                     </div>
-                    <button
-                        class="btn btn-ghost btn-sm"
-                        id="errdetail-close-btn"
-                        type="button"
-                    >
+                    <button class="btn btn-ghost btn-sm" id="errdetail-close-btn" type="button">
                         关闭
                     </button>
                 </div>
@@ -1046,4 +660,5 @@
 
         <script src="/app.js"></script>
     </body>
+
 </html>

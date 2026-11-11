@@ -1794,3 +1794,39 @@ test("settings reject unsafe URL schemes and proxy retry preserves merged extra_
     assert.equal(sent.model, "gpt-test");
   }
 });
+
+test("settings normalize newline/mixed models to comma-separated and reject missing models", async () => {
+  const env = makeEnv();
+  const saved = await postSettings(env, [
+    provider({
+      alias: "multiline-models",
+      models: "gpt-4o\ngpt-4.1, o3\r\n  , claude-3-7 ",
+    }),
+  ]);
+  assert.equal(saved.status, 200);
+
+  const got = await asJson(
+    await request(env, "/api/settings", { headers: adminHeaders() }),
+  );
+  assert.equal(got.status, 200);
+  assert.equal(got.data.settings.providers[0].models, "gpt-4o,gpt-4.1,o3,claude-3-7");
+
+  const proxyState = await asJson(
+    await request(env, "/api/proxy/state", { headers: adminHeaders() }),
+  );
+  assert.equal(proxyState.status, 200);
+  assert.deepEqual(proxyState.data.providers[0].models, [
+    "gpt-4o",
+    "gpt-4.1",
+    "o3",
+    "claude-3-7",
+  ]);
+
+  for (const badModels of ["", " \n , \r\n ", 123]) {
+    const res = await postSettings(env, [
+      provider({ alias: "bad-models", models: badModels }),
+    ]);
+    assert.equal(res.status, 400);
+    assert.match(res.data.error, /模型/);
+  }
+});
