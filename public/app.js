@@ -263,7 +263,6 @@ const dom = {
   proxyUrl: $("proxy-url"),
   proxyUrlCopy: $("proxy-url-copy"),
   proxyTestModel: $("proxy-test-model"),
-  proxySaveModel: $("proxy-save-model"),
   proxyTestActive: $("proxy-test-active"),
   proxyTestDisabled: $("proxy-test-disabled"),
   proxyRecoverAll: $("proxy-recover-all"),
@@ -1221,6 +1220,22 @@ function closeSettings() {
   closeModal(dom.settingsOverlay);
 }
 
+function settingsPatchUnchanged(currentSettings, patch) {
+  if (!currentSettings) return false;
+  for (const [key, val] of Object.entries(patch)) {
+    const existing = Object.prototype.hasOwnProperty.call(
+      PROXY_SETTING_SPECS,
+      key,
+    )
+      ? (currentSettings[key] ?? PROXY_SETTING_SPECS[key].fallback)
+      : typeof currentSettings[key] === "string"
+        ? currentSettings[key]
+        : "";
+    if (existing !== val) return false;
+  }
+  return true;
+}
+
 async function saveSettings() {
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
@@ -1285,6 +1300,11 @@ async function saveSettings() {
     }
   } catch (err) {
     dom.settingsError.textContent = err.message;
+    return;
+  }
+
+  if (settingsPatchUnchanged(state.settings, patch)) {
+    closeSettings();
     return;
   }
 
@@ -1814,6 +1834,51 @@ function closeEditor() {
   closeModal(dom.editorOverlay);
 }
 
+function canonicalProvider(p) {
+  const item = p && typeof p === "object" ? p : {};
+  return {
+    enabled: item.enabled !== false,
+    provider_type:
+      typeof item.provider_type === "string" ? item.provider_type : "openai",
+    api_base: typeof item.api_base === "string" ? item.api_base : "",
+    keys: typeof item.keys === "string" ? item.keys : "",
+    models: typeof item.models === "string" ? item.models : "",
+    extra_body: typeof item.extra_body === "string" ? item.extra_body : "",
+    custom_headers: Array.isArray(item.custom_headers)
+      ? item.custom_headers.map((h) => ({
+          key: String(h?.key ?? ""),
+          value: String(h?.value ?? ""),
+        }))
+      : [],
+    max_concurrency:
+      item.max_concurrency != null ? Number(item.max_concurrency) : null,
+    alias: typeof item.alias === "string" ? item.alias : "",
+  };
+}
+
+function providersEqual(a, b) {
+  const ca = canonicalProvider(a);
+  const cb = canonicalProvider(b);
+  if (
+    ca.enabled !== cb.enabled ||
+    ca.provider_type !== cb.provider_type ||
+    ca.api_base !== cb.api_base ||
+    ca.keys !== cb.keys ||
+    ca.models !== cb.models ||
+    ca.extra_body !== cb.extra_body ||
+    ca.max_concurrency !== cb.max_concurrency ||
+    ca.alias !== cb.alias ||
+    ca.custom_headers.length !== cb.custom_headers.length
+  ) {
+    return false;
+  }
+  return ca.custom_headers.every(
+    (h, i) =>
+      h.key === cb.custom_headers[i].key &&
+      h.value === cb.custom_headers[i].value,
+  );
+}
+
 async function saveEditor() {
   const confirmed = Boolean(state.editorPendingRemoved);
   if (!confirmed) dom.editorError.textContent = "";
@@ -1879,6 +1944,18 @@ async function saveEditor() {
   const alias = dom.edAlias.value.trim();
   // Omit empty alias so a provider without forwarding keeps its minimal shape.
   if (alias) entry.alias = alias;
+
+  if (
+    index >= 0 &&
+    existingProviders[index] &&
+    providersEqual(existingProviders[index], entry)
+  ) {
+    hideEditorConfirm();
+    state.editorSnapshot = null;
+    state.editorSortMode = "none";
+    closeEditor();
+    return;
+  }
 
   // A shrinking key list gets an in-place confirmation instead of a popup: the
   // footer grows, so the warning cannot be missed.
@@ -2297,20 +2374,14 @@ function renderProxyModelSelect(p) {
     opt.textContent = model;
     dom.proxyTestModel.appendChild(opt);
   }
-  // No saved choice yet: default to the first model. The save button still has to
-  // be pressed before the test buttons treat it as the chosen probe model.
-  dom.proxyTestModel.value = saved || models[0];
+  // Default to the saved model while still listed, otherwise the first option.
+  // The chosen model is persisted only when the operator clicks a Test button.
+  dom.proxyTestModel.value =
+    saved && models.includes(saved) ? saved : models[0];
   syncCustomSelect(dom.proxyTestModel);
 }
 
-let proxySaveModelTimer = null;
-
 function renderProxyToolbar() {
-  if (proxySaveModelTimer) {
-    clearTimeout(proxySaveModelTimer);
-    proxySaveModelTimer = null;
-  }
-  dom.proxySaveModel.textContent = "保存模型";
   const p = selectedProxyProvider();
   if (!p) return;
   const enabled =
@@ -2329,8 +2400,8 @@ function renderProxyToolbar() {
   const makeCount = (cls, count, title) => {
     const span = document.createElement("span");
     span.className = `proxy-summary-cell ${cls} proxy-summary-num`;
-    span.textContent = String(count);
-    span.title = title;
+    span.textContent = count > 9999 ? "9999+" : String(count);
+    span.title = count > 9999 ? `${title}：${count}` : title;
     return span;
   };
   const countsGroup = document.createElement("span");
@@ -2351,18 +2422,17 @@ function renderProxyToolbar() {
   renderProxyModelSelect(p);
   const hasModels = proxyModelOptions(p).length > 0;
   dom.proxyTestModel.disabled = !enabled || !hasModels;
-  dom.proxySaveModel.disabled = !enabled || !hasModels;
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
   const hasDisabledKeys = (p.keys || []).some((k) => k.disabled && k.id != null);
   const hasAlias = !!String(p.alias || "").trim();
-  const canTest = enabled && hasAlias && hasKeys && !!p.test_model;
+  const canTest = enabled && hasAlias && hasKeys && hasModels;
   for (const btn of [dom.proxyTestActive, dom.proxyTestDisabled]) {
     btn.disabled = !canTest || state.proxyBusy;
     btn.title = !hasAlias
       ? "请先在「来源设定」填写转发别名（alias）"
-      : !p.test_model
-        ? "请先选择并保存测试模型"
+      : !hasModels
+        ? "请先在「来源设定」填写 Models"
         : "";
   }
   dom.proxyRecoverAll.disabled = !enabled || !hasDisabledKeys || state.proxyBusy;
@@ -2406,7 +2476,10 @@ function updateProxyCardButtonsDisabled() {
   if (!p) return;
   const enabled =
     !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
-  const canAct = enabled && !!String(p.alias || "").trim() && !!p.test_model;
+  const canAct =
+    enabled &&
+    !!String(p.alias || "").trim() &&
+    proxyModelOptions(p).length > 0;
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-test]")) {
     const id = btn.dataset.proxyTest;
     const busy =
@@ -2438,7 +2511,10 @@ function renderProxyKeyCards() {
     return;
   }
   dom.proxyKeyEmpty.classList.add("hidden");
-  const canAct = enabled && !!String(p.alias || "").trim() && !!p.test_model;
+  const canAct =
+    enabled &&
+    !!String(p.alias || "").trim() &&
+    proxyModelOptions(p).length > 0;
   const plainList = state.proxyPlainKeys.get(p.fp) || [];
   dom.proxyKeyGrid.innerHTML = keys
     .map((k, ki) => {
@@ -2528,7 +2604,7 @@ function renderProxyTestResult(id, result) {
 }
 
 /** Returns the result object so the batch loop can count it. */
-async function testProxyKey(fp, id, { fromBatch = false } = {}) {
+async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
   if (id == null || id === "") return null;
   if (!fromBatch && state.proxyBusy) return null;
   const targetId = String(id);
@@ -2539,6 +2615,11 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
   const beforeProvider = (state.proxy?.providers || []).find(
     (item) => item.fp === targetFp,
   );
+  const selectedModel = String(model ?? dom.proxyTestModel.value ?? "").trim();
+  if (!selectedModel) {
+    setProxyNotice("请先在「来源设定」填写 Models。", "info");
+    return null;
+  }
   const beforeKey = (beforeProvider?.keys || []).find(
     (k) => String(k.id ?? "") === targetId,
   );
@@ -2563,6 +2644,8 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
         (item) => item.fp === targetFp,
       );
       if (provider) {
+        provider.test_model = selectedModel;
+        mockOverrideForProvider(provider.fp).test_model = selectedModel;
         const ki = (provider.keys || []).findIndex(
           (k) => String(k.id ?? "") === targetId,
         );
@@ -2581,7 +2664,7 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
         ok: true,
         status: 200,
         ms: 123,
-        model: (provider && provider.test_model) || "mock",
+        model: selectedModel,
         fail_count: 0,
         disabled: false,
       };
@@ -2589,7 +2672,7 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
       result = await api("/api/proxy/test", {
         method: "POST",
         auth: true,
-        body: { fp, id: Number(targetId) },
+        body: { fp, id: Number(targetId), model: selectedModel },
       });
     }
   } catch (err) {
@@ -2597,6 +2680,13 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
   } finally {
     state.proxyTestingKeys.delete(token);
     updateProxyCardButtonsDisabled();
+  }
+
+  if (beforeProvider && result && result.model) {
+    beforeProvider.test_model = result.model;
+  }
+  if (state.settings && typeof result?.settings_version === "number") {
+    state.settings.version = result.settings_version;
   }
 
   const store = proxyResultStore(targetFp);
@@ -2641,7 +2731,7 @@ function proxyActionButtons() {
     dom.proxyTestActive,
     dom.proxyTestDisabled,
     dom.proxyRecoverAll,
-    dom.proxySaveModel,
+    dom.proxyTestModel,
     dom.proxyProvider,
   ];
 }
@@ -2650,6 +2740,11 @@ async function runProxyBatch(mode) {
   if (state.proxyBusy) return;
   const p = selectedProxyProvider();
   if (!p) return;
+  const selectedModel = dom.proxyTestModel.value.trim();
+  if (!selectedModel) {
+    setProxyNotice("请先在「来源设定」填写 Models。", "info");
+    return;
+  }
   const keys = (p.keys || []).filter((k) => {
     if (k.id == null) return false;
     // Only the two scopes the toolbar exposes: healthy keys or disabled keys.
@@ -2680,6 +2775,7 @@ async function runProxyBatch(mode) {
       );
       const result = await testProxyKey(p.fp, keys[i].id, {
         fromBatch: true,
+        model: selectedModel,
       });
       if (result && result.ok) ok++;
       else fail++;
@@ -2699,48 +2795,11 @@ async function runProxyBatch(mode) {
   );
 }
 
-async function saveProxyTestModel() {
-  if (state.proxyBusy) return;
-  const p = selectedProxyProvider();
-  if (!p) return;
-  const model = dom.proxyTestModel.value.trim();
-  if (!model) {
-    dom.proxyTestModel.focus();
-    return;
-  }
-  dom.proxySaveModel.disabled = true;
-  try {
-    if (!MOCK) {
-      const res = await api("/api/proxy/test-model", {
-        method: "POST",
-        auth: true,
-        body: { fp: p.fp, model },
-      });
-      p.test_model = res.test_model || "";
-    } else {
-      p.test_model = model;
-      mockOverrideForProvider(p.fp).test_model = model;
-    }
-    renderProxyToolbar();
-    renderProxyKeyCards();
-    dom.proxySaveModel.textContent = "已保存";
-    proxySaveModelTimer = setTimeout(() => {
-      proxySaveModelTimer = null;
-      dom.proxySaveModel.textContent = "保存模型";
-    }, 1200);
-  } catch (err) {
-    setProxyNotice(`保存失败：${err.message}`, "error");
-  } finally {
-    dom.proxySaveModel.disabled = false;
-  }
-}
-
 async function recoverProxyKey(fp, id) {
   if (state.proxyBusy || id == null || id === "") return;
   const targetId = String(id);
   const token = `${fp}:${targetId}`;
   if (state.proxyRecoveringKeys.has(token)) return;
-  if (!confirm("恢复这把密钥？恢复后会重新参与轮用。")) return;
 
   const currentProvider = selectedProxyProvider();
   const targetFp = (currentProvider || {}).fp;
@@ -4252,7 +4311,6 @@ function bindEvents() {
     const url = dom.proxyUrlCopy.dataset.copyVal || "";
     if (url) copyText(url, dom.proxyUrlCopy);
   });
-  dom.proxySaveModel.addEventListener("click", saveProxyTestModel);
   dom.proxyTestActive.addEventListener("click", () => runProxyBatch("active"));
   dom.proxyTestDisabled.addEventListener("click", () => runProxyBatch("disabled"));
   dom.proxyRecoverAll.addEventListener("click", recoverAllProxyKeys);

@@ -1009,6 +1009,37 @@ test("the proxy test model is stored separately, not auto-borrowed", async () =>
     "probe-model",
     "探測要用設定的模型",
   );
+
+  // Clicking Test with a new model saves it alongside the probe, and repeating
+  // the same model avoids redundant app_settings writes.
+  captured.length = 0;
+  const keyId = (await getKeyRows(env, fp))[0].id;
+  const testWithNewModel = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp, id: keyId, model: "m2" }),
+    }),
+  );
+  assert.equal(testWithNewModel.status, 200);
+  assert.equal(testWithNewModel.data.model, "m2");
+  assert.equal(typeof testWithNewModel.data.settings_version, "number");
+  assert.equal(JSON.parse(captured[0].body).model, "m2");
+
+  const stateUpdated = await asJson(
+    await request(env, "/api/proxy/state", { headers: adminHeaders() }),
+  );
+  assert.equal(stateUpdated.data.providers[0].test_model, "m2");
+
+  const testSameModel = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp, id: keyId, model: "m2" }),
+    }),
+  );
+  assert.equal(testSameModel.status, 200);
+  assert.equal(testSameModel.data.settings_version, undefined);
 });
 
 // ── R0: settings ↔ key_state sync ──────────────────────────────────────────
@@ -1039,19 +1070,36 @@ test("removing a key or changing api_base prunes key_state without resetting cou
   assert.equal(Number(rows.n), 2);
 });
 
-test("re-saving the same keys keeps fail_count", async () => {
-  const env = makeEnv();
+test("re-saving the same keys keeps fail_count and skips redundant writes", async () => {
+  const kv = new FakeKV();
+  const env = makeEnv({ kv });
   const p = provider({ alias: "openai", keys: "k1" });
-  await postSettings(env, [p]);
+  const firstSave = await postSettings(env, [p]);
+  assert.equal(firstSave.status, 200);
   const fp = await fingerprintOf(env, p);
   await env.DB.prepare(
     "UPDATE key_state SET fail_count = 2 WHERE fp = ? AND api_key = ?",
   )
     .bind(fp, "k1")
     .run();
-  await postSettings(env, [p]);
+
+  const beforeRow = await env.DB.prepare("SELECT v FROM store WHERE k = ?").bind("app_settings").first();
+  const res = await postSettings(env, [p]);
+  assert.equal(res.status, 200);
+  assert.equal(res.data.unchanged, true);
+  assert.equal(res.data.version, firstSave.data.version);
+  const afterRow = await env.DB.prepare("SELECT v FROM store WHERE k = ?").bind("app_settings").first();
+  assert.equal(afterRow.v, beforeRow.v);
   const [key] = await getKeyRows(env, fp);
   assert.equal(key.fail_count, 2);
+
+  // Also verify KV mode skips kv.put when payload matches existing settings.
+  const kvEnv = makeEnv({ vars: { STORAGE_BACKEND: "kv" } });
+  const kvFirst = await postSettings(kvEnv, [p]);
+  const kvSecond = await postSettings(kvEnv, [p]);
+  assert.equal(kvSecond.status, 200);
+  assert.equal(kvSecond.data.unchanged, true);
+  assert.equal(kvSecond.data.version, kvFirst.data.version);
 });
 
 // ── R0: migration + backup ─────────────────────────────────────────────────

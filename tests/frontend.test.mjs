@@ -50,7 +50,6 @@ test("proxy assets referenced by the page exist in style.css", () => {
     "proxy-toolbar",
     "proxy-toolbar-row",
     "proxy-summary",
-    "proxy-save-model",
     "proxy-key-grid",
     "proxy-key-card",
     "proxy-test-result",
@@ -178,8 +177,8 @@ test("dead keys provider labels, responsive key masking, and flat desktop select
 });
 
 test("proxy toolbar places recover-all button next to test-disabled and scopes by fp", () => {
-  const groupMatch = html.match(/<div\s+class="proxy-model-group">([\s\S]*?)<\/div>/);
-  assert.ok(groupMatch, "proxy-model-group not found");
+  const groupMatch = html.match(/<div\s+class="proxy-action-group">([\s\S]*?)<\/div>/);
+  assert.ok(groupMatch, "proxy-action-group not found");
   const testDisabledIdx = groupMatch[1].indexOf('id="proxy-test-disabled"');
   const recoverAllIdx = groupMatch[1].indexOf('id="proxy-recover-all"');
   assert.ok(
@@ -339,16 +338,50 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   const summaryCss = css.match(/\.proxy-summary\s*\{([^}]+)\}/);
   assert.ok(summaryCss, ".proxy-summary rule not found");
   assert.match(summaryCss[1], /\bgap:\s*0\.75rem;/);
-  const summaryLabelCss = css.match(/\.proxy-summary-label\s*\{([^}]+)\}/);
-  assert.ok(summaryLabelCss, ".proxy-summary-label rule not found");
-  assert.match(summaryLabelCss[1], /\bcolor:\s*var\(--text\);/);
+  const summaryLabelCss = css.match(/\.proxy-summary-label,\s*\.proxy-model-label\s*\{([^}]+)\}/);
+  assert.ok(summaryLabelCss, "shared .proxy-summary-label, .proxy-model-label rule not found");
+  assert.match(summaryLabelCss[1], /\bcolor:\s*var\(--text-muted\);/);
+  assert.match(summaryLabelCss[1], /\bfont-size:\s*var\(--text-sm\);/);
+  assert.doesNotMatch(summaryLabelCss[1], /\bfont-weight\s*:/);
+
+  for (const dead of ["proxy-save-model", "saveProxyTestModel", "proxySaveModel"]) {
+    assert.ok(!html.includes(dead), `index.html must not keep ${dead}`);
+    assert.ok(!app.includes(dead), `app.js must not keep ${dead}`);
+    assert.ok(!css.includes(dead), `style.css must not keep ${dead}`);
+  }
+  const proxyHeadDesc = html.match(/<section id="tab-proxy"[\s\S]*?<p class="muted">([\s\S]*?)<\/p>/);
+  assert.ok(proxyHeadDesc, "#tab-proxy subtitle not found");
+  assert.equal(proxyHeadDesc[1].trim(), "金钥自动轮用，连续失败达门槛后禁用。");
+  assert.doesNotMatch(proxyHeadDesc[1], /<br/);
+
+  const modelHeading = html.match(/<span class="proxy-model-heading">([\s\S]*?)<\/span>\s*<select id="proxy-test-model"/);
+  assert.ok(modelHeading, ".proxy-model-heading next to #proxy-test-model not found");
+  assert.match(modelHeading[1], /class="info-icon"[\s\S]*<span class="info-tooltip">点击测试按钮后才储存测试模型<\/span>/);
+  const rowModel = html.match(/<div class="proxy-toolbar-row proxy-toolbar-row--model">([\s\S]*?)<\/div>\s*<\/div>\s*<div id="proxy-key-grid"/);
+  assert.ok(rowModel, "proxy-toolbar-row--model not found");
+  const modelGroupIdx = rowModel[1].indexOf('class="proxy-model-group"');
+  const summaryIdx = rowModel[1].indexOf('id="proxy-summary"');
+  const actionGroupIdx = rowModel[1].indexOf('class="proxy-action-group"');
+  assert.ok(modelGroupIdx >= 0 && summaryIdx > modelGroupIdx && actionGroupIdx > summaryIdx,
+    "row 2 order must be 测试模型 -> 密钥状态 -> action buttons");
+  const desktopModelCss = css.slice(0, css.indexOf("/* ── RWD"));
+  assert.match(desktopModelCss, /\.proxy-action-group\s*\{\s*margin-left:\s*auto;\s*\}/);
+  assert.doesNotMatch(desktopModelCss, /\.proxy-model-group\s*\{[^}]*margin-left:\s*auto/s);
+  assert.match(app, /body:\s*\{\s*fp,\s*id:\s*Number\(targetId\),\s*model:\s*selectedModel\s*\}/);
+
+  const recoverFn = app.slice(app.indexOf("async function recoverProxyKey("), app.indexOf("async function recoverAllProxyKeys("));
+  assert.doesNotMatch(recoverFn, /confirm\(/, "single-key recoverProxyKey must recover directly without confirm");
+  assert.match(app, /providersEqual\(existingProviders\[index\],\s*entry\)/);
+  assert.match(app, /settingsPatchUnchanged\(state\.settings,\s*patch\)/);
   const summaryGroupCss = css.match(/\.proxy-summary-group\s*\{([^}]+)\}/);
   assert.ok(summaryGroupCss, ".proxy-summary-group rule not found");
   assert.match(summaryGroupCss[1], /\bheight:\s*var\(--control-h\);/);
   assert.match(summaryGroupCss[1], /\bbackground:\s*var\(--bg-3\);/);
   assert.match(summaryGroupCss[1], /\bborder:\s*1px solid var\(--border\);/);
-  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*min-width:\s*calc\(3ch \+ 1\.5rem\);/s);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bwidth:\s*calc\(5ch \+ 1\.5rem\);/s);
+  assert.doesNotMatch(css, /\.proxy-summary-cell\s*\{[^}]*\bmin-width\s*:/s);
   assert.match(css, /\.proxy-summary-cell\s*\+\s*\.proxy-summary-cell\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s);
+  assert.match(app, /count > 9999 \? "9999\+" : String\(count\)/);
 
   const urlCopyBtn = html.match(/<button[^>]*id="proxy-url-copy"[^>]*>/);
   assert.ok(urlCopyBtn, "#proxy-url-copy button not found");

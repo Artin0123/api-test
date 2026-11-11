@@ -904,6 +904,16 @@ async function handlePostSettings(request, env) {
     Object.entries(next.proxy_test_models).filter(([fp]) => liveFps.has(fp)),
   );
 
+  // Skip store / D1 writes when the stored settings already match the payload.
+  if (raw !== null && settingsDataEqual(existing, next)) {
+    return json({
+      ok: true,
+      version: currentVersion,
+      storage_backend: storageBackendName(env),
+      unchanged: true,
+    });
+  }
+
   // Clean up results belonging to removed or identity-changed providers, and
   // drop dead keys whose card or key is no longer configured.
   const oldEntries = await providerFpEntries(existing.providers || []);
@@ -971,6 +981,86 @@ async function handlePostSettings(request, env) {
     version: next.version,
     storage_backend: storageBackendName(env),
   });
+}
+
+function canonicalProviderForCompare(p) {
+  if (!p || typeof p !== "object") return p;
+  return {
+    enabled: p.enabled !== false,
+    provider_type: typeof p.provider_type === "string" ? p.provider_type : "",
+    api_base: typeof p.api_base === "string" ? p.api_base : "",
+    keys: typeof p.keys === "string" ? p.keys : "",
+    models: typeof p.models === "string" ? p.models : "",
+    extra_body: typeof p.extra_body === "string" ? p.extra_body : "",
+    custom_headers: Array.isArray(p.custom_headers)
+      ? p.custom_headers.map((h) => ({
+          key: String(h?.key ?? ""),
+          value: String(h?.value ?? ""),
+        }))
+      : [],
+    max_concurrency: p.max_concurrency != null ? p.max_concurrency : null,
+    alias: typeof p.alias === "string" ? p.alias : "",
+    ...(Object.prototype.hasOwnProperty.call(p, "gateway_provider")
+      ? { gateway_provider: p.gateway_provider }
+      : {}),
+  };
+}
+
+function deepEqual(a, b) {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    return a.length === b.length && a.every((item, i) => deepEqual(item, b[i]));
+  }
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every(
+    (k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k]),
+  );
+}
+
+function settingsDataEqual(existing, next) {
+  const cur = withSettingsDefaults(existing);
+  const lhs = {
+    providers: (Array.isArray(cur.providers) ? cur.providers : []).map(
+      canonicalProviderForCompare,
+    ),
+    github_url: typeof cur.github_url === "string" ? cur.github_url : "",
+    discord_webhook_url:
+      typeof cur.discord_webhook_url === "string" ? cur.discord_webhook_url : "",
+    proxy_password:
+      typeof cur.proxy_password === "string" ? cur.proxy_password : "",
+    ai_gateway_logs_url:
+      typeof cur.ai_gateway_logs_url === "string" ? cur.ai_gateway_logs_url : "",
+    ai_gateway_token:
+      typeof cur.ai_gateway_token === "string" ? cur.ai_gateway_token : "",
+    proxy_test_models:
+      cur.proxy_test_models &&
+      typeof cur.proxy_test_models === "object" &&
+      !Array.isArray(cur.proxy_test_models)
+        ? cur.proxy_test_models
+        : {},
+    proxy_fail_threshold: cur.proxy_fail_threshold,
+    proxy_max_retries: cur.proxy_max_retries,
+    proxy_upstream_timeout_ms: cur.proxy_upstream_timeout_ms,
+  };
+  const rhs = {
+    providers: (Array.isArray(next.providers) ? next.providers : []).map(
+      canonicalProviderForCompare,
+    ),
+    github_url: next.github_url,
+    discord_webhook_url: next.discord_webhook_url,
+    proxy_password: next.proxy_password,
+    ai_gateway_logs_url: next.ai_gateway_logs_url,
+    ai_gateway_token: next.ai_gateway_token,
+    proxy_test_models: next.proxy_test_models,
+    proxy_fail_threshold: next.proxy_fail_threshold,
+    proxy_max_retries: next.proxy_max_retries,
+    proxy_upstream_timeout_ms: next.proxy_upstream_timeout_ms,
+  };
+  return deepEqual(lhs, rhs);
 }
 
 // ─── /api/results ────────────────────────────────────────────────────────────
@@ -2364,18 +2454,23 @@ async function handleProxyTest(request, env) {
     );
   }
 
-  // The probe model is its own setting (proxy_test_models), never the provider's
-  // daily-test list: changing it here must not touch what the morning run uses.
-  const testModel =
+  // The probe model is its own setting (proxy_test_models), never auto-borrowed
+  // from daily-test lists unless a model is explicitly selected when testing.
+  // Writing it here only when it changed avoids extra store writes during normal
+  // selection changes or multi-key batch loops.
+  const requestedModel =
+    typeof body.model === "string" ? body.model.trim() : "";
+  const savedModel =
     settings &&
     typeof settings.proxy_test_models === "object" &&
     !Array.isArray(settings.proxy_test_models) &&
     typeof settings.proxy_test_models[fp] === "string"
       ? settings.proxy_test_models[fp].trim()
       : "";
+  const testModel = requestedModel || savedModel;
   if (!testModel) {
     return json(
-      { error: "尚未设定测试模型；请先在「轮询转发」页填写并保存" },
+      { error: "尚未设定测试模型；请先在「来源设定」填写 Models 或指定测试模型" },
       400,
     );
   }
@@ -2386,6 +2481,20 @@ async function handleProxyTest(request, env) {
   const upstream = upstreamFor(settings, provider);
   if (!upstream) {
     return json({ error: "AI Gateway 设定不完整，无法测试" }, 503);
+  }
+
+  let savedSettingsVersion;
+  if (requestedModel && requestedModel !== savedModel) {
+    const map = normalizeProxyTestModels(settings.proxy_test_models);
+    map[fp] = requestedModel;
+    savedSettingsVersion = settingsVersion(settings) + 1;
+    const nextSettings = {
+      ...settings,
+      providers,
+      proxy_test_models: map,
+      version: savedSettingsVersion,
+    };
+    await kv.put(SETTINGS_KEY, JSON.stringify(nextSettings));
   }
   const headers = buildForwardHeaders(
     settings,
@@ -2444,6 +2553,9 @@ async function handleProxyTest(request, env) {
       status: response.status,
       ms,
       model: probe.model,
+      ...(savedSettingsVersion !== undefined
+        ? { settings_version: savedSettingsVersion }
+        : {}),
       error: detail || undefined,
       fail_count: ledger ? ledger.fail_count : undefined,
       disabled: ledger ? !!ledger.disabled : undefined,

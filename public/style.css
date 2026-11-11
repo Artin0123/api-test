@@ -2047,10 +2047,11 @@ code {
     white-space: nowrap;
 }
 
-.proxy-summary-label {
+.proxy-summary-label,
+.proxy-model-label {
     font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--text);
+    color: var(--text-muted);
+    white-space: nowrap;
 }
 
 /* Segmented two-cell readout matching --control-h beside the model controls:
@@ -2069,8 +2070,9 @@ code {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* Holds up to 3 tabular digits + horizontal padding before expanding. */
-    min-width: calc(3ch + 1.5rem);
+    flex: none;
+    /* Fixed width sized for up to 5 glyphs (e.g. "9999+"); never widens past that. */
+    width: calc(5ch + 1.5rem);
     padding: 0 0.75rem;
 }
 
@@ -2135,24 +2137,27 @@ code {
     align-items: center;
 }
 
-/* Row two: counts on the left, probe-model group against the right edge. The
-   group begins with the visible 测试模型 label, then the select, then the save and
-   test actions — the label belongs to the right-hand block, not to the counts. */
+/* Row two: probe model selector and key-state counts left-aligned together,
+   with batch test / recover actions anchored against the right edge. */
 .proxy-toolbar-row--model {
     align-items: center;
 }
 
-.proxy-model-group {
+.proxy-model-group,
+.proxy-action-group {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.75rem;
+}
+
+.proxy-action-group {
     margin-left: auto;
 }
 
-.proxy-model-label {
-    font-size: var(--text-sm);
-    color: var(--text-muted);
+.proxy-model-heading {
+    display: inline-flex;
+    align-items: center;
     white-space: nowrap;
 }
 
@@ -2166,25 +2171,6 @@ code {
     flex: none;
     width: 15rem;
     max-width: 100%;
-}
-
-/* Clicking "保存模型" swaps the text to the shorter 3-char "已保存" for 1.2s;
-   an invisible zero-height sizer holding "保存模型" locks the minimum width
-   to the real rendered font so adjacent controls do not shift narrower and
-   snap back. The slash syntax clears accessible alt text in modern browsers. */
-.proxy-save-model {
-    flex-direction: column;
-    gap: 0;
-}
-
-.proxy-save-model::after {
-    content: "保存模型";
-    content: "保存模型" / "";
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
-    pointer-events: none;
-    user-select: none;
 }
 
 .proxy-url-wrap {
@@ -2463,16 +2449,17 @@ code {
         text-overflow: clip;
     }
 
-    /* The model group is the second half of a stacked toolbar: full width, no
-       right-edge push, and one control per line. */
-    .proxy-model-group {
+    /* Stack the model selector, summary readout, and action buttons full width
+       with one control per line below 640px. */
+    .proxy-model-group,
+    .proxy-action-group {
         width: 100%;
         margin-left: 0;
         flex-direction: column;
         align-items: stretch;
     }
 
-    .proxy-model-label {
+    .proxy-model-heading {
         align-self: flex-start;
     }
 

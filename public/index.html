@@ -226,7 +226,7 @@
                         <div>
                             <h2>轮询转发</h2>
                             <p class="muted">
-                                依别名转发请求，金钥自动轮用；连续失败达门槛后禁用，恢复靠每日测试或手动按钮。
+                                金钥自动轮用，连续失败达门槛后禁用。
                             </p>
                         </div>
                         <div class="panel-head-actions">
@@ -257,14 +257,23 @@
                             </div>
                         </div>
                         <div class="proxy-toolbar-row proxy-toolbar-row--model">
-                            <div id="proxy-summary" class="proxy-summary"></div>
                             <div class="proxy-model-group">
-                                <label class="proxy-model-label" for="proxy-test-model">测试模型</label>
+                                <span class="proxy-model-heading">
+                                    <label class="proxy-model-label" for="proxy-test-model">测试模型</label>
+                                    <span class="info-icon" tabindex="0">
+                                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor"
+                                            stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                        </svg>
+                                        <span class="info-tooltip">点击测试按钮后才储存测试模型</span>
+                                    </span>
+                                </span>
                                 <select id="proxy-test-model" class="input-select proxy-model-select"></select>
-                                <button id="proxy-save-model" class="btn btn-secondary btn-sm proxy-save-model"
-                                    type="button">
-                                    保存模型
-                                </button>
+                            </div>
+                            <div id="proxy-summary" class="proxy-summary"></div>
+                            <div class="proxy-action-group">
                                 <button id="proxy-test-active" class="btn btn-secondary btn-sm" type="button">
                                     测试有效密钥
                                 </button>
