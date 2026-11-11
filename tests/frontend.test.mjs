@@ -231,3 +231,19 @@ test("Batch 3 removes refresh buttons, checkpoint bars, avg TTFT, and unifies co
   }
   assert.ok(!css.includes(".checkpoint-bar"), "style.css still contains .checkpoint-bar");
 });
+
+test("review fixes keep confirm labels fp-aware, URLs http(s)-guarded, and remove dead code", () => {
+  const py = readFileSync(new URL("../async_test_keys.py", import.meta.url), "utf8");
+  assert.match(
+    app,
+    /dkConfirmList\.innerHTML[\s\S]*dkProviderLabel\(r\)/,
+    "openDkConfirm must pass full dead-key record `r` to dkProviderLabel",
+  );
+  assert.doesNotMatch(app, /dkProviderLabel\(r\.provider_host\)/);
+  assert.ok(!app.includes("beside 重新读取"), "app.js still has stale refresh comment");
+  assert.ok(!worker.includes("does not write the ledger"), "_worker.js still has stale P9 comment");
+  assert.match(app, /const HTTP_URL_RE\s*=\s*\/\^https\?:\\\/\\\/\\S\+\/i/);
+  assert.match(app, /HTTP_URL_RE\.test\(url\)/, "applySettingsToUI must validate github_url scheme");
+  assert.ok(!py.includes("compute_fingerprint"), "async_test_keys.py still has unused compute_fingerprint");
+  assert.ok(!py.includes("import hashlib"), "async_test_keys.py still has unused hashlib import");
+});

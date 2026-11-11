@@ -956,8 +956,17 @@ function switchTab(name) {
   toggleMobileMenu(false);
 }
 
+// Keep in sync with GATEWAY_LOGS_URL_RE in _worker.js.
 const GATEWAY_LOGS_URL_RE =
   /^https:\/\/dash\.cloudflare\.com\/([^/?#]+)\/ai\/ai-gateway\/gateways\/([^/?#]+)\/logs(?:[/?#].*)?$/i;
+
+const HTTP_URL_RE = /^https?:\/\/\S+/i;
+
+const PROXY_SETTING_SPECS = {
+  proxy_fail_threshold: { label: "失败禁用门槛", fallback: 3, min: 1, max: null },
+  proxy_max_retries: { label: "最多重试次数", fallback: 3, min: 0, max: 3 },
+  proxy_upstream_timeout_ms: { label: "上游超时 (ms)", fallback: 120000, min: 1000, max: 600000 },
+};
 
 function isValidGatewayLogsUrl(url) {
   return !!url && GATEWAY_LOGS_URL_RE.test(url);
@@ -971,9 +980,15 @@ function openSettings() {
   dom.setProxyPassword.value = s.proxy_password || "";
   dom.setGatewayLogsUrl.value = s.ai_gateway_logs_url || "";
   dom.setGatewayToken.value = s.ai_gateway_token || "";
-  dom.setProxyFailThreshold.value = String(s.proxy_fail_threshold ?? 3);
-  dom.setProxyMaxRetries.value = String(s.proxy_max_retries ?? 3);
-  dom.setProxyTimeoutMs.value = String(s.proxy_upstream_timeout_ms ?? 120000);
+  dom.setProxyFailThreshold.value = String(
+    s.proxy_fail_threshold ?? PROXY_SETTING_SPECS.proxy_fail_threshold.fallback,
+  );
+  dom.setProxyMaxRetries.value = String(
+    s.proxy_max_retries ?? PROXY_SETTING_SPECS.proxy_max_retries.fallback,
+  );
+  dom.setProxyTimeoutMs.value = String(
+    s.proxy_upstream_timeout_ms ?? PROXY_SETTING_SPECS.proxy_upstream_timeout_ms.fallback,
+  );
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
   openModal(dom.settingsOverlay, dom.setGithubUrl);
@@ -987,6 +1002,18 @@ async function saveSettings() {
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
 
+  const githubUrl = dom.setGithubUrl.value.trim();
+  if (githubUrl && !HTTP_URL_RE.test(githubUrl)) {
+    dom.settingsError.textContent =
+      "GitHub Actions URL 必须以 http:// 或 https:// 开头";
+    return;
+  }
+  const discordUrl = dom.setDiscordUrl.value.trim();
+  if (discordUrl && !HTTP_URL_RE.test(discordUrl)) {
+    dom.settingsError.textContent =
+      "Discord Webhook URL 必须以 http:// 或 https:// 开头";
+    return;
+  }
   const logsUrl = dom.setGatewayLogsUrl.value.trim();
   if (logsUrl && !isValidGatewayLogsUrl(logsUrl)) {
     dom.settingsError.textContent =
@@ -994,13 +1021,13 @@ async function saveSettings() {
     return;
   }
 
-  const parseSettingInt = (input, fallback, { label, min, max }) => {
+  const parseSettingInt = (input, spec) => {
     const raw = input.value.trim();
-    if (!raw) return fallback;
+    if (!raw) return spec.fallback;
     const n = Number(raw);
-    if (!Number.isInteger(n) || n < min || (max != null && n > max)) {
-      const range = max == null ? `>= ${min}` : `${min} ~ ${max}`;
-      throw new Error(`${label} 必须是 ${range} 的整数`);
+    if (!Number.isInteger(n) || n < spec.min || (spec.max != null && n > spec.max)) {
+      const range = spec.max == null ? `>= ${spec.min}` : `${spec.min} ~ ${spec.max}`;
+      throw new Error(`${spec.label} 必须是 ${range} 的整数`);
     }
     return n;
   };
@@ -1008,26 +1035,23 @@ async function saveSettings() {
   let patch;
   try {
     patch = {
-      github_url: dom.setGithubUrl.value.trim(),
-      discord_webhook_url: dom.setDiscordUrl.value.trim(),
+      github_url: githubUrl,
+      discord_webhook_url: discordUrl,
       proxy_password: dom.setProxyPassword.value.trim(),
       ai_gateway_logs_url: logsUrl,
       ai_gateway_token: dom.setGatewayToken.value.trim(),
-      proxy_fail_threshold: parseSettingInt(dom.setProxyFailThreshold, 3, {
-        label: "失败禁用门槛",
-        min: 1,
-        max: null,
-      }),
-      proxy_max_retries: parseSettingInt(dom.setProxyMaxRetries, 3, {
-        label: "最多重试次数",
-        min: 0,
-        max: 3,
-      }),
-      proxy_upstream_timeout_ms: parseSettingInt(dom.setProxyTimeoutMs, 120000, {
-        label: "上游超时 (ms)",
-        min: 1000,
-        max: 600000,
-      }),
+      proxy_fail_threshold: parseSettingInt(
+        dom.setProxyFailThreshold,
+        PROXY_SETTING_SPECS.proxy_fail_threshold,
+      ),
+      proxy_max_retries: parseSettingInt(
+        dom.setProxyMaxRetries,
+        PROXY_SETTING_SPECS.proxy_max_retries,
+      ),
+      proxy_upstream_timeout_ms: parseSettingInt(
+        dom.setProxyTimeoutMs,
+        PROXY_SETTING_SPECS.proxy_upstream_timeout_ms,
+      ),
     };
   } catch (err) {
     dom.settingsError.textContent = err.message;
@@ -1087,7 +1111,7 @@ async function testDiscordWebhook() {
 function applySettingsToUI() {
   const s = state.settings || {};
   const url = String(s.github_url || "").trim();
-  if (url) {
+  if (url && HTTP_URL_RE.test(url)) {
     dom.runNowBtn.href = url;
     dom.runNowBtn.removeAttribute("aria-disabled");
     dom.runNowBtn.title = "前往 GitHub Actions 立即执行测试";
@@ -1916,9 +1940,10 @@ function mockProxyState(settings) {
       via_gateway: !!(gatewayReady && p.alias),
       proxy_url: p.alias ? `/proxy/${p.alias}` : "",
       sample_path:
-        ({ gemini: "/models/{model}:generateContent", anthropic: "/messages" })[
-          p.provider_type
-        ] || "/chat/completions",
+        ({
+          gemini: "/models/{model}:streamGenerateContent?alt=sse",
+          anthropic: "/messages",
+        })[p.provider_type] || "/chat/completions",
       test_model: override.test_model || "",
       logs_url: isValidGatewayLogsUrl(logsUrl) ? logsUrl : "",
       models: splitModels(p.models),
@@ -2097,18 +2122,19 @@ function renderProxyToolbar() {
   renderProxyLogsLink();
 }
 
-/** The Gateway log shortcut sits in the page header beside 重新读取 now: it is a
- *  whole-provider view, not one of the probe controls, and putting it with the
- *  refresh button keeps every "look at this elsewhere" affordance in one place.
- *  It still follows the selected provider, and without one there is nothing to
- *  filter, so the link goes back to looking dead instead of pointing anywhere. */
+/** The Gateway log shortcut sits in the results/proxy panel header: it is a
+ *  whole-provider/gateway view, not one of the probe controls. When there is no
+ *  Logs URL or no provider, the link turns aria-disabled cleanly. */
 function renderProxyLogsLink() {
   const p = selectedProxyProvider();
   const url = p && p.logs_url;
   if (url) {
     dom.proxyLogs.href = url;
     dom.proxyLogs.removeAttribute("aria-disabled");
-    dom.proxyLogs.title = "打开 AI Gateway 日志（已按服务商过滤）";
+    const filtered = /(?:\?|&)provider=/i.test(url);
+    dom.proxyLogs.title = filtered
+      ? "打开 AI Gateway 日志（已按服务商过滤）"
+      : "打开 AI Gateway 日志";
     return;
   }
   dom.proxyLogs.removeAttribute("href");
@@ -3603,7 +3629,7 @@ function openDkConfirm() {
     .map(
       (r) => `<li>
       <span class="dk-confirm-key">${dkKeyHtml(r.api_key)}</span>
-      <span class="dk-confirm-host">${esc(dkProviderLabel(r.provider_host))}</span>
+      <span class="dk-confirm-host">${esc(dkProviderLabel(r))}</span>
     </li>`,
     )
     .join("");

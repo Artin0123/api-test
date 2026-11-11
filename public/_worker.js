@@ -498,14 +498,23 @@ const DEFAULT_SETTINGS = {
   version: 0,
 };
 
+// Safely below Cloudflare D1's 100 bound-parameter limit per statement even
+// when a query binds 1–2 leading scalar values alongside an `IN (...)` list.
+const D1_IN_CHUNK_SIZE = 90;
+
 const PROXY_INT_LIMITS = {
   proxy_fail_threshold: { min: 1, max: null, fallback: 3 },
   proxy_max_retries: { min: 0, max: 3, fallback: 3 },
   proxy_upstream_timeout_ms: { min: 1000, max: 600000, fallback: 120000 },
 };
 
+// Keep in sync with GATEWAY_LOGS_URL_RE in app.js.
 const GATEWAY_LOGS_URL_RE =
   /^https:\/\/dash\.cloudflare\.com\/([^/?#]+)\/ai\/ai-gateway\/gateways\/([^/?#]+)\/logs(?:[/?#].*)?$/i;
+
+function isHttpUrl(rawUrl) {
+  return /^https?:\/\/\S+/i.test(rawUrl);
+}
 
 function parseGatewayLogsUrl(rawUrl) {
   const trimmed = typeof rawUrl === "string" ? rawUrl.trim() : "";
@@ -752,12 +761,16 @@ async function handlePostSettings(request, env) {
     providers: sourceProviders.map(normalizeProviderForStorage),
     github_url:
       typeof body.github_url === "string"
-        ? body.github_url
-        : existing.github_url,
+        ? body.github_url.trim()
+        : typeof existing.github_url === "string"
+          ? existing.github_url
+          : "",
     discord_webhook_url:
       typeof body.discord_webhook_url === "string"
-        ? body.discord_webhook_url
-        : existing.discord_webhook_url,
+        ? body.discord_webhook_url.trim()
+        : typeof existing.discord_webhook_url === "string"
+          ? existing.discord_webhook_url
+          : "",
     proxy_password:
       typeof body.proxy_password === "string"
         ? body.proxy_password.trim()
@@ -797,6 +810,18 @@ async function handlePostSettings(request, env) {
     timingSafeEqual(next.proxy_password, adminPassword)
   ) {
     return json({ error: "代理密码不能与 ADMIN_PASSWORD 相同" }, 400);
+  }
+  if (next.github_url && !isHttpUrl(next.github_url)) {
+    return json(
+      { error: "GitHub Actions URL 必须以 http:// 或 https:// 开头" },
+      400,
+    );
+  }
+  if (next.discord_webhook_url && !isHttpUrl(next.discord_webhook_url)) {
+    return json(
+      { error: "Discord Webhook URL 必须以 http:// 或 https:// 开头" },
+      400,
+    );
   }
   if (next.ai_gateway_logs_url && !parseGatewayLogsUrl(next.ai_gateway_logs_url)) {
     return json(
@@ -1070,8 +1095,8 @@ function normalizeErrorCode(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** error_detail is deduped per provider_host + error_code — same host, same
- *  status code means the same provider message, so it is stored only once. */
+/** error_detail is deduped per fp + error_code (falling back to provider_host
+ *  for legacy records without fp) — stored only once per group. */
 function deadKeyScope(rec) {
   return typeof rec?.fp === "string" && rec.fp.trim()
     ? rec.fp.trim()
@@ -1680,23 +1705,25 @@ function buildForwardHeaders(
 }
 
 function proxyTimeoutMs(settings) {
-  const n = Number(settings?.proxy_upstream_timeout_ms);
-  if (!Number.isFinite(n)) return 120000;
-  return Math.min(Math.max(Math.trunc(n), 1000), 600000);
+  return clampOrDefaultInt(
+    settings?.proxy_upstream_timeout_ms,
+    PROXY_INT_LIMITS.proxy_upstream_timeout_ms,
+  );
 }
 
 function proxyFailThreshold(settings) {
-  const n = Number(settings?.proxy_fail_threshold);
-  if (!Number.isFinite(n) || n < 1) return 3;
-  return Math.trunc(n);
+  return clampOrDefaultInt(
+    settings?.proxy_fail_threshold,
+    PROXY_INT_LIMITS.proxy_fail_threshold,
+  );
 }
 
-// The document caps retries at 3 (4 keys per request), well under the free
-// plan's 50-subrequest ceiling. Clamp rather than trust stored settings.
+// Cap retries at 3 (4 keys per request), well under the free plan's 50-subrequest ceiling.
 function proxyMaxRetries(settings) {
-  const n = Number(settings?.proxy_max_retries);
-  if (!Number.isFinite(n) || n < 0) return 3;
-  return Math.min(Math.trunc(n), 3);
+  return clampOrDefaultInt(
+    settings?.proxy_max_retries,
+    PROXY_INT_LIMITS.proxy_max_retries,
+  );
 }
 
 function proxyCredential(request) {
@@ -1764,8 +1791,8 @@ function buildKeyStateSyncStmts(db, entries, existingRows, now) {
   const staleIds = (existingRows || [])
     .filter((r) => !wantedSet.has(identity(r)))
     .map((r) => r.id);
-  for (let i = 0; i < staleIds.length; i += 100) {
-    const chunk = staleIds.slice(i, i + 100);
+  for (let i = 0; i < staleIds.length; i += D1_IN_CHUNK_SIZE) {
+    const chunk = staleIds.slice(i, i + D1_IN_CHUNK_SIZE);
     const sql = `DELETE FROM key_state WHERE id IN (${chunk.map(() => "?").join(",")})`;
     stmts.push(db.prepare(sql).bind(...chunk));
   }
@@ -1834,8 +1861,8 @@ async function recordKeyFailure(db, id, threshold) {
  * The daily GHA run is the authority on whether a key is alive. When it reports a
  * key in `valid_keys`, clear that key's proxy ledger: a transient outage that
  * pushed fail_count to the threshold must not keep the key disabled forever.
- * Only the daily result recovers — a manual Test press does not write the ledger
- * (see handleProxyTest), so pressing the button can not paper over a dead key.
+ * (A successful manual Test press in handleProxyTest also clears fail_count and
+ * disabled immediately, while failed probes continue incrementing fail_count.)
  * Returns the number of rows that actually changed.
  */
 async function recoverKeysFromResults(env, fp, validKeys) {
@@ -1849,8 +1876,8 @@ async function recoverKeysFromResults(env, fp, validKeys) {
   const db = env.DB;
   await ensureSchemaFor(db);
   let recovered = 0;
-  for (let i = 0; i < keys.length; i += 100) {
-    const chunk = keys.slice(i, i + 100);
+  for (let i = 0; i < keys.length; i += D1_IN_CHUNK_SIZE) {
+    const chunk = keys.slice(i, i + D1_IN_CHUNK_SIZE);
     const sql =
       "UPDATE key_state SET disabled = 0, fail_count = 0, updated_at = ? " +
       "WHERE fp = ? AND (disabled <> 0 OR fail_count <> 0) " +
@@ -1940,20 +1967,21 @@ async function handleProxy(request, env, url) {
   const contentType = request.headers.get("content-type") || "";
   const isJson = /^application\/json\b/i.test(contentType);
   const extraBody = parseExtraBody(provider);
-  const attemptBody = () => {
-    if (rawBody === null) return undefined;
-    if (!isJson || !extraBody) return rawBody;
-    try {
-      const decoded = new TextDecoder().decode(rawBody);
-      const parsed = JSON.parse(decoded);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return rawBody;
+  let forwardBody;
+  if (rawBody !== null) {
+    forwardBody = rawBody;
+    if (isJson && extraBody) {
+      try {
+        const decoded = new TextDecoder().decode(rawBody);
+        const parsed = JSON.parse(decoded);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          forwardBody = JSON.stringify({ ...parsed, ...extraBody });
+        }
+      } catch {
+        // Non-JSON or unreadable payload falls back to forwarding raw bytes as-is.
       }
-      return JSON.stringify({ ...parsed, ...extraBody });
-    } catch {
-      return rawBody;
     }
-  };
+  }
 
   const tried = new Set();
   let lastFailure = null;
@@ -1990,7 +2018,7 @@ async function handleProxy(request, env, url) {
       response = await fetch(target, {
         method: request.method,
         headers,
-        body: attemptBody(),
+        body: forwardBody,
         redirect: "follow",
         signal: controller.signal,
       });
@@ -2085,8 +2113,8 @@ async function handleGetProxyState(request, env) {
   if (backend === "d1" && hasD1(env) && entries.length) {
     await ensureSchemaFor(env.DB);
     const fps = [...new Set(entries.map((e) => e.fp))];
-    for (let i = 0; i < fps.length; i += 500) {
-      const chunk = fps.slice(i, i + 500);
+    for (let i = 0; i < fps.length; i += D1_IN_CHUNK_SIZE) {
+      const chunk = fps.slice(i, i + D1_IN_CHUNK_SIZE);
       const result = await env.DB.prepare(
         "SELECT id, fp, api_key, last_used_at, fail_count, disabled FROM key_state " +
           `WHERE fp IN (${chunk.map(() => "?").join(",")})`,
@@ -2297,7 +2325,7 @@ async function handleProxyTest(request, env) {
   }
 
   const probe = testRequestFor(provider, testModel);
-  if (!probe) return json({ error: "该服务商没有设定 Models" }, 400);
+  if (!probe) return json({ error: "无效的测试模型设定" }, 400);
 
   const upstream = upstreamFor(settings, provider);
   if (!upstream) {
@@ -2746,8 +2774,8 @@ async function handleStorageRestore(request, env) {
   const staleStore = (existingStore.results || [])
     .map((r) => r.k)
     .filter((k) => !keepStore.has(k));
-  for (let i = 0; i < staleStore.length; i += 100) {
-    const chunk = staleStore.slice(i, i + 100);
+  for (let i = 0; i < staleStore.length; i += D1_IN_CHUNK_SIZE) {
+    const chunk = staleStore.slice(i, i + D1_IN_CHUNK_SIZE);
     await env.DB.prepare(
       `DELETE FROM store WHERE k IN (${chunk.map(() => "?").join(",")})`,
     )
@@ -2767,8 +2795,8 @@ async function handleStorageRestore(request, env) {
   const staleKeys = (existingKeys.results || [])
     .filter((r) => !keepKeys.has(identity(r.fp, r.api_key)))
     .map((r) => r.id);
-  for (let i = 0; i < staleKeys.length; i += 100) {
-    const chunk = staleKeys.slice(i, i + 100);
+  for (let i = 0; i < staleKeys.length; i += D1_IN_CHUNK_SIZE) {
+    const chunk = staleKeys.slice(i, i + D1_IN_CHUNK_SIZE);
     await env.DB.prepare(
       `DELETE FROM key_state WHERE id IN (${chunk.map(() => "?").join(",")})`,
     )

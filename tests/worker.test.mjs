@@ -24,6 +24,12 @@ class FakeStatement {
   }
 
   bind(...params) {
+    // Mirror Cloudflare D1's 100 bound-parameter per SQL statement limit.
+    if (params.length > 100) {
+      throw new Error(
+        `D1 parameter limit exceeded: ${params.length} > 100 bound parameters`,
+      );
+    }
     return new FakeStatement(this.db, this.sql, params);
   }
 
@@ -1699,4 +1705,92 @@ test("global /api/run-status replaces /api/checkpoint and expires lazily after 9
     await request(env, "/api/run-status", { headers: adminHeaders() }),
   );
   assert.equal(afterDel.data.running, false);
+});
+
+test("D1 chunks IN queries under 100 params across 105-key recover, sync, and provider state", async () => {
+  const env = makeEnv();
+  const base = `${upstreamBase()}/bulk/v1`;
+  const manyKeys = Array.from({ length: 105 }, (_, i) => `sk-bulk-${String(i).padStart(3, "0")}`);
+  const p = provider({
+    alias: "bulk",
+    api_base: base,
+    keys: manyKeys.join("\n"),
+  });
+  const saveRes = await postSettings(env, [p]);
+  assert.equal(saveRes.status, 200);
+  const fp = await fingerprintOf(env, p);
+
+  // Mark all 105 keys disabled so recoverKeysFromResults must update every key.
+  await env.DB.prepare("UPDATE key_state SET disabled = 1, fail_count = 3 WHERE fp = ?")
+    .bind(fp)
+    .run();
+
+  const postRes = await asJson(
+    await request(env, "/api/results", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider_type: "openai",
+        api_base: base,
+        valid_keys: manyKeys,
+        invalid_records: [],
+        proven_working_models: ["m1"],
+        failed_models: [],
+      }),
+    }),
+  );
+  assert.equal(postRes.status, 200);
+  assert.equal(postRes.data.keys_recovered, 105);
+
+  const rows = await getKeyRows(env, fp);
+  assert.equal(rows.filter((r) => !r.disabled).length, 105);
+
+  // Removing 104 keys triggers >100 staleIds deletion inside D1 batch cleanly.
+  const shrinkRes = await postSettings(env, [{ ...p, keys: manyKeys[0] }]);
+  assert.equal(shrinkRes.status, 200);
+  const afterShrink = await getKeyRows(env, fp);
+  assert.equal(afterShrink.length, 1);
+});
+
+test("settings reject unsafe URL schemes and proxy retry preserves merged extra_body", async () => {
+  const env = makeEnv();
+  const badGithub = await postSettings(env, [], {
+    github_url: "javascript:alert(1)",
+  });
+  assert.equal(badGithub.status, 400);
+  assert.match(badGithub.data.error, /GitHub Actions URL/);
+
+  const badDiscord = await postSettings(env, [], {
+    discord_webhook_url: "ftp://example.com/hook",
+  });
+  assert.equal(badDiscord.status, 400);
+  assert.match(badDiscord.data.error, /Discord Webhook URL/);
+
+  useUpstream((req, res) => {
+    const auth = req.headers.authorization || "";
+    if (auth === "Bearer k-bad") {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end('{"error":"bad"}');
+      return;
+    }
+    defaultUpstream(req, res, "");
+  });
+  await postSettings(env, [
+    provider({
+      alias: "extra",
+      extra_body: '{"temperature":0.2,"top_p":0.9}',
+      keys: "k-bad\nk-good",
+    }),
+  ]);
+  const res = await proxy(env, "/proxy/extra/chat/completions", {
+    body: JSON.stringify({ model: "gpt-test", stream: false }),
+  });
+  assert.equal(res.status, 200);
+  assert.equal(captured.length, 2);
+  for (const call of captured) {
+    const sent = JSON.parse(call.body);
+    assert.equal(sent.temperature, 0.2);
+    assert.equal(sent.top_p, 0.9);
+    assert.equal(sent.model, "gpt-test");
+  }
 });

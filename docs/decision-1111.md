@@ -88,7 +88,8 @@ Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分�
 
 - **保留頭尾各 1024 字元**：推理模型結論常落在結尾，只留前段會將最終答案裁切掉。
 - **為何不放寬 `MAX_OUTPUT_TOKENS`**：放寬會讓長輸出模型轉為觸發 `TOTAL_TIMEOUT = 20s`，由內容被截斷惡化為整筆超時失敗。
-- **驗證與冪等順序**：`answer_verified` 必須於截斷前以完整回應判斷（`async_test_keys.py:754`）；帶 `CLIP_MARK` 字串直接原樣返回，防止舊 checkpoint 恢復匯總時被二次截斷。
+- **驗證與冪等順序**：`answer_verified` 必須於截斷前以完整回應判斷（`async_test_keys.py:542-544`）；帶 `CLIP_MARK` 字串直接原樣返回，防止舊 checkpoint 恢復匯總時被二次截斷。
+- **本機斷點 `401` 續跑保真**：從 `checkpoint.json` 恢復時同步保留該服務商 `dead_keys` 的 `401` 錯誤紀錄，並僅清除吻合當前服務商的暫存檔，避免續跑後遺失錯誤碼或誤刪其他服務商中斷檔。
 
 ---
 

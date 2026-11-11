@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import json
 import os
 import re
@@ -47,16 +46,6 @@ PAGES_URL = os.environ.get("PAGES_URL", "").strip().rstrip("/")
 ADMIN_TOKEN = os.environ.get("ADMIN_PASSWORD", "").strip()
 
 # ==========================================
-
-
-def compute_fingerprint(api_base: str, provider_type: str) -> str:
-    """与 _worker.js / app.js 中的 fingerprintPayload 保持完全一致。
-    键名按字母序排列：api_base 在 provider_type 之前。"""
-    payload = json.dumps(
-        {"api_base": api_base.rstrip("/"), "provider_type": provider_type},
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def _pages_request(method: str, path: str, body=None):
@@ -349,7 +338,7 @@ async def test_single_request(
             return (
                 success,
                 status,
-                "",
+                "" if success else body,
                 total_t,
                 has_thinking,
                 has_content,
@@ -463,8 +452,11 @@ async def run_provider(
                         results[k] = [
                             item
                             for item in results[k]
-                            if item.get("success")
-                            and f"{k}::{item['model']}" in completed_pairs
+                            if (
+                                item.get("success")
+                                and f"{k}::{item['model']}" in completed_pairs
+                            )
+                            or (k in dead_keys and item.get("status") == 401)
                         ]
                     print(
                         f"已恢复本地中断进度: {len(completed_pairs)} 个成功测试项，{len(dead_keys)} 个 401 死 Key"
@@ -748,13 +740,30 @@ async def run_provider(
         except Exception as e:
             print(f"[Pages] 上传失败（本地文件仍保留）: {e}")
 
-    # 清理: 成功产出最终报表后，自动删除本地断点存档，避免下次执行时被当成恢复进度而全部跳过
+    # 清理: 仅当本地断点档属于当前服务商（或无法解析）时才自动删除，
+    # 避免多服务商重跑时前面的服务商误删后面尚待续跑的断点档。
     if os.path.exists(CHECKPOINT_PATH):
+        should_remove = True
         try:
-            os.remove(CHECKPOINT_PATH)
-            print(f"已自动清理临时存档档: {CHECKPOINT_PATH}")
-        except Exception as e:
-            print(f"[警告] 无法删除临时存档档: {e}")
+            with open(CHECKPOINT_PATH, "r", encoding="utf-8") as f:
+                ckpt_meta = json.load(f)
+            if (
+                isinstance(ckpt_meta, dict)
+                and ckpt_meta.get("api_base")
+                and (
+                    ckpt_meta.get("api_base") != api_base
+                    or ckpt_meta.get("provider_type") != provider_type
+                )
+            ):
+                should_remove = False
+        except Exception:
+            should_remove = True
+        if should_remove:
+            try:
+                os.remove(CHECKPOINT_PATH)
+                print(f"已自动清理临时存档档: {CHECKPOINT_PATH}")
+            except Exception as e:
+                print(f"[警告] 无法删除临时存档档: {e}")
 
 
 async def main():
