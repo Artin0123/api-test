@@ -21,21 +21,20 @@ Cloudflare Pages（管理界面、API 与转发网关）+ GitHub Actions（每�
 ## 系统流程
 
 ```text
-前端设定 providers（keys / models / api_base）
-      ↓  POST /api/settings → KV 或 D1
-GitHub Actions 定时触发
-      ↓  GET  /api/settings → 读取所有 providers
-async_test_keys.py 逐一测试每个 provider
-      ├─ 每 20 个请求 POST /api/checkpoint → 更新执行中进度
-      └─ 最终 POST /api/results → 按 fingerprint 保存测试结果并自动对账恢复
-前端展示各 provider 测试结果
-      ↓  GET  /api/results?fp=... & GET /api/checkpoint?fp=...
+前端设定 providers（keys / models / api_base / alias）与「设定」（代理密码 / Gateway / 排程网址）
+      ↓  POST /api/settings → KV 或 D1（D1 模式以 db.batch() 原子同步 key_state）
+GitHub Actions 定时或手动触发
+      ├─ POST /api/run-status → 标记全局执行中（结束或 if: always() 清除，90 分钟自动过期）
+      ├─ GET  /api/settings   → 读取所有启用中 providers
+      └─ async_test_keys.py 逐一非流式并发测试每个 provider
+            └─ POST /api/results → 按 fingerprint 保存报告、fp 对账 dead_keys 并恢复有效密钥
+前端展示各 provider 测试结果（GET /api/results?fp=... ＋ GET /api/run-status）
 
 调用方软件
       ↓  POST /proxy/{别名}/chat/completions
 api-test 按 fingerprint 挑选一把未禁用且最久未使用的 Key
       ↓  非 2xx 失败换密钥重试（最多 3 次）＋ 失败计数／达上限禁用
-上游 API（或 Cloudflare AI Gateway Custom Provider）
+Cloudflare AI Gateway（custom-{别名}）→ 上游 API
 ```
 
 ## 目录结构
@@ -85,25 +84,28 @@ npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
 - 执行 `--restore` 前会自动备份当前 D1（`d1-pre-restore-*.json`）以供回退。
 - 迁移支持幂等重跑，不会覆盖迁移后已累计的失败计数与禁用状态。
 
-### 1.2 轮询转发（可选）
+### 1.2 轮询转发与 Cloudflare AI Gateway
 
-| 环境变量 | 用途 |
+转发功能**强制经由 Cloudflare AI Gateway**，外部调用参数与 Gateway 配置**全部在网页右上角「设定」中保存**，无需额外配置 Cloudflare 环境变量：
+
+| 网页「设定」栏位 | 用途 |
 |---|---|
-| `PROXY_PASSWORD` | 转发接口认证密码；必须与 `ADMIN_PASSWORD` 不同，未设置或相同时停用转发（503） |
-| `AI_GATEWAY_ACCOUNT_ID` / `AI_GATEWAY_ID` / `AI_GATEWAY_TOKEN` | 可选：经由 Cloudflare AI Gateway 转发所需的账号 ID、Gateway 名称与 API Token |
-| `AI_GATEWAY_LOGS_URL` | 可选：AI Gateway 日志页深链接模板，支持 `{key}` 与 `{provider}` 占位符 |
-| `PROXY_FAIL_THRESHOLD` | 可选：连续失败几次后禁用密钥，默认为 3 |
-| `PROXY_MAX_RETRIES` | 可选：失败后最多换几把密钥重试（上限 3），默认为 3 |
-| `PROXY_UPSTREAM_TIMEOUT_MS` | 可选：等待上游响应标头的超时毫秒数，默认为 120000 |
+| `代理转发密码` | 外部客户端调用 `/proxy/{别名}` 的认证密码；须与 `ADMIN_PASSWORD` 不同 |
+| `AI Gateway Logs URL` | 从 Cloudflare Dashboard 复制日志页网址（`https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs`），系统自动解析双 ID |
+| `AI Gateway Token` | 存取 Cloudflare AI Gateway 的认证 Token（`cf-aig-authorization`） |
+| `失败禁用门槛` | 连续失败几次后禁用密钥，默认为 3 |
+| `最多重试次数` | 失败后最多换几把密钥重试（上限 3），默认为 3 |
+| `上游超时 (ms)` | 等待上游响应标头的超时毫秒数（1000～600000），默认为 120000 |
 
 使用步骤：
 
-1. **配置转发别名**：在「来源设定」编辑服务商并填写「转发别名」（仅限小写英文字母、数字与连字号，全站不可重复）。设置后卡片标题显示别名（悬停可看原始 `api_base`）；未设别名的服务商无法转发。
-2. **管理与即时测试（「轮询转发」分页）**：
-   - 工具列可切换服务商（显示为「别名 - API 格式」）、点击转发网址整行复制、查看「有效 X 无效 Y」统计、从下拉选单（读取自来源设定的 Models）选择探测模型并点击「保存模型」启用测试，以及执行「测试有效密钥」／「测试无效密钥」批量测试。
+1. **配置 Cloudflare AI Gateway Custom Provider**：在 Cloudflare AI Gateway 仪表板将每个要转发的服务商登记为 **Custom Provider**（无需在 Gateway 填写 Key），`base_url` 填该服务商的 `api_base`，并将 Custom Provider 的 **`slug` 设成与下方「转发别名」相同的名称**。
+2. **配置转发别名**：在「来源设定」编辑服务商并填写「转发别名」（仅限小写英文字母、数字与连字号，全站不可重复；同一 `provider_type + api_base` 不可重复建卡）。设置后卡片标题显示别名；未设别名的服务商无法转发或手动测试。
+3. **管理与即时测试（「轮询转发」分页）**：
+   - 工具列可切换服务商（显示为「别名 - API 格式」）、用网址右侧复制按钮复制转发网址、查看「有效 X 无效 Y」统计、从下拉选单（读取自来源设定的 Models）选择探测模型并点击「保存模型」启用测试，以及执行「测试有效密钥」／「测试无效密钥」／「恢复所有密钥」。
    - 测试模型的选择独立保存于 `proxy_test_models`，调整来源设定的 Models 清单不会自动替换已保存的模型。
-   - 页首右侧提供「重新读取」与「Gateway 记录 ↗」按钮；下方每把密钥一张卡片，可查看状态、连续失败次数与最近使用时间，并执行单把「测试」（失败会计数，成功不改写账本）或对已禁用密钥执行「恢复」。
-3. **接入调用端**：将客户端软件的 API 网址设为 `https://<站点域名>.pages.dev/proxy/{别名}`，并在后面接上接口路径（**不要重复加上 `/v1`**，`api_base` 已包含版本前缀）：
+   - 页首右侧提供「Gateway 记录 ↗」按钮；下方每把密钥一张卡片，可查看状态、连续失败次数与最近使用时间，并执行单把「测试」（非流式探测 `"only reply 1."`，失败会计数并可能禁用，**成功会立即归零失败次数并解除禁用**）或「恢复」。
+4. **接入调用端**：将客户端软件的 API 网址设为 `https://<站点域名>.pages.dev/proxy/{别名}`，并在后面接上接口路径（**不要重复加上 `/v1`**，`api_base` 已包含版本前缀）：
 
 | Provider 类型 | 调用路径示例 |
 |---|---|
@@ -113,7 +115,7 @@ npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
 
 转发密码支持通过 `Authorization: Bearer`、`x-api-key` 或 `x-goog-api-key` 传递；携带 `ADMIN_PASSWORD` 一律返回 401。
 
-4. **接入 AI Gateway（可选）**：在 Cloudflare AI Gateway 仪表板将每个服务商登记为 **Custom Provider**（`base_url` 填该服务商的 `api_base`），并将对应的 slug 填入服务商编辑框的「AI Gateway Provider」栏位。环境变量齐全且填有 slug 时流量经 AI Gateway 转发，否则直连 `api_base`。
+> 必须已在网页「设定」填好 `代理转发密码`、`AI Gateway Logs URL` 与 `AI Gateway Token`（且 `STORAGE_BACKEND=d1`），`/proxy/*` 与「轮询转发」手动测试按钮才会启用，否则回传 503 提示所缺配置（不提供无日志直连退回）。
 
 ### 1.3 来源设定的密钥工具
 
@@ -128,10 +130,10 @@ npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
 
 1. 在仓库 Settings → Secrets 添加 `PAGES_URL`（如 `https://xxx.pages.dev`）与 `ADMIN_PASSWORD`。
 2. 登录网页后，在「来源设定」添加 Provider：填入 `api_base`（填到版本前缀即可，例如 `https://api.openai.com/v1`）、Keys（每行一把，至少保留一把）与 Models（英文逗号分隔；系统保存时会自动清理多余空白与空行）。可选填 `Extra Body`、`Custom Headers`（同名覆盖默认标头）与 `Max Concurrency`。
-3. 点击顶部栏「设定」填入 GitHub Actions URL 与 Discord Webhook URL（浏览器端测试通知受 CSP `connect-src` 限制仅放行 `discord.com` 与 `discordapp.com`，使用自架代理域名需同步更新 `_worker.js`）。
-4. 手动触发 GitHub Actions workflow 或等待每日定时任务（UTC 02:00）完成后，至「测试结果」查看报告。
+3. 点击顶部栏「设定」填入 GitHub Actions URL（设定后启用「测试结果」右上角「立即执行 ↗」按钮）、Discord Webhook URL（浏览器端测试通知受 CSP `connect-src` 限制仅放行 `discord.com` 与 `discordapp.com`，使用自架代理域名需同步更新 `_worker.js`），以及 AI Gateway 与转发参数。
+4. 在「测试结果」点击「立即执行 ↗」手动触发 GitHub Actions workflow，或等待每日定时任务（UTC 00:00）完成（执行期间全局标题旁显示 `⏳ 执行中`）；完成后至「测试结果」与「失效密钥」查看自动汇总与对账结果。
 
-## 认证与 Secrets 一览
+## 认证与环境变量一览
 
 所有 `/api/*` 端点均须认证，支持 `Authorization: Bearer <ADMIN_PASSWORD>`（供脚本与 GHA 使用）或登录后签发的 30 天 HttpOnly `atk_session` cookie（`SameSite=Strict; Path=/api`）。更换 `ADMIN_PASSWORD` 或调升 `_worker.js` 中的 `SESSION_VERSION` 会使所有已签发 cookie 失效。
 
@@ -140,20 +142,20 @@ npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
 | Secret / 配置项 | 存放位置 | 说明 |
 |---|---|---|
 | `ADMIN_PASSWORD` | Cloudflare Pages + GHA | 管理门禁密码与 session cookie 签章密钥 |
-| `PROXY_PASSWORD` | Cloudflare Pages | 转发门禁密码，必须与 `ADMIN_PASSWORD` 不同 |
-| `AI_GATEWAY_TOKEN` | Cloudflare Pages | 可选，AI Gateway 认证 Token（仅留存服务端） |
-| `PAGES_URL` | 仅 GitHub Actions | GHA 启动时用来请求站点读取配置 |
-| Webhook / GHA URL | KV 或 D1（前端「设定」填入） | 无需配置为 Secret |
+| `STORAGE_BACKEND` | Cloudflare Pages | `d1`（默认）或 `kv` |
+| `DB` / `KV_STORE` | Cloudflare Pages 绑定 | D1 数据库绑定（默认）与 KV 命名空间绑定 |
+| `PAGES_URL` | 仅 GitHub Actions | GHA 启动与结束时请求站点读写设定、状态与结果 |
+| 转发密码 / Gateway / Webhook / GHA URL | D1 或 KV（前端「设定」填入） | 无需配置为 Cloudflare 环境变量 |
 
 ## 本地开发与测试
 
 ```bash
-# 1. 本地运行单服务商检测（不上传 Pages，结果写至 async_test_results.json）
+# 1. 本地运行单服务商检测（不上传 Pages，结果写至 async_test_results.json；Ctrl+C 可保存 checkpoint.json 续跑）
 pip install aiohttp && python async_test_keys.py
 
 # 2. 本地启动 Pages（KV 模式）或带本地 D1 调试轮询转发
 npm run dev       # 默认绑定 STORAGE_BACKEND=kv
-npm run dev:d1    # 本地 D1（需在根目录 .dev.vars 配置 ADMIN_PASSWORD 与 PROXY_PASSWORD）
+npm run dev:d1    # 本地 D1（需在根目录 .dev.vars 配置 ADMIN_PASSWORD；转发密码与 Gateway 在前端「设定」中填写）
 
 # 3. 离线开发 UI（免登录，读取 public/mock.json）
 # 浏览器打开 http://127.0.0.1:8788/?mock

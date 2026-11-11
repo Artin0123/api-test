@@ -52,32 +52,33 @@ Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分�
 
 將清單存為單一 KV 鍵，避免拆成多鍵後每次列表讀取都得執行 `list()` ＋ N 次 `get()`。代價是每次 CRUD 皆為「讀取—修改—寫入」（無並發寫入鎖、受同一鍵每秒 1 次寫入限制），在單一管理員情境下接受。
 
-### 2.2 雙重去重與結構交棒（再平衡）
+### 2.2 雙重去重（依 `fp` 隔離）與結構交棒（再平衡）
 
-`api_key` 全域去重（重複回傳 409），`error_detail` 依 `(provider_host, error_code)` 僅於第一筆保留。刪除或編輯（`provider_host`／`error_code` 變更）時，若原本持有 `error_detail` 的列離開該組，必須透過 `rebalanceErrorDetail()` 將 `error_detail` 轉移給同組下一筆列，否則同組剩餘列會因 `error_detail: null` 而集體遺失詳情資料。
+`api_key` 在同一個服務商作用域（`fp`，舊資料無 `fp` 時退回 `provider_host`）下不重複；`error_detail` 依 `(fp, error_code)` 僅於同組第一筆保留（不同 `provider_type` 即便同主機域名也不互相覆蓋或繼承詳情）。刪除或換碼離組時，若原本持有 `error_detail` 的列離開該組，必須透過 `rebalanceErrorDetail()` 將 `error_detail` 轉移給同組下一筆列，否則同組剩餘列會因 `error_detail: null` 而集體遺失詳情資料。
 
-### 2.3 自動對帳與狀態碼同步
+### 2.3 自動對帳與「來源設定」連動清理
 
-`POST /api/results` 上傳時透過 `syncDeadKeysFromResults()` 自動對帳：來源設定內仍存在且失敗的 Key 自動寫入，已恢復（`valid_keys`）的 Key 自動刪除。**新增與刪除必須成對實作**：有了自動恢復刪除，系統才敢於紀錄 429／500 等暫時性失敗，而不會將正常 Key 永久釘在清單上；同時移除前端手動新增列與 `POST /api/dead-keys` 端點，將清單嚴格收斂為權威測試結果對帳，僅保留表格內的編輯與批次刪除，絕不連動修改「来源设定」測試名單。對帳過程包裹 `try/catch`，失敗僅寫 log 以免讓上傳端誤判結果遺失而重跑；無實質變動時不執行 KV 寫入。
+`POST /api/results` 上傳時透過 `syncDeadKeysFromResults()` 以該服務商的 **`fp`** 為作用域自動對帳：來源設定該卡片內仍存在且失敗的 Key 自動寫入（附帶 `fp` 與 `provider_host`），已恢復（`valid_keys`）的 Key 自動刪除。**新增與刪除必須成對實作**：有了自動恢復刪除，系統才敢於紀錄 429／500 等暫時性失敗，而不會將正常 Key 永久釘在清單上。
 
-- **殘留紀錄（幽靈 Key）處理**：平行讀取 `app_settings` 並將同 host 所有卡片的 `keys` 取聯集為 `configuredKeysForHost`（不以單次上傳的 `invalid_records` 覆蓋整個 host，以免同 host 多卡片串行上傳時互相誤刪）。若 `app_settings` 缺失或解析失敗則不清空清單，僅在確定為 `{providers: []}` 時清空。
-- **兩階段狀態碼同步**：因 Python 上傳與 KV 現存的 `error_detail` 持有者可能不同，先於換碼階段對變更 `error_code` 的列執行舊組交棒與清空自身 detail，再於群組刷新階段比對本次非空 detail 決定是否更新 KV（空本文不覆寫既有詳情）。
+- **嚴禁重複服務商與取消手動編輯**：前端 `saveEditor()` 與後端 `POST /api/settings` 皆拒絕相同 `(provider_type, api_base)` 的重複卡片（`400`），徹底移除早年為容忍重複卡片而存在的 `_uiKey`（`fp#0`）與同主機聯集（`collectConfiguredKeysForHost()`）；同步移除「`失效密钥`」單筆編輯彈窗與 `PUT /api/dead-keys` 端點，將清單嚴格收斂為來源對帳與批次刪除。
+- **刪卡／刪 Key 連動清理**：於「`来源设定`」刪除卡片、更改 `api_base`/`provider_type` 或從編輯區刪除部分金鑰時，`POST /api/settings` 會一併刪除已消失卡片的 `results:{fp}`，並從 `dead_keys` 移除已不在該卡片清單內的紀錄（同時執行 `rebalanceErrorDetail()`），免去以往刪卡後殘留幽靈死鑰的問題。
+- **兩階段狀態碼同步**：因 Python 上傳與現存的 `error_detail` 持有者可能不同，先於換碼階段對變更 `error_code` 的列執行舊組交棒與清空自身 detail，再於 `(fp, error_code)` 群組刷新階段比對本次非空 detail 決定是否更新 KV（空本文不覆寫既有詳情）。
 
 ### 2.4 批次刪除與前端實作注意細節
 
-- **批次刪除**：`DELETE /api/dead-keys` 支援 `ids: string[]`，讀一次 KV、執行一次再平衡、寫回一次並直接回傳更新後陣列，避免 N 筆逐一刪除觸發 KV 每秒 1 次寫入限制。
-- **常駐篩選面板與表格細節**：移除獨立的篩選收合按鈕與手動新增列後，將 `.dk-filter-panel` 改為常駐顯示以減少一層互動；起訖時間改為純數字文字欄（無預設 `yyyy/mm/dd` 佔位文字，自動格式化為 `YYYY/MM/DD`）搭配隱藏原生 `<input type="date">` 日曆按鈕以支援手動輸入與日曆選取，縮窄時間欄位寬度，並將「供应商」欄位固定加寬至 `17rem`（略縮窄「Key 搜寻」），篩選框底部左右分放「删除密钥」與「清除筛选」。在 `table-layout: auto` 下直接對 `<td>` 設 `max-width` 會被瀏覽器忽略，須設於儲存格內層元素；`dead_keys` 表格改用 `table-layout: fixed` ＋ `min-width` 並僅讓錯誤訊息欄吃剩餘寬度；Code 篩選以 `value="__none__"` 區分「無 Code」與「全部」；排序直接重排資料陣列並重新渲染（而非搬移 DOM `<tr>`），使序號與勾選狀態不致錯亂，且無日期／無 Code 列無論升序降序一律置底（測試結果效能表排序亦採相同「缺值永遠置底」慣例）。切換至失效密鑰分頁時比照其餘分頁重新讀取最新清單（僅重刷時結束多選模式，切分頁保留仍存在紀錄的勾選集合），避免外部測試結果對帳後看見過期快取。
-- **供應商標籤統一與響應式金鑰遮罩**：失效密鑰的篩選下拉、表格「供应商」欄（含表頭排序與刪除確認清單）及編輯彈窗統一依 `別名 || host` 顯示（若原服務商已遭刪除則退回 `provider_host`），不附加「- 格式」後綴，並於 `title` 保留完整名稱與 `api_base`；資料鍵與 API 仍維持 `provider_host` 不變，以相容現有對帳與儲存結構。表格與確認清單中的 KEY 改以純 CSS 斷點（`640px`）切換顯示格式：桌機採用與 `maskKey()` 相同之前 6 ＋ 1～3 個 `*` ＋ 後 3（≤9 字元原樣顯示，欄寬縮為 `10.5rem`），手機端採用 `maskKeyMobile()` 之前 6 ＋ 1～3 個 `*` ＋ 後 1（≤7 字元原樣顯示，欄寬縮為 `8.75rem`），並同步將手機端供應商欄寬縮至 `7.5rem`；複製按鈕與 `title` 仍保留完整明文以利檢視與複製。
-- **桌機乾淨平面下拉選單增強（手機保留原生）**：原生 `<select>` 在桌機展開時會依最長 `<option>` 自動撐寬而與固定寬度按鈕對不齊，且帶有系統內建陰影／內陷外觀。`enhanceSelect()` 於桌機（`min-width: 641px` 且具備精準指標與懸停能力）漸進強化為 `.custom-select-trigger`（`--bg-3` 平面底）搭配依觸發器實測寬度鎖定的 `.custom-select-menu`（過長項目以 `...` 截斷並附完整 `title`），而手機與觸控裝置則透過 CSS 斷點自動退回原生 `<select>`，保留各平台原生選取器體驗；另提供 `public/select-preview.html` 供比較不同平面／底線／微浮起／`base-select` 樣式。
+- **批次刪除**：`DELETE /api/dead-keys` 支援 `ids: string[]`，讀一次、執行一次 `rebalanceErrorDetail()`、寫回一次並直接回傳更新後陣列，避免 N 筆逐一刪除。
+- **常駐篩選、移除重讀鈕與響應式金鑰遮罩**：移除獨立篩選收合、手動新增列與「`重新读取`」／單筆編輯鈕，保留常駐 `.dk-filter-panel`、純數字日期格式化、固定欄寬 `table-layout: fixed`（無日期／無 Code 置底）與切換分頁自動重拉。桌機採用 `maskKey()`（左 6 ＋ 1～3 `*` ＋ 後 3），手機端採用 `maskKeyMobile()`（左 6 ＋ 1～3 `*` ＋ 後 1）；篩選下拉於單卡沿用 `providerDisplayName()`（`別名 || host`），若同主機存在多格式卡片（例如同主機分別設定 OpenAI 與 Anthropic）則依 `fp` 以 `名稱 - 格式` 區分。
+- **桌機乾淨平面下拉選單增強（手機保留原生）**：`enhanceSelect()` 於桌機漸進強化為 `.custom-select-trigger` 搭配依實測寬度鎖定的 `.custom-select-menu`，手機與觸控端退回原生 `<select>`（參考頁 `public/select-preview.html`）。
 
 ---
 
-## 三、單一 Key 連跑兩輪
+## 三、單一 Key 連跑兩輪、純非串流與狀態簡易化
 
 當服務商只有 1 把 Key 時缺乏交叉驗證，因此設 `runs_per_pair = 2`（兩輪間隔 `SINGLE_KEY_RERUN_DELAY = 2.0` 秒）。
 
 - **為何不用「佇列塞入兩次」**：併發 ≥ 2 時兩輪會同時發出而使 2 秒間隔失效，須在單一 worker 迴圈內依序執行。
-- **熔斷與續跑規則**：第一輪觸發不可重試熔斷（如 401/403）時立即停止，不浪費第二輪額度與 2 秒等待；斷點續跑須累計滿 `runs_per_pair` 筆成功才算完成，未滿額組合會捨棄舊紀錄重跑兩輪。
+- **純非串流與 `2xx`／非 `2xx` 二分法**：串流模式下不支援串流的端點常回報與總耗時完全相同的假性 TTFT，失去辨別意義；改採純非串流（`stream=False`、Gemini 改打 `:generateContent`，維持 `TOTAL_TIMEOUT = 20s`），移除 `TTFT_TIMEOUT`、`parse_stream`、`429`/`408` 重試與串流降級，嚴格以 **HTTP `200..299` 且含正文／思考內容為成功**，並自結果頁移除 `avg TTFT` 欄。
+- **熔斷與本機 `Ctrl+C` 續跑規則**：為避免單一模型權限或配額誤殺整把金鑰，熔斷僅限明確的 **`HTTP 401`**（取消 `403`／`balance`／`quota` 跳過），觸發後立即跳過第二輪與後續模型；移除每 200 筆寫檔與 `/api/checkpoint`，改由單一全域 `/api/run-status`（`test_run_status`）在「`测试结果`」標題旁呈現全局 `⏳ 执行中`（GHA 結束一律透過 `if: always()` 清除並附 `GET` 90 分鐘惰性過期保底），本機執行僅在 **`Ctrl+C` 中斷**時將未完進度存至 `checkpoint.json` 供單機手動重跑接續。
 
 ---
 
@@ -121,9 +122,9 @@ Python 負責寫入時保留哪筆 `error_detail`，JS 負責渲染時即時分�
 
 因寫入端點 `request.json()` 不檢查 `Content-Type`（跨站 `<form enctype="text/plain">` 仍可送出 JSON 並帶上 cookie），系統完全依賴 `SameSite=Strict; Path=/api` 阻擋跨站請求攜帶 cookie（代價是從外部站點點連結跳轉 `/api/...` 會見 401，刷新即可）。
 
-### 6.4 獨立的轉發密碼（`PROXY_PASSWORD`）
+### 6.4 獨立的轉發密碼（`proxy_password`）與設定集中管理
 
-轉發端點須發給外部軟體使用，因此必須與 `ADMIN_PASSWORD` 隔離，且後端明文比對後**明確拒絕兩者設為相同值**（回傳 503）。認證標頭同時支援 `Authorization: Bearer`、`x-api-key`（Anthropic SDK）與 `x-goog-api-key`（Gemini SDK）。
+轉發端點須發給外部軟體使用，因此轉發密碼嚴格不可與 `ADMIN_PASSWORD` 相同（存入時與執行期皆拒絕同值）。為避免調整門檻、輪換密碼或貼上 Gateway 網址時每次都要重設 Cloudflare 環境變數與重部署，`proxy_password`、`ai_gateway_logs_url`、`ai_gateway_token`、`proxy_fail_threshold`、`proxy_max_retries` 與 `proxy_upstream_timeout_ms` **已統一移入前端「`设定`」彈窗並存於 `app_settings`**（不再讀取舊版環境變數）；後端直接從 `ai_gateway_logs_url` 解析 `{account_id}` 與 `{gateway_id}` 並拒絕不符格式的 URL（`400`）。入站驗證仍支援 `Authorization: Bearer`、`x-api-key` 與 `x-goog-api-key`。
 
 ---
 
@@ -141,7 +142,7 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 
 ### 7.3 設定並發控制與不設登入限流
 
-- **`app_settings` 樂觀鎖**：以 `version` 欄位將跨分頁同時存檔的靜默覆蓋轉為看得見的 `409 Conflict`（前端收到後重拉最新設定）；刻意放行不帶 `version` 的請求以利 `curl` 手動搶修；設定彈窗僅回傳自身管理的兩個欄位避免夾帶過時清單。
+- **`app_settings` 樂觀鎖**：以 `version` 欄位將跨分頁同時存檔的靜默覆蓋轉為看得見的 `409 Conflict`（前端收到後重拉最新設定）；刻意放行不帶 `version` 的請求以利 `curl` 手動搶修；「`设定`」彈窗僅回傳自身管理的全域／轉發設定欄位避免夾帶過時 `providers[]`。
 - **`dead_keys` 規模**：因同一把 Key 不重複新增，清單上限僅等於來源設定不重複 Key 總數，不會隨天數膨脹，故不做筆數截斷。
 - **登入不設速率限制**：WAF 免費版只有 1 條 10 秒窗規則效果極弱，而 KV 計數反而會讓攻擊者用幾百次錯誤登入耗盡每日 1,000 次寫入額度（把認證問題變為可用性故障），故依賴高熵密碼防護。
 
@@ -168,14 +169,14 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 | 瀏覽器認證與儲存 | HttpOnly Cookie（無狀態 HMAC） | 依賴 `SameSite=Strict` 防 CSRF；無法撤銷單一 cookie；更換 `ADMIN_PASSWORD` 會使所有已登入瀏覽器失效 |
 | 安全標頭位置 | Worker 出口統一附加 | 多一層包裝（因 `_headers` 對 `_worker.js` 無效） |
 | `app_settings` 並發 | 樂觀鎖 `version` ＋ 409 | 仍存在毫秒級競爭窗，但不再靜默覆蓋 |
-| `dead_keys` 並發與生命週期 | 單一 KV 陣列、每日結果對帳 | 手動編輯與對帳同時發生會遺失單次編輯；不保留失效歷史；若整個 host 無卡片則殘留須手動刪 |
+| `dead_keys` 並發與生命週期 | 單一 KV 陣列、每日結果依 `fp` 對帳 ＋ 刪卡清理 | 不保留已恢複歷史；刪卡與刪除金鑰時由 `POST /api/settings` 同步掃除並交棒 `error_detail` |
 | 錯誤分組與樣本裁切 | 正規化訊息去重；樣本各限 2048 字元掐頭留尾 | 僅數字不同的原因會合併；超長回應中段省略；Python／JS 正規化須手動同步 |
-| 單一 Key 測試次數 | 依序連跑兩輪、滿額才算續跑完成 | 單 Key 服務商測試耗時與請求數加倍 |
+| 單一 Key 測試次數 | 純非串流連跑兩輪；`Ctrl+C` 本機斷點＋全局 `run-status` | 單 Key 服務商請求數加倍；正常跑完不寫進度檔，改靠全局執行狀態指示與 90 分鐘過期保底 |
 | 儲存後端預設值 | 未填 `STORAGE_BACKEND` ＝ `d1` | 僅綁定 KV 的舊站台直接升級新版會全數 500；須按 README 順序搬移上線 |
-| `store` 與 `key_state` 分工 | `store` 存 JSON、`key_state` 為關聯表 | 無法對設定內容下 SQL 篩選，換取 KV／D1 共用大部分讀寫邏輯 |
+| `store` 與 `key_state` 分工 | `store` 存 JSON、`key_state` 為關聯表；D1 批次交易 | 設定更新、過期結果／死鑰清除與 `key_state` 同步由 `db.batch()` 原子執行，失敗直接回滾不留幽靈列 |
 | 搬移與還原備份 | 先備份 KV 才搬移；`--restore` 前再備份 D1 | 本機備份檔含明文 Key，須由管理員妥善保管權限 |
-| 轉發失敗與恢復 | 非 2xx 一律計數換鑰；每日測試 `valid_keys` 自動恢復 | 上游全面故障會使當次選用 Key 計數禁用；手動「测试」只記失敗不代替恢復，避免成為繞過門檻後門 |
-| Gateway 日誌與快取 | 深連結前往儀表板；預設帶 `cf-aig-skip-cache: true` | 深連結 URL 需先於真實帳號抄錄設定；不啟用快取確保標註與最近使用時間不失真 |
+| 轉發與手動探測通道 | 100% 強制經 Cloudflare AI Gateway（`custom-{alias}`） | 未設定 Gateway 或缺 `alias` 時禁止轉發與手動測試（無直連退回，確保流量可觀測）；手動成功即歸零並解禁 |
+| Gateway 日誌與快取 | 由 Logs URL 反拆雙 ID；`cf-aig-max-attempts: 1` ＋ `skip-cache` ＋ 明文 `key` | 需於 CF Dashboard 將 Custom Provider `slug` 對齊 `alias`；`cf-aig-metadata.key` 送完整 ASCII 金鑰以便日誌追查 |
 
 ---
 
@@ -183,12 +184,11 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 
 ### 11.1 後端架構與原子性取捨
 
-- **預設採用 D1 的理由**：輪詢要求每筆請求精準更新最近使用時間與失敗計數，KV 最終一致性與每日 1,000 次寫入上限無法負荷。D1 以單一條 `UPDATE … RETURNING` 同時完成選鑰與推進時間戳；時間戳於**取用當下**寫入並取 `MAX(now, 全域最大值 + 1)`，防止重試迴圈或同毫秒並發選中同一把 Key（`NULL` 在 `ORDER BY ASC` 排最前，讓新金鑰優先輪用）。
-- **無跨語句交易的因應**：每個狀態異動皆設計為單一原子 SQL 語句，中斷最多少記一次帳，不致損壞帳本。
-- **非 2xx 單一失敗規則**：不同供應商對無效金鑰回傳碼不一（Gemini 回 400），依狀態碼分流會讓無效 Key 永不被換掉；重試用完時原樣回傳最後一次上游回應並使用原始位元組重送。
+- **預設採用 D1 ＋ `db.batch()` 原子設定同步**：輪詢要求每筆請求精準更新 `last_used_at` 與 `fail_count`，因此採用 D1 單條 `UPDATE … RETURNING`。設定儲存（`app_settings`）、過時 `results:{fp}`／`dead_keys` 清除與 `key_state` 增刪改為透過單一 `env.DB.batch([...])` 原子交易一次完成，失敗直接回滾，故**已移除舊版熱路徑的 B′ 幽靈列清除迴圈與 `COUNT(*)=0` 延遲補建防線**，讓外部轉發請求路徑保持單純高速。
+- **100% 經由 Cloudflare AI Gateway（`custom-{alias}` 取代 `gateway_provider`）**：專案依賴 Gateway 承擔可觀測性與請求日誌，取消無日誌的直連模式，亦讓 `alias` 直接對應 Custom Provider `slug`，刪除冗餘的 `gateway_provider` 欄位；同時強制關閉 Gateway 重試（`cf-aig-max-attempts: 1`），把「換下一把不同金鑰」的主控權留在 Worker 迴圈。
+- **非 2xx 單一失敗規則與手動探測（「`only reply 1.`」、成功立即恢復）**：不同供應商對無效金鑰回傳碼不一（Gemini 回 400），轉發重試維持非 2xx 即換鑰。手動「`测试`」採用最小非串流探測（提示詞 `"only reply 1."`、`max_tokens: 8`／`maxOutputTokens: 8`，按原順序淺合併 `extra_body`），並改為**探測收到 2xx 即當場將 `fail_count = 0, disabled = 0`** 並即時更新介面狀態，消除測通卻仍顯示已失效的落差。
 - **移除 `ollama`**：無實際使用配置且其 `api_base` 不含版本前綴，移除後所有服務商皆一致遵守「填至版本前綴」規則，儲存時對 `ollama` 直接回 400。
-- **標頭淨化順序**：清除呼叫端 `Cookie`、跳躍式標頭與所有 `cf-aig-*` → 換上金鑰認證標頭 → 套用 `Custom Headers`（可覆蓋認證） → 最後寫入系統自有 `cf-aig-*`（其中 `cf-aig-metadata` 嚴格限 ASCII，因 HTTP 標頭僅支援 Latin-1，全形字會讓 `fetch` 拋出 `TypeError`）。
-- **同步失敗防護（B′）與精準還原**：選鑰後立即以 `provider.keys` 複核，已從來源刪除的列即刻刪除重挑（不採「先帳本後設定」以免未存入設定先生效）；僅整個指紋一列都沒有時才自動補列，部分缺列顯示 `synced: false`。`--restore` 採先 upsert 再刪多餘列的精準快照還原，與 `export` 共用 20000 筆上限。
+- **標頭淨化順序與明文 Metadata 標籤**：清除呼叫端 `Cookie`、跳躍式標頭與所有 `cf-aig-*` → 換上金鑰認證標頭 → 套用 `Custom Headers`（可覆蓋認證） → 最後寫入系統自有 `cf-aig-*`。`cf-aig-metadata` 移除 `metadataKeyTag()` 的遮罩／短金鑰縮短邏輯，改送完整 ASCII 金鑰 `{ key, provider }`（僅保留去除 CRLF 與非 ASCII 控制字元，確保 `fetch()` 不拋 `TypeError`）。`--restore` 仍維持先 upsert 再刪多餘列的精準快照還原。
 
 ### 11.2 轉發頁版面與元件設計決策
 
@@ -196,19 +196,19 @@ Cloudflare `_headers` 檔案不套用於 Pages Functions 回應（且 `env.ASSET
 - **測試模型選單來自來源設定，但選擇獨立保存**：候選清單直接讀取 `providers[].models` 避免重複輸入，預設選取第一個模型，但仍須按下「保存模型」寫入獨立的 `app_settings.proxy_test_models` 才啟用測試，防止調整來源設定模型順序時意外更改探測對象。
 - **工具列「恢复所有密钥」按指紋批次恢復**：在「测试无效密钥」旁新增「恢复所有密钥」，於後端 `POST /api/proxy/recover` 支援 `{ fp, all: true }` 執行單條 `UPDATE key_state SET disabled = 0, fail_count = 0 ... WHERE fp = ? AND disabled = 1`，僅恢復當前選中服務商已禁用的金鑰而不影響該服務商仍有效金鑰的 `fail_count` 或其他服務商狀態；按鈕本身不依賴測試模型即可操作，僅於轉發啟用且當前服務商存在已禁用金鑰時可點擊。
 - **統計配色與對齊層級**：`有效` 與 `无效` 採用比 `14px` 正文大一級的 `--text-base`（桌機 `16px`／`700`）而不搶成第二標題，數字右對齊固定 2 位數寬度（與標籤保持至少 1 個空格、1 位數自然補成 2 個空格視覺對齊、3 位數以上保持 1 個空格並將 `无效` 往右延伸而維持 8 個空格間距），並改用柔和的 `--ok-soft`／`--fail-soft`（淺色主題下反向調整飽和度與亮度以保持白底對比度）。
-- **單一頁首 Gateway 按鈕**：移至頁首 `重新读取` 右側，因其檢視整家服務商流量而非探測單把金鑰；箭頭 `↗` 使用 `aria-hidden="true"` 保持無障礙名稱為「Gateway 记录」，無可用網址時保持停用不隱藏，維持頁首位置穩定。
+- **單一頁首連結與全站統一複製圖示按鈕**：在「`轮询转发`」頁首保留「`Gateway 记录 ↗`」、在「`测试结果`」頁首放置「`立即执行 ↗`」（`aria-disabled="true"` 停用未設網址時；箭頭附 `aria-hidden="true"` 保持名稱純淨）；移除所有分頁的「`重新读取`」鈕；將原本文字「一键复制」鈕與整行點擊的轉發網址框（`copyProxyUrl()`）**全面改為統一的 `COPY_ICON_SVG`（`.copy-btn.btn-icon`）與 1.5 秒綠色勾勾回饋**。
 
 ### 11.3 前端 CSS 與互動陷阱紀錄
 
 - **`aria-disabled` 樣式**：`<a class="btn">` 不受 `:disabled` 匹配，須於 `.btn` 與各 `:hover` 規則補上 `[aria-disabled="true"]` 處理，避免無法點擊的連結仍有懸停高亮。
 - **RWD 順序與縱向 `flex-basis`**：轉發樣式必須排在 `── RWD` 區段之前才不會覆蓋手機斷點；`.proxy-toolbar-row` 轉成 `column` 後 `flex-basis` 會變成元素高度，因此 `.proxy-url` 在手機斷點須重設為 `flex: none` 並改為自動換行。
 - **模型選單 `flex: none` 固定寬度**：`.proxy-model-select` 必須使用 `flex: none` 配明確 `15rem` 寬度；若使用可縮減的 `flex-basis`，右側群組計算內在寬度時只會量到選項文字寬度，導致後方按鈕提前換行。
-- **「保存模型」按鈕寬度穩定**：點擊後文字從「保存模型」（4 字）變為「已保存」（3 字）時，`.proxy-save-model` 以縱向 flex（`gap: 0`）搭配零高度 `::after` 錨定四字實際字體寬度（不硬寫 `rem` 或行內 `style`），並以 `content: "保存模型" / ""` 防止螢幕閱讀器重覆唸出；同時於 `app.js` 使用 `proxySaveModelTimer`（與 URL 複製用的 `proxyUrlTimer`）追蹤計時器，在連點或重畫工具列（切換服務商）時清除舊計時器。
+- **「保存模型」按鈕寬度穩定**：點擊後文字從「保存模型」（4 字）變為「已保存」（3 字）時，`.proxy-save-model` 以縱向 flex（`gap: 0`）搭配零高度 `::after` 錨定四字實際字體寬度（不硬寫 `rem` 或行內 `style`），並以 `content: "保存模型" / ""` 防止螢幕閱讀器重覆唸出；同時於 `app.js` 使用 `proxySaveModelTimer` 追蹤計時器，在連點或切換服務商時清除舊計時器（網址複製鈕共用 `copyBtnTimers` WeakMap）。
 - **控制項高度齊一與手機端按鈕特異性**：`.btn` 統一帶 `1px solid transparent` 邊框使 `.btn-primary`／`.btn-danger-solid` 與有框按鈕完全同高，`.input-select` 與 `.input-text` 一律釘死 `height: var(--control-h)`；在 `@media (max-width: 640px)` 內重新宣告 `.btn-sm`（含 `.dk-filter-actions .btn`）、`.btn-xs` 與 `.btn-icon` 內距與字級，避免手機端 `.btn` 的大內距覆寫小按鈕與複製圖示尺寸；並以 `.dk-filter-panel, .proxy-toolbar`、`.provider-grid, .proxy-key-grid` 及 `.provider-card, .proxy-key-card` 共用外框與間距規則。
 - **批量測試保留單卡結果與請求競態防護**：`runProxyBatch()` 與 `testProxyKey()` 在觸發 `loadProxyState({ preserveResults: true })` 時保留 `state.proxyLastResults`，並保證於 `finally` 解鎖工具列與卡片按鈕；所有分頁載入器皆帶遞增請求序號（`state.reqSeq`）丟棄過期回應；各彈窗以 `openModal`/`closeModal` 堆疊支援頂層 `Esc` 關閉（關閉時僅清除彈窗內殘留焦點，不把焦點退回原按鈕，並移除按鈕／頁籤／折疊表頭的預設黑框焦點標註）。
 
 ### 11.4 尚待正式線上環境複驗項目
 
 1. **D1 高並發寫入序列化**：線上以真實並發請求確認同一服務商不會重複挑中同一把 Key。
-2. **AI Gateway 線上行為**：確認 Custom Provider 路徑拼接、`cf-aig-metadata` 篩選，並於真實帳號抄錄日誌深連結格式填入 `AI_GATEWAY_LOGS_URL`。
-3. **每日 GHA 排程、真實 KV `list()` 分頁與真實上游長串流首字延遲**。
+2. **AI Gateway 線上行為**：確認 `custom-{alias}` Custom Provider 路徑拼接、`cf-aig-metadata` 明文 Key 標籤，以及由「`设定`」中 `AI Gateway Logs URL` 自動解析雙 ID 的實測結果。
+3. **每日 GHA 排程、`/api/run-status` 與 `if: always()` 清除機制，以及真實上游長回應執行狀況**。
