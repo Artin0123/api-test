@@ -116,7 +116,7 @@
 
 ## 三、受影響檔案、測試與文件同步清單
 
-1. **程式碼**：[public/index.html](../public/index.html)、[public/app.js](../public/app.js)、[public/style.css](../public/style.css)、[public/_worker.js](../public/_worker.js)、[public/mock.json](../public/mock.json)、[async_test_keys.py](../async_test_keys.py)、[.github/workflows/main.yml](../.github/workflows/main.yml)。
+1. **程式碼**：[public/index.html](../public/index.html)、[public/app.js](../public/app.js)、[public/style.css](../public/style.css)、[src/entry.js](../src/entry.js)（拼接生成 `public/_worker.js`，生成檔不入庫）、[public/mock.json](../public/mock.json)、[async_test_keys.py](../async_test_keys.py)、[.github/workflows/main.yml](../.github/workflows/main.yml)。
 2. **測試套件（[tests/worker.test.mjs](../tests/worker.test.mjs) 與 [tests/frontend.test.mjs](../tests/frontend.test.mjs)）**：
    - 更新並補齊：重複 `(api_base, provider_type)` 阻擋與刪卡連帶清 `results`/`dead_keys` 測試、移除 `PUT /api/dead-keys` 確認、強制走 Gateway 測試、Logs URL 反拆雙 ID 與無效 URL 阻擋測試、以 `alias` 作為 slug 測試、`cf-aig-metadata` 明文帶出測試、手動測試成功自動歸零解禁測試、全域 `/api/run-status` 與 90 分鐘惰性過期測試，以及前端移除「`重新读取`」／`dkedit` 彈窗／`avg TTFT`、`立即执行` 移位與全站統一圖示複製按鈕的 DOM/CSS 檢查。
 3. **文件同步**：

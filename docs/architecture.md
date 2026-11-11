@@ -47,8 +47,8 @@ api-test/
 |---|---|---|
 | **根目錄（`/`）** | 放置每日並發測試引擎 [async_test_keys.py](../async_test_keys.py)、Node/Python 設定與指令入口（[package.json](../package.json)、[requirements.txt](../requirements.txt)）及操作手冊（[README.md](../README.md)）。 | 測試引擎連線 `public/` 閘道讀取設定並回傳進度與結果；亦可脫離雲端，改讀 `valid_keys/` 與 `models_list/` 單機運行。 |
 | **`.github/workflows/`** | 放置自動化排程檔 [main.yml](../.github/workflows/main.yml)（每天 UTC 00:00 自動跑或手動觸發，最長 90 分鐘、禁止同時重疊多輪）。 | 啟動根目錄的 `async_test_keys.py` 執行巡檢；結束時透過 `if: always()` 清除全域執行中狀態並向 `public/` 閘道查詢 Discord Webhook 發送通知。 |
-| **`public/`** | 整個線上站台所在：包含靜態單頁前端（[index.html](../public/index.html)、[boot.js](../public/boot.js)、[app.js](../public/app.js) 入口與分段邏輯 [js/](../public/js/)、[style.css](../public/style.css) 及其分段樣式 `style-*.css`、離線範例 [mock.json](../public/mock.json)、未匹配路徑錯誤頁 [404.html](../public/404.html)）與 Cloudflare Pages 邊緣閘道（[_worker.js](../public/_worker.js)，由 [src/](../src/) 分段原始碼經 `npm run build` 拼接生成）。 | 對瀏覽器提供 4 個管理分頁與登入認證；對測試引擎提供設定／全局執行狀態／結果 API；對外部軟體提供 `/proxy/{別名}/...` 輪詢轉發與 D1／KV 儲存層抽象。前端各分段與 `style-*.css` 必須依 `index.html` 的載入順序維護。 |
-| **`src/`** | 放置 `public/_worker.js` 的分段原始碼（`entry`／`storage`／`auth`／`utils`／`settings`／`settings-handlers`／`results`／`run-status`／`dead-keys`／`proxy`／`proxy-handlers`／`storage-migrate`），每段皆為原 `_worker.js` 的逐字切片。 | 由 `scripts/build-worker.mjs` 依固定順序拼接回單一 `public/_worker.js`；拼接順序不可改動（頂層 `const` 宣告按原檔順序求值）。 |
+| **`public/`** | 整個線上站台所在：包含靜態單頁前端（[index.html](../public/index.html)、[boot.js](../public/boot.js)、[app.js](../public/app.js) 入口與分段邏輯 [js/](../public/js/)、[style.css](../public/style.css) 及其分段樣式 `style-*.css`、離線範例 [mock.json](../public/mock.json)、未匹配路徑錯誤頁 [404.html](../public/404.html)）與 Cloudflare Pages 邊緣閘道 `_worker.js`。 | 對瀏覽器提供 4 個管理分頁與登入認證；對測試引擎提供設定／全局執行狀態／結果 API；對外部軟體提供 `/proxy/{別名}/...` 輪詢轉發與 D1／KV 儲存層抽象。前端各分段與 `style-*.css` 必須依 `index.html` 的載入順序維護。`_worker.js` 為生成檔不入庫：部署時由 Pages 的 build command（`npm run build`）從 `src/` 拼接生成。 |
+| **`src/`** | 放置 `public/_worker.js` 的分段原始碼（`entry`／`storage`／`auth`／`utils`／`settings`／`settings-handlers`／`results`／`run-status`／`dead-keys`／`proxy`／`proxy-handlers`／`storage-migrate`），每段皆為原 `_worker.js` 的逐字切片。 | 由 `scripts/build-worker.mjs` 依固定順序拼接回單一 `public/_worker.js`；拼接順序不可改動（頂層 `const` 宣告按原檔順序求值）。生成檔不入庫（`.gitignore`），本地 `npm run dev`／`npm test` 會以前置步驟自動生成，部署由 Pages 的 build command 生成。 |
 | **`scripts/`** | 放置資料庫搬移工具 [migrate-kv-to-d1.mjs](../scripts/migrate-kv-to-d1.mjs)，以及 Worker 拼接腳本 [build-worker.mjs](../scripts/build-worker.mjs)（把 `src/*.js` 依序組回 `public/_worker.js`）與語法檢查 [check-syntax.mjs](../scripts/check-syntax.mjs)。 | 透過 `public/` 閘道的儲存維運端點，完成「先落地本機備份 → 寫入 D1 → 逐筆驗證」的升級與 `--restore` 回滾；Worker 分段原始碼經 build 步驟生成部署用的單一 `_worker.js`。 |
 | **`tests/`** | 放置 4 套全離線測試（[worker.test.mjs](../tests/worker.test.mjs)、[frontend.test.mjs](../tests/frontend.test.mjs)、[migrate-script.test.mjs](../tests/migrate-script.test.mjs) 透過 `npm test` 執行 63 項 JS／Worker 檢查；另有 Python 測試 [test_async_engine.py](../tests/test_async_engine.py) 驗證離線巡檢與 `checkpoint.json` 續跑邏輯）。 | 以記憶體 SQLite、模擬 `aiohttp` 與暫時本地 HTTP 伺服器同時驗證前後端、儲存同步與測試引擎合約，不碰真實金鑰或外網。 |
 | **`local_test/`** | 放置 3 支本機 Python 模型過濾腳本（查上架日 → 實測聊天 → 抽出通過名單）及 `alibaba-cn/`、`nvidia/`、`siliconflow-cn/` 三家快照與結果子目錄。 | 獨立於線上系統之外，協助管理員先把上百個模型篩出近期可用的精簡名單，再貼回網頁設定或收進 `models_list/`。 |
@@ -163,24 +163,24 @@ flowchart TD
 
 | 流程分區 | 系統功能名稱 | 流程圖對應名詞 | 跨檔案負責位置 |
 |---|---|---|---|
-| 一、入口與後台 | 安全標頭輸出與靜態資源託管 | 邊緣閘道附加安全標頭並回傳靜態網頁 | [public/_worker.js](../public/_worker.js)（所有出口統一加上 CSP 等標頭 ＋ 回傳 `public/` 靜態檔） |
+| 一、入口與後台 | 安全標頭輸出與靜態資源託管 | 邊緣閘道附加安全標頭並回傳靜態網頁 | [public/_worker.js](../src/entry.js)（所有出口統一加上 CSP 等標頭 ＋ 回傳 `public/` 靜態檔） |
 | 一、入口與後台 | 首次繪製前主題與登入提示預載 | 套用深淺色主題並判斷顯示模式 | [public/boot.js](../public/boot.js)（防閃爍）＋ [public/app.js](../public/app.js)（啟動驗證） |
 | 一、入口與後台 | `?mock` 離線展示模式 | 載入內建範例資料並跳過密碼驗證 | [public/app.js](../public/app.js) ＋ [public/mock.json](../public/mock.json) |
-| 一、入口與後台 | 管理員登入介面與憑證核發 | 在登入畫面輸入管理密碼 ／ 驗證管理密碼並核發瀏覽器登入憑證 | [public/index.html](../public/index.html) ＋ [public/app.js](../public/app.js) ⇄ [public/_worker.js](../public/_worker.js)（無狀態 HMAC Cookie 與 Bearer） |
+| 一、入口與後台 | 管理員登入介面與憑證核發 | 在登入畫面輸入管理密碼 ／ 驗證管理密碼並核發瀏覽器登入憑證 | [public/index.html](../public/index.html) ＋ [public/app.js](../public/app.js) ⇄ [public/_worker.js](../src/entry.js)（無狀態 HMAC Cookie 與 Bearer） |
 | 一、入口與後台 | 單頁導覽列、切換主題與登出 | 管理後台主畫面… | [public/index.html](../public/index.html) ＋ [public/app.js](../public/app.js) |
 | 一、入口與後台 | 「`来源设定`」與「`设定`」彈窗管理 | `来源设定`分頁… ／ `设定`彈窗… | [public/index.html](../public/index.html) ＋ [public/app.js](../public/app.js) ＋ [public/style.css](../public/style.css) |
-| 一、入口與後台 | `app_settings` 原子寫入與 D1 `db.batch()` 同步 | 以單一原子批次更新後端設定、同步金鑰帳本，並連帶清理已刪卡片的結果與死鑰 | [public/_worker.js](../public/_worker.js)（重複卡片阻擋、版本鎖、D1 原子批次寫入） |
-| 二、批量檢測 | GitHub Actions 每日自動巡檢與 `if: always()` 清理通知 | GitHub 每日定時或…手動觸發巡檢 ／ 無論成功或異常皆清除全局執行中狀態並發送 Discord…通知 | [.github/workflows/main.yml](../.github/workflows/main.yml) ⇄ [async_test_keys.py](../async_test_keys.py) ＆ [public/_worker.js](../public/_worker.js) |
-| 二、批量檢測 | 全局執行中狀態 ＋ 讀取遠端設定或本機文字檔 | 標記全局執行中狀態，並向後台讀取啟用中的服務商清單 ／ 單機測試模式改讀… | [async_test_keys.py](../async_test_keys.py) ⇄ [public/_worker.js](../public/_worker.js)（`POST`/`DELETE /api/run-status` ＋ `GET /api/settings`） |
+| 一、入口與後台 | `app_settings` 原子寫入與 D1 `db.batch()` 同步 | 以單一原子批次更新後端設定、同步金鑰帳本，並連帶清理已刪卡片的結果與死鑰 | [public/_worker.js](../src/entry.js)（重複卡片阻擋、版本鎖、D1 原子批次寫入） |
+| 二、批量檢測 | GitHub Actions 每日自動巡檢與 `if: always()` 清理通知 | GitHub 每日定時或…手動觸發巡檢 ／ 無論成功或異常皆清除全局執行中狀態並發送 Discord…通知 | [.github/workflows/main.yml](../.github/workflows/main.yml) ⇄ [async_test_keys.py](../async_test_keys.py) ＆ [public/_worker.js](../src/entry.js) |
+| 二、批量檢測 | 全局執行中狀態 ＋ 讀取遠端設定或本機文字檔 | 標記全局執行中狀態，並向後台讀取啟用中的服務商清單 ／ 單機測試模式改讀… | [async_test_keys.py](../async_test_keys.py) ⇄ [public/_worker.js](../src/entry.js)（`POST`/`DELETE /api/run-status` ＋ `GET /api/settings`） |
 | 二、批量檢測 | 任務佇列、單鑰兩輪、非串流 `2xx` 判定與 `401` 熔斷 | 展開金鑰乘以模型任務… ／ 並發非串流探測… ／ 若單機手動 Ctrl+C 中斷則即時存進本機暫存進度檔 | [async_test_keys.py](../async_test_keys.py)（純非串流＋`Ctrl+C` 本機 `checkpoint.json`） |
-| 二、批量檢測 | 交叉驗證、錯誤詳情去重與依指紋對帳恢復 | 交叉驗證… ／ 輸出本機報告並逐家上傳… ／ 儲存報告、依服務商指紋雙向對帳…並恢復有效金鑰 | [async_test_keys.py](../async_test_keys.py) ⇄ [public/_worker.js](../public/_worker.js)（`POST /api/results` 觸發連動） |
+| 二、批量檢測 | 交叉驗證、錯誤詳情去重與依指紋對帳恢復 | 交叉驗證… ／ 輸出本機報告並逐家上傳… ／ 儲存報告、依服務商指紋雙向對帳…並恢復有效金鑰 | [async_test_keys.py](../async_test_keys.py) ⇄ [public/_worker.js](../src/entry.js)（`POST /api/results` 觸發連動） |
 | 三、結果與維護 | 「`测试结果`」展示、「`立即执行 ↗`」、耗時排序與錯誤分組 | `测试结果`分頁：全局執行中提示、`立即执行`外連、模型耗時排序、樣本與分組錯誤詳情 | [public/index.html](../public/index.html) ＋ [public/app.js](../public/app.js)（正規化邏輯與 [async_test_keys.py](../async_test_keys.py) 同步） |
-| 三、結果與維護 | 「`失效密钥`」篩選、排序與批次刪除 | `失效密钥`分頁：五條件常駐篩選、排序與批次刪除寫回後端 | [public/app.js](../public/app.js) ⇄ [public/_worker.js](../public/_worker.js)（`GET`/`DELETE /api/dead-keys`） |
-| 四、輪詢轉發 | 外部呼叫軟體請求進入與轉發／Gateway 前置驗證 | 外部呼叫軟體攜帶獨立轉發密碼發送請求 ／ 確認專責資料庫、驗證轉發密碼與 Gateway 設定並依別名查找啟用服務商 | 外部軟體 ⇄ [public/_worker.js](../public/_worker.js)（`/proxy/{別名}/...`） |
-| 四、輪詢轉發 | D1 原子 LRU 選鑰、標頭淨化與強制 AI Gateway 轉接 | 單一原子操作挑選未禁用且最久未使用的金鑰… ／ 淨化標頭… ／ 強制經由 Cloudflare AI Gateway…轉接至服務商上游 | [public/_worker.js](../public/_worker.js)（D1 `key_state` ＋ `app_settings` ＋ `custom-{alias}`） |
-| 四、輪詢轉發 | 2xx 成功歸零、非 2xx 累加禁用與最多 3 次換鑰重試 | 上游成功回應… ／ 上游非成功回應或連線失敗… ／ 排除本次已試金鑰後換下一把重試（最多三次） ／ 回傳最後一次上游錯誤或無可用金鑰訊息 | [public/_worker.js](../public/_worker.js) |
-| 四、輪詢轉發 | 「`轮询转发`」頁面控制、非串流探測解禁與日誌跳轉 | `轮询转发`分頁：統一圖示複製網址、保存`测试模型`、非串流探測並立即解禁、`恢复`、`恢复所有密钥`與 `Gateway 记录`跳轉 | [public/app.js](../public/app.js) ⇄ [public/_worker.js](../public/_worker.js)（`/api/proxy/*` 系列端點） |
-| 五、維運與輔助 | KV → D1 備份、搬移、驗證與還原 | 儲存搬移與還原工具：先落地完整性備份再寫入資料庫並逐筆比對驗證 | [scripts/migrate-kv-to-d1.mjs](../scripts/migrate-kv-to-d1.mjs) ⇄ [public/_worker.js](../public/_worker.js)（`/api/storage/*`） |
+| 三、結果與維護 | 「`失效密钥`」篩選、排序與批次刪除 | `失效密钥`分頁：五條件常駐篩選、排序與批次刪除寫回後端 | [public/app.js](../public/app.js) ⇄ [public/_worker.js](../src/entry.js)（`GET`/`DELETE /api/dead-keys`） |
+| 四、輪詢轉發 | 外部呼叫軟體請求進入與轉發／Gateway 前置驗證 | 外部呼叫軟體攜帶獨立轉發密碼發送請求 ／ 確認專責資料庫、驗證轉發密碼與 Gateway 設定並依別名查找啟用服務商 | 外部軟體 ⇄ [public/_worker.js](../src/entry.js)（`/proxy/{別名}/...`） |
+| 四、輪詢轉發 | D1 原子 LRU 選鑰、標頭淨化與強制 AI Gateway 轉接 | 單一原子操作挑選未禁用且最久未使用的金鑰… ／ 淨化標頭… ／ 強制經由 Cloudflare AI Gateway…轉接至服務商上游 | [public/_worker.js](../src/entry.js)（D1 `key_state` ＋ `app_settings` ＋ `custom-{alias}`） |
+| 四、輪詢轉發 | 2xx 成功歸零、非 2xx 累加禁用與最多 3 次換鑰重試 | 上游成功回應… ／ 上游非成功回應或連線失敗… ／ 排除本次已試金鑰後換下一把重試（最多三次） ／ 回傳最後一次上游錯誤或無可用金鑰訊息 | [public/_worker.js](../src/entry.js) |
+| 四、輪詢轉發 | 「`轮询转发`」頁面控制、非串流探測解禁與日誌跳轉 | `轮询转发`分頁：統一圖示複製網址、保存`测试模型`、非串流探測並立即解禁、`恢复`、`恢复所有密钥`與 `Gateway 记录`跳轉 | [public/app.js](../public/app.js) ⇄ [public/_worker.js](../src/entry.js)（`/api/proxy/*` 系列端點） |
+| 五、維運與輔助 | KV → D1 備份、搬移、驗證與還原 | 儲存搬移與還原工具：先落地完整性備份再寫入資料庫並逐筆比對驗證 | [scripts/migrate-kv-to-d1.mjs](../scripts/migrate-kv-to-d1.mjs) ⇄ [public/_worker.js](../src/entry.js)（`/api/storage/*`） |
 | 五、維運與輔助 | 本機模型上架日過濾與對話實測 | 本機模型篩選流水線：查上架日過濾舊模型、聊天實測並抽出逗號名單 | `local_test/` 三支腳本 ＋ `models_list/` |
 | 五、維運與輔助 | 語法檢核與全離線自動化測試 | 離線語法檢查與自動化回歸測試：模擬雙儲存與本地模擬上游驗證合約 | [package.json](../package.json) ＋ `tests/` 三支測試檔 |
 

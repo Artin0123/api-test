@@ -42,7 +42,8 @@ Cloudflare AI Gateway（custom-{别名}）→ 上游 API
 ```text
 public/
   _worker.js     Cloudflare Pages 网关（API、轮询转发与 KV/D1 转接层）
-                 ⚠ 生成文件：由 `npm run build` 从 src/*.js 依序拼接而来
+                 ⚠ 生成文件，不入库：部署时由 Pages 的 build command（npm run build）
+                   从 src/*.js 拼接生成；本地由 npm run dev / test 的前置步骤自动生成
                  ⚠ Cloudflare Pages 進階模式規定 _worker.js 必須是單一可執行檔，勿直接編輯
   index.html     前端页面
   404.html       未匹配靜態路徑的錯誤頁（Pages 以 HTTP 404 提供，取代 SPA fallback）
@@ -65,15 +66,15 @@ async_test_keys.py      每日批量并发检测脚本
 docs/                   规范快照、扩展计划与决策记录
 ```
 
-> **修改 Worker 程式码**：一律编辑 `src/*.js` 后执行 `npm run build`（`npm run check`
-> 也会先执行一次），再提交生成的 `public/_worker.js`。Cloudflare Pages 進階模式在部署時
-> 只讀取單一 `_worker.js`，因此生成檔需一併入库。
+> **修改 Worker 程式码**：一律编辑 `src/*.js`；`npm run check`、`npm run dev`、
+> `npm run dev:d1` 与 `npm test` 都会先自动拼接生成 `public/_worker.js`
+> （该生成档已加入 `.gitignore`，不入库），部署时由 Pages 的 build command 完成。
 
 ## 快速开始
 
 ### 1. 部署 Cloudflare Pages
 
-1. 将仓库连接至 Cloudflare Pages，构建输出目录填写 `public`。
+1. 将仓库连接至 Cloudflare Pages：**Build command 填 `npm run build`**，构建输出目录填 `public`（Pages 会先 `npm install` 再执行 build，把 `src/*.js` 拼接成部署用的 `public/_worker.js`；拼接脚本只依赖 Node 内建模块，任何默认构建环境皆可执行）。
 2. Dashboard → Environment Variables → 添加 `ADMIN_PASSWORD`。
 3. Dashboard → Functions → KV namespace bindings → 绑定名称填 `KV_STORE`。
 4. 启用轮询转发时：Functions → D1 database bindings → 绑定名称填 `DB`，并按下方迁移顺序配置 `STORAGE_BACKEND`。

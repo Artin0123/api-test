@@ -8,3 +8,4 @@ venv
 valid_keys
 async_test_results.json
 backups
+public/_worker.js

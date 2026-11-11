@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "wrangler pages dev public --kv=KV_STORE --binding STORAGE_BACKEND=kv",
     "dev:d1": "wrangler pages dev public --kv=KV_STORE --d1=DB=local-dev-db",
+    "predev": "node scripts/build-worker.mjs",
+    "predev:d1": "node scripts/build-worker.mjs",
+    "pretest": "node scripts/build-worker.mjs",
     "build": "node scripts/build-worker.mjs",
     "check": "node scripts/build-worker.mjs && node scripts/check-syntax.mjs",
     "test": "node --test tests/",
