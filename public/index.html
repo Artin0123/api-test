@@ -505,7 +505,13 @@
 
                     <label class="field">
                         <span class="field-label">
-                            Provider Type
+                            <span class="field-label-title"
+                                >Provider Type<span
+                                    class="field-required"
+                                    aria-hidden="true"
+                                    >*</span
+                                ></span
+                            >
                             <span class="info-icon" tabindex="0">
                                 <svg
                                     viewBox="0 0 24 24"
@@ -542,7 +548,11 @@
                                 >
                             </span>
                         </span>
-                        <select id="ed-provider-type" class="input-select">
+                        <select
+                            id="ed-provider-type"
+                            class="input-select"
+                            aria-required="true"
+                        >
                             <option value="openai">openai</option>
                             <option value="gemini">gemini</option>
                             <option value="anthropic">anthropic</option>
@@ -550,12 +560,21 @@
                     </label>
 
                     <label class="field">
-                        <span class="field-label">API Base URL</span>
+                        <span class="field-label">
+                            <span class="field-label-title"
+                                >API Base URL<span
+                                    class="field-required"
+                                    aria-hidden="true"
+                                    >*</span
+                                ></span
+                            >
+                        </span>
                         <input
                             type="url"
                             id="ed-api-base"
                             class="input-text"
                             placeholder="https://api.openai.com/v1"
+                            aria-required="true"
                         />
                     </label>
 
@@ -577,10 +596,16 @@
                     </label>
 
                     <div class="field">
-                        <label class="field-label" for="ed-keys"
-                            >API Keys
-                            <small class="muted">一行一个</small></label
-                        >
+                        <label class="field-label" for="ed-keys">
+                            <span class="field-label-title"
+                                >API Keys<span
+                                    class="field-required"
+                                    aria-hidden="true"
+                                    >*</span
+                                ></span
+                            >
+                            <small class="muted">一行一个</small>
+                        </label>
                         <div class="keys-toolbar">
                             <div class="keys-search-wrap">
                                 <input
@@ -661,15 +686,22 @@
                                 class="input-textarea lined-textarea"
                                 spellcheck="false"
                                 placeholder="sk-xxxxxxxxxxxxxxxx&#10;sk-yyyyyyyyyyyyyyyy"
+                                aria-required="true"
                             ></textarea>
                         </div>
                     </div>
 
                     <label class="field">
-                        <span class="field-label"
-                            >Models
-                            <small class="muted">逗号分隔（一行）</small></span
-                        >
+                        <span class="field-label">
+                            <span class="field-label-title"
+                                >Models<span
+                                    class="field-required"
+                                    aria-hidden="true"
+                                    >*</span
+                                ></span
+                            >
+                            <small class="muted">逗号分隔（一行）</small>
+                        </span>
                         <div
                             class="lined-editor lined-editor--wrap modal-editor-box"
                         >
@@ -679,6 +711,7 @@
                                 class="input-textarea lined-textarea"
                                 spellcheck="false"
                                 placeholder="gpt-4o,gpt-4.1,gpt-4.1-mini"
+                                aria-required="true"
                             ></textarea>
                         </div>
                     </label>
@@ -745,47 +778,37 @@
                             max="200"
                         />
                     </label>
-
+                </div>
+                <div class="modal-footer modal-footer-stack">
                     <div id="editor-confirm" class="editor-confirm hidden">
-                        <p id="editor-confirm-msg" class="editor-confirm-msg"></p>
                         <ul
                             id="editor-confirm-list"
                             class="editor-confirm-list"
                         ></ul>
-                        <div class="editor-confirm-actions">
+                    </div>
+                    <div class="modal-footer-row">
+                        <p
+                            id="editor-error"
+                            class="form-error modal-footer-error"
+                            role="alert"
+                        ></p>
+                        <div class="modal-footer-actions">
                             <button
-                                id="editor-confirm-ok"
-                                class="btn btn-danger-solid btn-sm"
+                                class="btn btn-primary"
+                                id="editor-save-btn"
                                 type="button"
                             >
-                                确认删除并储存
+                                储存
                             </button>
                             <button
-                                id="editor-confirm-cancel"
-                                class="btn btn-ghost btn-sm"
+                                class="btn btn-ghost"
+                                id="editor-cancel-btn"
                                 type="button"
                             >
                                 取消
                             </button>
                         </div>
                     </div>
-                    <p id="editor-error" class="form-error" role="alert"></p>
-                </div>
-                <div class="modal-footer">
-                    <button
-                        class="btn btn-primary"
-                        id="editor-save-btn"
-                        type="button"
-                    >
-                        储存
-                    </button>
-                    <button
-                        class="btn btn-ghost"
-                        id="editor-cancel-btn"
-                        type="button"
-                    >
-                        取消
-                    </button>
                 </div>
             </section>
         </div>

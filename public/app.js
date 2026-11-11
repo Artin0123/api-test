@@ -189,10 +189,7 @@ const dom = {
   edSortKeysBtn: $("ed-sort-keys-btn"),
   edExportKeysBtn: $("ed-export-keys-btn"),
   editorConfirm: $("editor-confirm"),
-  editorConfirmMsg: $("editor-confirm-msg"),
   editorConfirmList: $("editor-confirm-list"),
-  editorConfirmOk: $("editor-confirm-ok"),
-  editorConfirmCancel: $("editor-confirm-cancel"),
 
   // app settings modal
   settingsOverlay: $("settings-overlay"),
@@ -619,6 +616,7 @@ function openModal(overlay, initialFocusEl = null) {
 function closeModal(overlay) {
   if (!overlay) return;
   closeOpenCustomSelect();
+  hideActiveInfoTooltip();
   overlay.classList.add("hidden");
   const idx = state.modalStack.indexOf(overlay);
   if (idx >= 0) state.modalStack.splice(idx, 1);
@@ -881,7 +879,7 @@ function enhanceSelect(select) {
   if (label) {
     label.addEventListener("click", (e) => {
       if (!isDesktopCustomSelect()) return;
-      if (e.target.closest(".custom-select")) return;
+      if (e.target.closest(".custom-select, .info-icon")) return;
       e.preventDefault();
       if (!trigger.disabled) trigger.focus();
     });
@@ -917,6 +915,127 @@ function initCustomSelects() {
   if (desktopSelectMql && typeof desktopSelectMql.addEventListener === "function") {
     desktopSelectMql.addEventListener("change", () => closeOpenCustomSelect());
   }
+}
+
+// ── Floating info tooltips (portaled to body to layer above open select menus) ─
+let activeInfoIcon = null;
+
+function positionInfoTooltip(icon, tip) {
+  if (!icon || !tip) return;
+  const rect = icon.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  const margin = 12;
+  const gap = 6;
+  const tipW = tipRect.width || tip.offsetWidth || 210;
+  const tipH = tipRect.height || tip.offsetHeight || 120;
+  const rawLeft = rect.left - 80;
+  const left = Math.max(
+    margin,
+    Math.min(rawLeft, window.innerWidth - tipW - margin),
+  );
+  let top = rect.bottom + gap;
+  if (
+    top + tipH > window.innerHeight - margin &&
+    rect.top - gap - tipH >= margin
+  ) {
+    top = rect.top - gap - tipH;
+  }
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function hideActiveInfoTooltip() {
+  if (!activeInfoIcon || !activeInfoIcon._tooltipState) return;
+  const icon = activeInfoIcon;
+  icon._tooltipState.hovered = false;
+  icon._tooltipState.focused = false;
+  icon._tooltipState.tip.classList.remove("is-open");
+  activeInfoIcon = null;
+}
+
+function syncInfoTooltip(icon) {
+  const stateObj = icon && icon._tooltipState;
+  if (!stateObj) return;
+  const { tip, hovered, focused } = stateObj;
+  const visible =
+    (hovered || focused) &&
+    icon.isConnected &&
+    icon.getClientRects().length > 0;
+  if (!visible) {
+    tip.classList.remove("is-open");
+    if (activeInfoIcon === icon) activeInfoIcon = null;
+    return;
+  }
+  if (activeInfoIcon && activeInfoIcon !== icon) {
+    hideActiveInfoTooltip();
+  }
+  positionInfoTooltip(icon, tip);
+  tip.classList.add("is-open");
+  activeInfoIcon = icon;
+}
+
+function initInfoTooltips() {
+  document.querySelectorAll(".info-icon").forEach((icon, idx) => {
+    if (icon._tooltipState) return;
+    const tip = icon.querySelector(".info-tooltip");
+    if (!tip) return;
+    if (!tip.id) tip.id = `info-tooltip-${idx + 1}`;
+    tip.setAttribute("role", "tooltip");
+    icon.setAttribute("aria-describedby", tip.id);
+    // Portal outside modal stacking contexts so .info-tooltip paints above .custom-select-menu.
+    tip.classList.add("info-tooltip--portal");
+    document.body.appendChild(tip);
+
+    const stateObj = { tip, hovered: false, focused: false };
+    icon._tooltipState = stateObj;
+
+    icon.addEventListener("mouseenter", () => {
+      stateObj.hovered = true;
+      syncInfoTooltip(icon);
+    });
+    icon.addEventListener("mouseleave", () => {
+      stateObj.hovered = false;
+      syncInfoTooltip(icon);
+    });
+    icon.addEventListener("focusin", () => {
+      stateObj.focused = true;
+      syncInfoTooltip(icon);
+    });
+    icon.addEventListener("focusout", () => {
+      stateObj.focused = false;
+      syncInfoTooltip(icon);
+    });
+    icon.addEventListener("click", (e) => {
+      e.preventDefault();
+      icon.focus();
+    });
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (activeInfoIcon && !activeInfoIcon.contains(e.target)) {
+      hideActiveInfoTooltip();
+    }
+  });
+  window.addEventListener("resize", () => {
+    if (activeInfoIcon) syncInfoTooltip(activeInfoIcon);
+  });
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (!activeInfoIcon) return;
+      const body = activeInfoIcon.closest(".modal-body");
+      if (body) {
+        const iconRect = activeInfoIcon.getBoundingClientRect();
+        const bodyRect = body.getBoundingClientRect();
+        if (iconRect.bottom < bodyRect.top || iconRect.top > bodyRect.bottom) {
+          hideActiveInfoTooltip();
+          return;
+        }
+      }
+      syncInfoTooltip(activeInfoIcon);
+    },
+    true,
+  );
 }
 
 function topOpenModal() {
@@ -1286,15 +1405,16 @@ function getEditorHeaders() {
   return { headers, invalid };
 }
 
-function hideEditorConfirm() {
+function hideEditorConfirm({ keepError = false } = {}) {
   dom.editorConfirm.classList.add("hidden");
-  dom.editorConfirmMsg.textContent = "";
   dom.editorConfirmList.replaceChildren();
   state.editorPendingRemoved = null;
+  dom.editorSave.classList.remove("btn-danger-solid");
+  dom.editorSave.classList.add("btn-primary");
+  if (!keepError) dom.editorError.textContent = "";
 }
 
 function showEditorConfirm(removed) {
-  dom.editorConfirmMsg.textContent = `即将删除 ${removed.length} 支密钥；确认后才会储存。`;
   dom.editorConfirmList.replaceChildren();
   for (const key of removed) {
     const li = document.createElement("li");
@@ -1302,7 +1422,10 @@ function showEditorConfirm(removed) {
     dom.editorConfirmList.appendChild(li);
   }
   dom.editorConfirm.classList.remove("hidden");
-  dom.editorConfirmOk.focus();
+  dom.editorError.textContent = `即将删除 ${removed.length} 支密钥；确认后才会储存。`;
+  dom.editorSave.classList.remove("btn-primary");
+  dom.editorSave.classList.add("btn-danger-solid");
+  dom.editorSave.focus();
 }
 
 // ── Keys textarea: orange marks on every occurrence of the query ─────────
@@ -1484,9 +1607,11 @@ function cycleEditorSort() {
 function exportEditorKeys() {
   const keys = splitKeyLines(dom.edKeys.value);
   if (!keys.length) {
+    hideEditorConfirm({ keepError: true });
     dom.editorError.textContent = "没有可导出的密钥";
     return;
   }
+  if (!state.editorPendingRemoved) dom.editorError.textContent = "";
   const host = extractHost(dom.edApiBase.value || "provider");
   const filename = `${host || "provider"}-keys.txt`.replace(
     /[^a-zA-Z0-9._-]+/g,
@@ -1553,11 +1678,17 @@ function openEditor(index = -1) {
 }
 
 function closeEditor() {
+  hideEditorConfirm();
   closeModal(dom.editorOverlay);
 }
 
-async function saveEditor(confirmed = false) {
-  dom.editorError.textContent = "";
+async function saveEditor() {
+  const confirmed = Boolean(state.editorPendingRemoved);
+  if (!confirmed) dom.editorError.textContent = "";
+  const failValidation = (msg) => {
+    hideEditorConfirm({ keepError: true });
+    dom.editorError.textContent = msg;
+  };
   const index = Number(dom.editorIndex.value);
   const existingProviders = (state.settings || {}).providers || [];
   const enabled =
@@ -1577,10 +1708,7 @@ async function saveEditor(confirmed = false) {
   syncLineNums(dom.edModels);
   syncKeysHighlight();
 
-  if (!apiBase) {
-    dom.editorError.textContent = "请填写 API Base URL";
-    return;
-  }
+  if (!apiBase) return failValidation("请填写 API Base URL");
   const dupIdx = existingProviders.findIndex(
     (p, i) =>
       i !== index &&
@@ -1589,36 +1717,26 @@ async function saveEditor(confirmed = false) {
       (p.api_base || "").trim().replace(/\/+$/, "") === apiBase,
   );
   if (dupIdx >= 0) {
-    dom.editorError.textContent = `已存在相同的 ${pType} 与 API Base 服务商`;
-    return;
+    return failValidation(`已存在相同的 ${pType} 与 API Base 服务商`);
   }
-  if (!keys.trim()) {
-    dom.editorError.textContent = "请填写至少一个 API Key";
-    return;
-  }
-  if (!models.trim()) {
-    dom.editorError.textContent = "请填写至少一个模型名";
-    return;
-  }
+  if (!keys.trim()) return failValidation("请填写至少一个 API Key");
+  if (!models.trim()) return failValidation("请填写至少一个模型名");
   if (extraBodyRaw) {
     try {
       JSON.parse(extraBodyRaw);
     } catch {
-      dom.editorError.textContent = "Extra Body 不是有效的 JSON";
-      return;
+      return failValidation("Extra Body 不是有效的 JSON");
     }
   }
   if (invalidHeaders.length) {
-    dom.editorError.textContent = `请求头名称不合法: ${invalidHeaders[0]}`;
-    return;
+    return failValidation(`请求头名称不合法: ${invalidHeaders[0]}`);
   }
 
   let maxConcurrency = null;
   if (maxConcurrencyRaw !== "") {
     const n = parseInt(maxConcurrencyRaw, 10);
     if (!Number.isInteger(n) || n < 1) {
-      dom.editorError.textContent = "Max Concurrency 必须是正整数";
-      return;
+      return failValidation("Max Concurrency 必须是正整数");
     }
     maxConcurrency = n;
   }
@@ -1655,14 +1773,14 @@ async function saveEditor(confirmed = false) {
     const same =
       a.length === b.length && a.every((value, i) => value === b[i]);
     if (!same) {
-      state.editorPendingRemoved = removed.length ? removed : null;
       if (removed.length) {
+        state.editorPendingRemoved = removed;
         showEditorConfirm(removed);
         return;
       }
+      hideEditorConfirm();
     }
   }
-  state.editorPendingRemoved = null;
   const settings = state.settings || {};
   const providers = [...(settings.providers || [])];
 
@@ -3875,6 +3993,7 @@ async function sha256(str) {
 // ── Events ────────────────────────────────────────────────────────────────
 function bindEvents() {
   initCustomSelects();
+  initInfoTooltips();
   // Auth
   dom.authBtn.addEventListener("click", login);
   dom.authInput.addEventListener("keydown", (e) => {
@@ -3946,18 +4065,17 @@ function bindEvents() {
   dom.editorSave.addEventListener("click", () => saveEditor());
   dom.editorCancel.addEventListener("click", closeEditor);
 
-  // Key tools: three-state sort, export, delete confirmation. Finding a key is
-  // the orange occurrence highlight in the textarea, bound in bindKeysHighlight.
+  // Key tools: three-state sort, export, footer delete confirmation. Finding a key
+  // is the orange occurrence highlight in the textarea, bound in bindKeysHighlight.
   dom.edSortKeysBtn.addEventListener("click", cycleEditorSort);
   dom.edExportKeysBtn.addEventListener("click", exportEditorKeys);
-  dom.editorConfirmOk.addEventListener("click", () => saveEditor(true));
-  dom.editorConfirmCancel.addEventListener("click", () => {
-    if (state.editorSnapshot !== null) {
-      dom.edKeys.value = state.editorSnapshot;
-      syncLineNums(dom.edKeys);
+  dom.edKeys.addEventListener("input", () => {
+    if (
+      state.editorPendingRemoved &&
+      diffKeyLines(state.editorSnapshot ?? "", dom.edKeys.value).length === 0
+    ) {
+      hideEditorConfirm();
     }
-    hideEditorConfirm();
-    syncKeysHighlight();
   });
   dom.editorOverlay.addEventListener("click", (e) => {
     if (e.target.dataset.closeModal === "editor") closeEditor();

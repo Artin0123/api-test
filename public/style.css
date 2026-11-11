@@ -769,6 +769,17 @@ a:focus-visible,
     gap: 0.5rem;
 }
 
+.field-label-title {
+    display: inline-flex;
+    align-items: center;
+}
+
+.field-required {
+    color: var(--fail);
+    margin-left: 0.25rem;
+    font-weight: 700;
+}
+
 .custom-headers-container {
     display: flex;
     flex-direction: column;
@@ -1137,9 +1148,20 @@ a:focus-visible,
     margin-top: 0.4rem;
 }
 
+.info-tooltip--portal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    margin-top: 0;
+    max-width: min(210px, calc(100vw - 24px));
+    /* Must paint above .custom-select-menu (200) and .modal-overlay (50). */
+    z-index: 300;
+}
+
 .info-icon:hover .info-tooltip,
 .info-icon:focus-within .info-tooltip,
-.info-icon:active .info-tooltip {
+.info-icon:active .info-tooltip,
+.info-tooltip.is-open {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
@@ -1188,6 +1210,7 @@ a:focus-visible,
     padding: 1.25rem 1.5rem;
     border-bottom: 1px solid var(--border);
     gap: 1rem;
+    flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -1213,8 +1236,30 @@ a:focus-visible,
     padding: 1rem 1.5rem;
     border-top: 1px solid var(--border);
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 0.6rem;
+    flex-shrink: 0;
+}
+
+.modal-footer-stack {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+}
+
+.modal-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
+.modal-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
 }
 
 /* ── Sample modal content ──────────────────────────────────────────────── */
@@ -1440,6 +1485,18 @@ a:focus-visible,
     color: var(--fail);
     font-size: var(--text-xs);
     min-height: 1.2em;
+}
+
+.modal-footer-error {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    font-size: var(--text-sm);
+    line-height: 1.4;
+    text-align: left;
+    overflow-wrap: anywhere;
+    max-height: 6rem;
+    overflow-y: auto;
 }
 
 .form-ok {
@@ -2621,36 +2678,22 @@ code {
     padding: 0.22em 0;
 }
 
-/* ── In-place delete confirmation (no modal, CSP-safe class toggle) ─────── */
+/* ── In-place delete confirmation (in editor footer, CSP-safe class toggle) ── */
 .editor-confirm {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    padding: 0.85rem 1rem;
+    padding: 0.75rem 0.95rem;
     border: 1px solid var(--fail);
     border-radius: var(--radius-sm);
     background: rgba(239, 68, 68, 0.07);
 }
 
-.editor-confirm-msg {
-    margin: 0;
-    font-size: var(--text-sm);
-    color: var(--text);
-}
-
 .editor-confirm-list {
     margin: 0;
     padding-left: 1.1rem;
-    /* Five rows are shown directly; more scroll inside the same box. */
-    max-height: 5.6rem;
+    /* Up to ~6 rows are shown directly; more scroll inside the same box. */
+    max-height: 8rem;
     overflow-y: auto;
+    overflow-wrap: anywhere;
     font-family: var(--mono);
     font-size: var(--text-xs);
     color: var(--text);
-}
-
-.editor-confirm-actions {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
 }

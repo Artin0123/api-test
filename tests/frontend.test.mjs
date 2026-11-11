@@ -247,3 +247,48 @@ test("review fixes keep confirm labels fp-aware, URLs http(s)-guarded, and remov
   assert.ok(!py.includes("compute_fingerprint"), "async_test_keys.py still has unused compute_fingerprint");
   assert.ok(!py.includes("import hashlib"), "async_test_keys.py still has unused hashlib import");
 });
+
+test("editor modal marks required fields, places error left of save button, and portals info tooltip above select menu", () => {
+  const css = read("style.css");
+  const editorSection = html.match(/<div id="editor-overlay"[\s\S]*?<\/section>\s*<\/div>/);
+  assert.ok(editorSection, "#editor-overlay markup not found");
+  const editorMarkup = editorSection[0];
+
+  const reqMatches = [...editorMarkup.matchAll(/<span class="field-label-title"[^>]*>([\s\S]*?)<span[^>]*class="field-required"[^>]*>\*<\/span\s*>/g)];
+  const reqTitles = reqMatches.map((m) => m[1].trim());
+  assert.deepEqual(reqTitles, ["Provider Type", "API Base URL", "API Keys", "Models"]);
+
+  const footerMatch = editorMarkup.match(/<div class="modal-footer modal-footer-stack">([\s\S]*?)<\/div>\s*<\/section>/);
+  assert.ok(footerMatch, "editor modal-footer stack not found");
+  const confirmIdx = footerMatch[1].indexOf('id="editor-confirm"');
+  const rowIdx = footerMatch[1].indexOf('class="modal-footer-row"');
+  const errIdx = footerMatch[1].indexOf('id="editor-error"');
+  const saveIdx = footerMatch[1].indexOf('id="editor-save-btn"');
+  assert.ok(confirmIdx >= 0 && rowIdx > confirmIdx, "editor-confirm must sit above modal-footer-row");
+  assert.ok(errIdx >= 0 && saveIdx > errIdx, "editor-error must sit left of editor-save-btn inside modal-footer");
+  assert.match(footerMatch[1], /\bmodal-footer-error\b/, "editor-error must carry modal-footer-error class");
+  for (const removedId of ["editor-confirm-msg", "editor-confirm-ok", "editor-confirm-cancel"]) {
+    assert.ok(!html.includes(`id="${removedId}"`), `index.html must not keep #${removedId}`);
+  }
+  assert.match(app, /dom\.editorError\.textContent = `即将删除 \$\{removed\.length\} 支密钥；确认后才会储存。`/);
+  assert.match(app, /dom\.editorSave\.classList\.add\("btn-danger-solid"\)/);
+  assert.match(app, /dom\.editorSave\.classList\.remove\("btn-danger-solid"\)/);
+
+  const btnFont = css.match(/(?:^|\r?\n)\.btn\s*\{[^}]*font-size:\s*([^;]+);/);
+  const errFont = css.match(/\.modal-footer-error\s*\{[^}]*font-size:\s*([^;]+);/s);
+  assert.ok(btnFont && errFont, ".btn and .modal-footer-error font-size rules must exist");
+  assert.equal(errFont[1].trim(), btnFont[1].trim(), "modal-footer-error font-size must match .btn");
+
+  const menuZ = css.match(/\.custom-select-menu\s*\{[^}]*z-index:\s*(\d+)/s);
+  const portalZ = css.match(/\.info-tooltip--portal\s*\{[^}]*z-index:\s*(\d+)/s);
+  assert.ok(menuZ && portalZ, ".custom-select-menu and .info-tooltip--portal z-index rules must exist");
+  assert.ok(Number(portalZ[1]) > Number(menuZ[1]), ".info-tooltip--portal z-index must sit above .custom-select-menu");
+
+  assert.match(css, /\.modal-footer\s*\{[^}]*flex-shrink:\s*0;/s);
+  assert.match(css, /\.editor-confirm-list\s*\{[^}]*max-height:\s*8rem;/s);
+
+  assert.match(app, /function initInfoTooltips\(/);
+  assert.match(app, /initInfoTooltips\(\);/);
+  assert.match(app, /document\.body\.appendChild\(tip\)/);
+  assert.match(app, /e\.target\.closest\("\.custom-select, \.info-icon"\)/);
+});
