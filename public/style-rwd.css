@@ -1,0 +1,475 @@
+/* Split from the original style.css; loaded in original order (after style.css). */
+/* ── RWD ───────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    :root {
+        --text-base: 15px;
+    }
+
+    .workspace {
+        padding: 1.25rem 1rem;
+    }
+
+    .topbar {
+        padding: 0.75rem 1rem;
+        gap: 0.5rem;
+    }
+
+    .topbar h1 {
+        font-size: 1rem;
+    }
+
+    .mobile-menu-btn {
+        display: block;
+    }
+
+    .hidden-desktop {
+        display: flex;
+    }
+
+    .topbar-menu-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(2px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+    }
+
+    .topbar-menu-backdrop.open {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .topbar-menu {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 260px;
+        z-index: 41;
+        background: var(--bg-2);
+        border-left: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: stretch;
+        gap: 1.5rem;
+        padding: 1.5rem 1.25rem;
+        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+        overflow-y: auto;
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .topbar-menu.open {
+        transform: translateX(0);
+    }
+
+    .topbar-menu-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.85rem;
+        margin-bottom: -0.25rem;
+        /* pull up slightly since flex gap is 1.5rem */
+    }
+
+    .topbar-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+        margin-top: auto;
+        border-top: 1px solid var(--border);
+        padding-top: 1.5rem;
+    }
+
+    .btn {
+        padding: 0.55rem 1rem;
+    }
+
+    .btn-sm,
+    .dk-filter-actions .btn {
+        padding: 0.45rem 0.75rem;
+        font-size: var(--text-xs);
+    }
+
+    .btn-xs {
+        padding: 0.3rem 0.55rem;
+        font-size: var(--text-xs);
+    }
+
+    .btn-icon {
+        padding: 0.25rem;
+    }
+
+    .btn.btn-danger-icon {
+        padding: 0;
+    }
+
+    .tabs {
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0;
+    }
+
+    .tab-btn {
+        padding: 0.75rem 1rem;
+        font-size: var(--text-sm);
+        border-radius: var(--radius-sm);
+        text-align: left;
+    }
+
+    .panel-head {
+        flex-direction: column;
+        align-items: stretch;
+        margin-bottom: 1.5rem;
+    }
+
+    .panel-head-actions {
+        align-self: flex-start;
+    }
+
+    .panel-head .btn {
+        align-self: flex-start;
+    }
+
+    /* Cards and framed panels: single-column grids and compact inner padding. */
+    .provider-card,
+    .proxy-key-card,
+    .dk-filter-panel,
+    .proxy-toolbar {
+        padding: 1rem;
+    }
+
+    .proxy-toolbar-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .proxy-toolbar-row .btn:not(.btn-icon) {
+        flex: none;
+        width: 100%;
+        min-height: var(--control-h);
+    }
+
+    .proxy-url {
+        flex: 1 1 0;
+        width: auto;
+        height: auto;
+        min-height: var(--control-h);
+        padding: 0.45rem 0.9rem;
+        line-height: 1.5;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-overflow: clip;
+    }
+
+    /* Stack labeled toolbar groups full width on mobile and reset flex-basis on
+       both the groups and their inner wrappers so flex-direction: column never
+       treats desktop flex-basis (e.g. 20rem) as vertical height. */
+    .proxy-provider-group,
+    .proxy-url-group,
+    .proxy-model-group,
+    .proxy-summary,
+    .proxy-action-group {
+        flex: none;
+        width: 100%;
+        margin-left: 0;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .proxy-provider-group,
+    .proxy-url-group,
+    .proxy-model-group,
+    .proxy-summary {
+        gap: 0.5rem;
+    }
+
+    .proxy-summary-group {
+        align-self: flex-start;
+    }
+
+    .proxy-provider-col,
+    .proxy-url-wrap,
+    .proxy-model-select,
+    .proxy-model-group > .custom-select {
+        flex: none;
+        width: 100%;
+    }
+
+    .proxy-toolbar-label,
+    .proxy-summary-label,
+    .proxy-model-heading {
+        align-self: flex-start;
+    }
+
+    /* Dead keys: stack full-width filters and keep date fields compact */
+    .dk-filter-field--host,
+    .dk-filter-field--key,
+    .dk-filter-field--code {
+        flex: 1 1 100%;
+    }
+
+    .dk-table {
+        min-width: 49.25rem;
+    }
+
+    .data-table th.dk-check-col,
+    .data-table td.dk-check-col {
+        width: 5rem;
+        padding: 0.5rem 0.5rem 0.5rem 1rem;
+    }
+
+    .data-table th.dk-host-col,
+    .data-table td.dk-host-col {
+        width: 7.5rem;
+    }
+
+    .data-table th.dk-key-col,
+    .data-table td.dk-key-col {
+        width: 8.75rem;
+    }
+
+    .dk-key-desktop {
+        display: none;
+    }
+
+    .dk-key-mobile {
+        display: inline;
+    }
+
+    .data-table th.dk-date-col,
+    .data-table td.dk-date-col {
+        width: 8rem;
+    }
+
+    .data-table th.dk-code-col,
+    .data-table td.dk-code-col {
+        width: 5rem;
+        padding-left: 0.4rem;
+        padding-right: 0.4rem;
+    }
+
+    .data-table th.dk-msg-col,
+    .data-table td.dk-msg-col {
+        min-width: 10em;
+    }
+
+    .errdetail-row {
+        grid-template-columns: 1fr;
+        gap: 0.3rem;
+    }
+
+    /* Data table: horizontal scroll, smaller text */
+    .table-scroll {
+        font-size: var(--text-xs);
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 0.5rem 0.65rem;
+    }
+
+    /* Modals: generous padding to avoid keyboard & browser chrome occlusion */
+    .modal-panel,
+    .modal-panel--wide {
+        width: 100%;
+        border-radius: var(--radius);
+        align-self: center;
+        max-height: calc(100dvh - 4rem);
+        max-height: calc(100vh - 4rem);
+        /* fallback for browsers w/o dvh */
+    }
+
+    .modal-overlay {
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1rem;
+        padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .modal-body {
+        padding: 1.25rem;
+    }
+
+    .custom-header-row {
+        flex-wrap: wrap;
+    }
+
+    /* Basis 0, not 50%: with a 50% basis the two inputs plus the square delete
+       button only just fit, so the button claiming --control-h instead of its
+       old 2.2rem pushed it onto a line of its own. Basis 0 lets the inputs
+       share whatever the button leaves and keeps the row one band at every
+       width. */
+    .custom-header-row .input-text {
+        flex: 1 1 0;
+    }
+
+    .modal-footer {
+        padding: 0.85rem 1.25rem;
+        padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Auth card */
+    .auth-card {
+        padding: 2rem 1.25rem;
+    }
+}
+/* ── Key editor toolbar ─────────────────────────────────────────────────── */
+.keys-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    /* Same 0.75rem as the gap above and below the row (the .field gap plus the
+       0.25rem the toolbar and the editor each add), so the label, the search box,
+       the buttons and the editor read as one evenly spaced block. */
+    gap: 0.75rem;
+    /* Additive over the .field row gap, exactly like .keys-editor below. */
+    margin-top: 0.25rem;
+}
+
+/* Takes the leftover width of the band; min-width is what makes the row wrap on
+   a narrow screen instead of squeezing the box down to a few characters. The
+   wrapper owns the width now, because the clear button has to sit inside the
+   box's right end and an absolutely positioned child of the input is impossible. */
+.keys-search-wrap {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 10rem;
+}
+
+.keys-search-wrap .keys-search {
+    /* Room for the clear button, so a long query never runs underneath it. */
+    padding-right: 2.4rem;
+}
+
+/* Chrome/Safari draw their own clear × inside a type="search" input; ours does
+   the same job and sits where that × used to be. */
+.keys-search::-webkit-search-cancel-button,
+.keys-search::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
+}
+
+.keys-search-clear {
+    right: 0.3rem;
+    width: 1.85rem;
+    height: 1.85rem;
+    /* Dimmed while there is nothing to clear, so an empty box does not offer a
+       dead control, but it never appears and disappears under the cursor. */
+    opacity: 0.45;
+    cursor: default;
+}
+
+.keys-search-clear.is-active {
+    opacity: 1;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.keys-search-clear.is-active:hover {
+    background: var(--bg-3);
+}
+
+/* Below 640px the band cannot hold the box and both buttons — it comes up a few
+   pixels short and pushes 导出 onto a row of its own, which reads as a mistake.
+   Giving the box the whole row instead makes the wrap deliberate: the box, then
+   the two buttons side by side. */
+@media (max-width: 640px) {
+    .keys-search-wrap {
+        flex: 1 1 100%;
+    }
+    .settings-grid-3 {
+        grid-template-columns: 1fr;
+    }
+}
+/* Occurrence marks for the keys textarea. A <textarea> cannot colour part of
+   its own text, so the marks live in a layer of identical text sitting behind
+   it: the textarea keeps its normal colour on a transparent background and the
+   layer's own glyphs are transparent, so only the <mark> backgrounds show
+   through. The layer is sized and positioned onto the textarea from JS (it
+   cannot be sized in CSS: the textarea's client box shrinks when its scrollbar
+   appears, and the two must wrap at the same width). */
+.keys-editor {
+    position: relative;
+}
+
+/* Both the gutter and the textarea paint above the layer, so a horizontally
+   scrolled mark can never show up in the gutter. */
+.keys-editor .line-nums {
+    position: relative;
+    z-index: 1;
+}
+
+.keys-editor .lined-textarea {
+    position: relative;
+    z-index: 2;
+}
+
+/* Outer box: clips, never moves. Its own overflow keeps the cut on the textarea's
+   padding box — the same edge the textarea cuts its own text at — while
+   .keys-highlight-inner below it carries the marks and is translated to follow
+   the scroll. Clipping and moving cannot share one box: a clip region travels
+   with its own transform, which would cut away the lines that just scrolled in. */
+.keys-highlight {
+    position: absolute;
+    z-index: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    pointer-events: none;
+    user-select: none;
+    background: transparent;
+    color: transparent;
+}
+
+.keys-highlight-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* The typography and the padding are copied from the textarea by JS on
+       every sync; only the properties that never change live here. */
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.keys-highlight mark {
+    background: var(--mark-keys);
+    color: transparent;
+    /* Square on purpose: a rounded band reads as a decorative tag, while the
+       browser's own find highlight — the thing this stands in for — is a plain
+       rectangle. */
+    border-radius: 0;
+    /* Vertical padding only: it deepens the band to something closer to the
+       line box without touching the line's height or the horizontal run, which
+       keeping the glyphs over the mark depends on. */
+    padding: 0.22em 0;
+}
+
+/* ── In-place delete confirmation (in editor footer, CSP-safe class toggle) ── */
+.editor-confirm {
+    padding: 0.75rem 0.95rem;
+    border: 1px solid var(--fail);
+    border-radius: var(--radius-sm);
+    background: rgba(239, 68, 68, 0.07);
+}
+
+.editor-confirm-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    /* Up to ~6 rows are shown directly; more scroll inside the same box. */
+    max-height: 8rem;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text);
+}

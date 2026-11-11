@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "wrangler pages dev public --kv=KV_STORE --binding STORAGE_BACKEND=kv",
     "dev:d1": "wrangler pages dev public --kv=KV_STORE --d1=DB=local-dev-db",
-    "check": "node --check public/_worker.js && node --check public/app.js && node --check public/boot.js && node --check scripts/migrate-kv-to-d1.mjs",
+    "build": "node scripts/build-worker.mjs",
+    "check": "node scripts/build-worker.mjs && node scripts/check-syntax.mjs",
     "test": "node --test tests/",
     "migrate": "node scripts/migrate-kv-to-d1.mjs"
   },

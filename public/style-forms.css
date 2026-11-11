@@ -1,0 +1,578 @@
+/* Split from the original style.css; loaded in original order (after style.css). */
+/* ── Cards & grids (shared: 来源设定 + 轮询转发) ───────────────────────── */
+.provider-grid,
+.proxy-key-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+@media (max-width: 640px) {
+    .provider-grid,
+    .proxy-key-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.provider-card,
+.proxy-key-card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.provider-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.provider-card-badges {
+    flex: 1;
+    min-width: 0;
+}
+
+.provider-card-host,
+.proxy-key-mask {
+    font-size: 1rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.provider-card--disabled,
+.proxy-key-card--disabled {
+    opacity: 0.5;
+    filter: grayscale(1);
+}
+
+.provider-card--selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+
+.provider-card-select {
+    display: flex;
+    align-items: flex-start;
+    padding-top: 0.15rem;
+    margin-right: 0.1rem;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.provider-card-select input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+    transition:
+        background 0.15s,
+        border-color 0.15s;
+}
+
+.provider-card-select input[type="checkbox"]:hover {
+    border-color: var(--accent-h);
+}
+
+.provider-card-select input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.provider-card-select input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -62%) rotate(45deg);
+    width: 0.27rem;
+    height: 0.5rem;
+    border: 1.5px solid #fff;
+    border-top: none;
+    border-left: none;
+}
+
+.provider-card-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.provider-card-meta,
+.proxy-key-card-meta {
+    display: flex;
+    gap: 0.25rem 1rem;
+    flex-wrap: wrap;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.provider-card-meta span strong,
+.proxy-key-card-meta span strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* The counts sit at the right end of the row on every card, with or without a
+   state tag, so the numbers line up down the column of cards instead of jumping
+   left on the enabled ones. The auto margin is the whole mechanism: it soaks up
+   the free space so the block is anchored at the right edge, which means a wider
+   number (three digits instead of one) grows toward the left and never shifts the
+   right edge or the gaps between the items. Laid out in the flow rather than
+   absolutely positioned, so it can never land on top of the state tag. */
+.provider-card-counts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-left: auto;
+}
+
+/* The disabled state sits as plain bold text, not a pill: it reads as one more
+   fact about the card, in the same size and weight as the counts beside it. */
+.provider-card-state-tag,
+.proxy-key-state-tag {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text);
+}
+
+.provider-card-state-tag {
+    align-self: center;
+}
+
+.panel-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
+/* ── Fields ────────────────────────────────────────────────────────────── */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.field-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.field-label-title {
+    display: inline-flex;
+    align-items: center;
+}
+
+.field-required {
+    color: var(--fail);
+    margin-left: 0.25rem;
+    font-weight: 700;
+}
+
+.custom-headers-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* An empty row container is still a flex child, so it claimed a gap on each
+   side and pushed the add button 1rem below the label instead of 0.5rem. */
+.custom-headers-container:empty {
+    display: none;
+}
+
+/* Sits under the header rows, or right under the label when there are none.
+   align-self keeps it on the left edge at its own width: a column flexbox
+   stretches its children, which would turn the button into a full-width bar.
+   The margin gives the rows above it the same 0.75rem breathing room the
+   search row gets from the key editor (.field gap's 0.5rem plus 0.25rem). */
+.add-header-btn {
+    align-self: flex-start;
+    margin-top: 0.25rem;
+}
+
+.custom-header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.custom-header-row .input-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.input-text,
+.input-textarea,
+.input-select {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--text-sm);
+    padding: 0.65rem 0.9rem;
+    width: 100%;
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
+}
+
+/* Pinned so every single-line input and select shares one exact height on every
+   platform; toolbar buttons beside them match it through --control-h. Leaving
+   <select> to padding + line box made it 40.8px vs 40px on .input-text. */
+.input-text,
+.input-select {
+    height: var(--control-h);
+}
+
+.input-text:focus,
+.input-textarea:focus,
+.input-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.input-textarea {
+    resize: vertical;
+    line-height: 1.7;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+}
+
+.input-select {
+    cursor: pointer;
+    appearance: none;
+    background-color: var(--bg-3);
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238892a4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
+    background-size: 1.15em;
+    padding: 0 2.4rem 0 0.9rem;
+    line-height: calc(var(--control-h) - 2px);
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.input-select:hover:not(:disabled) {
+    border-color: var(--text-muted);
+}
+
+/* ── Desktop flat select enhancement (mobile/touch keeps native <select>) ── */
+.custom-select {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.custom-select-trigger,
+.custom-select-menu {
+    display: none;
+}
+
+@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
+    .custom-select[data-enhanced="1"] .custom-select-native {
+        display: none;
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        width: 100%;
+        min-width: 0;
+        height: var(--control-h);
+        padding: 0 0.85rem 0 0.9rem;
+        background: var(--bg-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: var(--text-sm);
+        cursor: pointer;
+        transition:
+            border-color 0.15s,
+            box-shadow 0.15s,
+            background-color 0.15s;
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger:hover:not(:disabled) {
+        border-color: var(--text-muted);
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger:focus-visible,
+    .custom-select[data-enhanced="1"] .custom-select-trigger[aria-expanded="true"] {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    .custom-select[data-enhanced="1"] .custom-select-trigger:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+
+    .custom-select-value {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    .custom-select-arrow {
+        flex-shrink: 0;
+        color: var(--text-muted);
+        transition: transform 0.15s;
+    }
+
+    .custom-select-trigger[aria-expanded="true"] .custom-select-arrow {
+        transform: rotate(180deg);
+    }
+
+    .custom-select-menu {
+        display: block;
+        position: fixed;
+        z-index: 200;
+        list-style: none;
+        margin: 0;
+        padding: 0.3rem;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+        max-height: 16rem;
+        overflow-y: auto;
+    }
+
+    .custom-select-option {
+        padding: 0.45rem 0.65rem;
+        border-radius: calc(var(--radius-sm) - 2px);
+        font-size: var(--text-sm);
+        line-height: 1.45;
+        color: var(--text);
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        transition: background-color 0.1s;
+    }
+
+    .custom-select-option:hover,
+    .custom-select-option.is-active {
+        background: var(--bg-3);
+    }
+
+    .custom-select-option.is-selected {
+        background: rgba(99, 102, 241, 0.15);
+        color: var(--accent-h);
+        font-weight: 600;
+    }
+
+    .custom-select-option.is-disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+}
+
+[data-theme="light"] .custom-select-menu {
+    box-shadow: 0 8px 20px rgba(26, 31, 54, 0.12);
+}
+
+[data-theme="light"] .custom-select-option.is-selected {
+    color: var(--accent);
+}
+
+/* ── Lined editor (textarea with line numbers) ─────────────────────────── */
+.lined-editor {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--bg-2);
+    transition:
+        border-color 0.15s,
+        box-shadow 0.15s;
+    min-height: 6rem;
+    max-height: 50vh;
+    resize: vertical;
+}
+
+.lined-editor:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.line-nums {
+    flex-shrink: 0;
+    width: 2rem;
+    background: var(--bg-3);
+    border-right: 1px solid var(--border);
+    padding: 0.65rem 0;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--text-muted);
+    user-select: none;
+    overflow-y: auto;
+    scrollbar-width: none;
+    min-height: 0;
+}
+
+.line-nums::-webkit-scrollbar {
+    display: none;
+}
+
+.line-nums span {
+    display: block;
+    padding-right: 0.4rem;
+    color: var(--line-num);
+    min-height: 1.7em;
+    /* matches .line-nums line-height; ensures empty wrap spans take up space */
+}
+
+.lined-textarea {
+    flex: 1;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    resize: none;
+    background: transparent;
+    padding: 0.65rem 0.6rem;
+    min-height: 0;
+    height: 100%;
+}
+
+.lined-editor--wrap .lined-textarea {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Modal and Result editor specific heights to ensure visual uniformity */
+.modal-editor-box {
+    height: 12rem;
+}
+
+.modal-editor-box--sm {
+    height: 7rem;
+}
+
+/* The search row above the key editor belongs to it, so they need more air
+   than the .field gap alone (0.5rem + 0.25rem here = 0.75rem). Same rhythm as
+   the header rows and their add button below. */
+.keys-editor {
+    margin-top: 0.25rem;
+}
+
+.json-status {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    margin-left: 0.1rem;
+}
+
+.json-ok {
+    color: var(--ok);
+}
+
+.json-err {
+    color: var(--fail);
+}
+
+.result-editor-box {
+    height: 8rem;
+}
+
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    cursor: help;
+    margin-left: 0.35rem;
+    transition: color 0.15s;
+    position: relative;
+}
+
+.info-icon:hover,
+.info-icon:focus-within {
+    color: var(--text);
+    outline: none;
+}
+
+.info-tooltip {
+    position: absolute;
+    top: 100%;
+    left: -80px;
+    transform: translateY(4px);
+    background: var(--bg-3);
+    color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    white-space: normal;
+    width: max-content;
+    max-width: 210px;
+    word-break: break-word;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 0.1s,
+        transform 0.1s,
+        visibility 0.1s;
+    z-index: 100;
+    text-align: left;
+    font-weight: normal;
+    margin-top: 0.4rem;
+}
+
+.info-tooltip--portal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    margin-top: 0;
+    max-width: min(210px, calc(100vw - 24px));
+    /* Must paint above .custom-select-menu (200) and .modal-overlay (50). */
+    z-index: 300;
+}
+
+.info-icon:hover .info-tooltip,
+.info-icon:focus-within .info-tooltip,
+.info-icon:active .info-tooltip,
+.info-tooltip.is-open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}

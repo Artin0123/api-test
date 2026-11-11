@@ -8,7 +8,14 @@
         <link rel="icon" type="image/svg+xml"
             href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4'/%3E%3C/svg%3E" />
         <script src="/boot.js"></script>
+        <!-- Load order matters: the style-*.css files are sections of the
+             original single style.css and must cascade in this order. -->
         <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href="/style-forms.css" />
+        <link rel="stylesheet" href="/style-modals.css" />
+        <link rel="stylesheet" href="/style-deadkeys.css" />
+        <link rel="stylesheet" href="/style-proxy.css" />
+        <link rel="stylesheet" href="/style-rwd.css" />
     </head>
 
     <body>
@@ -694,6 +701,26 @@
             </section>
         </div>
 
+        <!-- Classic scripts sharing one global scope, exactly like the single
+             app.js they were split from — load order must match the original
+             top-to-bottom section order. -->
+        <script src="/js/mock.js"></script>
+        <script src="/js/state.js"></script>
+        <script src="/js/line-numbers.js"></script>
+        <script src="/js/text-utils.js"></script>
+        <script src="/js/theme.js"></script>
+        <script src="/js/auth.js"></script>
+        <script src="/js/modal.js"></script>
+        <script src="/js/custom-select.js"></script>
+        <script src="/js/tooltip.js"></script>
+        <script src="/js/nav.js"></script>
+        <script src="/js/settings.js"></script>
+        <script src="/js/providers.js"></script>
+        <script src="/js/proxy.js"></script>
+        <script src="/js/proxy-actions.js"></script>
+        <script src="/js/results.js"></script>
+        <script src="/js/dead-keys.js"></script>
+        <script src="/js/common.js"></script>
         <script src="/app.js"></script>
     </body>
 

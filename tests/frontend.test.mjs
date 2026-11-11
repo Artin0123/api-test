@@ -1,7 +1,7 @@
 /**
  * Frontend invariants that a syntax check cannot catch:
- *  - every DOM id app.js looks up must exist in index.html (typos fail silently)
- *  - maskKey() must behave identically in app.js and _worker.js
+ *  - every DOM id the app scripts look up must exist in index.html (typos fail silently)
+ *  - maskKey() must behave identically in the app scripts and _worker.js
  *  - the CSP invariants (no inline <script>, no style="" attribute)
  *
  * These parse the files instead of running a browser, so they stay fast and run
@@ -13,7 +13,17 @@ import { readFileSync } from "node:fs";
 
 const read = (name) => readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
 const html = read("index.html");
-const app = read("app.js");
+// app.js is split into public/js/*.js plus the app.js entry, and style.css into
+// style-*.css sections. Read them in the exact order index.html loads them so
+// text assertions and function-slice assertions behave like the single-file era.
+const scriptSrcs = [...html.matchAll(/<script\s+src="\/([^"]+)"><\/script>/g)]
+  .map((m) => m[1])
+  .filter((src) => src !== "boot.js");
+const app = scriptSrcs.map(read).join("\n");
+const css = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="\/([^"]+)"/g)]
+  .map((m) => m[1])
+  .map(read)
+  .join("\n");
 const worker = read("_worker.js");
 
 test("every DOM id referenced by app.js exists in index.html", () => {
@@ -44,8 +54,19 @@ test("the page keeps the CSP invariants", () => {
   assert.ok(!/\sstyle="/i.test(app), 'app.js must not build style="" attributes');
 });
 
+test("every loaded stylesheet uses only /* */ comments", () => {
+  // `//` is not a CSS comment. At the top of a stylesheet the browser silently
+  // swallows it together with the next rule (or an entire @media block) — no
+  // console error, styling just vanishes. This is exactly the bug the 2026-11
+  // style.css split shipped with, so guard every loaded stylesheet.
+  const sheets = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="\/([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(sheets.length > 1, "index.html should load the split stylesheets");
+  for (const src of sheets) {
+    assert.doesNotMatch(read(src), /(^|\n)\s*\/\//, `${src} must not contain // line comments (invalid CSS)`);
+  }
+});
+
 test("proxy assets referenced by the page exist in style.css", () => {
-  const css = read("style.css");
   for (const cls of [
     "proxy-toolbar",
     "proxy-toolbar-row",
@@ -106,7 +127,6 @@ test("dead keys filter panel is always visible without manual add row or toggle"
 });
 
 test("proxy toolbar keeps an outer frame with inner spacing", () => {
-  const css = read("style.css");
   const block = css.match(/\.proxy-toolbar\s*\{([^}]+)\}/);
   assert.ok(block, ".proxy-toolbar rule not found");
   assert.match(block[1], /\bborder\s*:/, ".proxy-toolbar needs a border");
@@ -122,7 +142,6 @@ test("proxy toolbar keeps an outer frame with inner spacing", () => {
 });
 
 test("shared button borders, select height, and mobile compact button rules stay aligned", () => {
-  const css = read("style.css");
   assert.match(css, /\.btn\s*\{[^}]*border:\s*1px solid transparent/s);
   assert.match(css, /\.input-text,\s*\.input-select\s*\{[^}]*height:\s*var\(--control-h\)/s);
   const mobileBlock = css.slice(css.indexOf("@media (max-width: 640px)"));
@@ -147,7 +166,6 @@ test("async tab loaders guard stale requests and proxy batch keeps key results",
 });
 
 test("dead keys provider labels, responsive key masking, and flat desktop select rules stay intact", () => {
-  const css = read("style.css");
   assert.ok(!html.includes("供应商域名"), "index.html should use 供应商 instead of 供应商域名");
   assert.ok(!html.includes("域名供应商"), "index.html should use 供应商 instead of 域名供应商");
   assert.ok(!app.includes("域名供应商"), "app.js should use 供应商 instead of 域名供应商");
@@ -190,7 +208,6 @@ test("proxy toolbar places recover-all button next to test-disabled and scopes b
 });
 
 test("Batch 1 simplifications remove dead-key editor, gateway_provider, and _uiKey", () => {
-  const css = read("style.css");
   for (const id of ["ed-gateway-provider", "dkedit-overlay", "dkedit-save-btn", "dke-host"]) {
     assert.ok(!html.includes(`id="${id}"`), `index.html still has #${id}`);
   }
@@ -206,7 +223,6 @@ test("Batch 1 simplifications remove dead-key editor, gateway_provider, and _uiK
 });
 
 test("Batch 2 moves gateway and proxy config into settings modal without env reads", () => {
-  const css = read("style.css");
   for (const id of [
     "set-proxy-password",
     "set-gateway-logs-url",
@@ -224,7 +240,6 @@ test("Batch 2 moves gateway and proxy config into settings modal without env rea
 });
 
 test("Batch 3 removes refresh buttons, checkpoint bars, avg TTFT, and unifies copy icon buttons", () => {
-  const css = read("style.css");
   for (const id of ["refresh-results-btn", "dk-refresh-btn", "proxy-refresh-btn"]) {
     assert.ok(!html.includes(`id="${id}"`), `index.html still has #${id}`);
     assert.ok(!app.includes(id), `app.js still references ${id}`);
@@ -259,7 +274,6 @@ test("review fixes keep confirm labels fp-aware, URLs http(s)-guarded, and remov
 });
 
 test("editor modal marks required fields, places error left of save button, and portals info tooltip above select menu", () => {
-  const css = read("style.css");
   const editorSection = html.match(/<div id="editor-overlay"[\s\S]*?<\/section>\s*<\/div>/);
   assert.ok(editorSection, "#editor-overlay markup not found");
   const editorMarkup = editorSection[0];
@@ -329,7 +343,6 @@ test("editor and settings modals replace inline hint text with info tooltips and
 });
 
 test("dead keys host menu uses Name - Format, date filters stay empty, proxy summary uses segmented readout + count tooltips, and results copy buttons sit on titles", () => {
-  const css = read("style.css");
   const fillHostFn = app.slice(app.indexOf("function fillHostSelect"), app.indexOf("const DK_CODE_NONE"));
   assert.match(fillHostFn, /providerFormatLabel\(e\.provider,\s*e\.host\)/);
   assert.doesNotMatch(fillHostFn, /e\.multiOnHost/);
@@ -416,7 +429,6 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
 });
 
 test("editor deduplicates keys/models keeping first occurrence, results CTA updated, KV hides proxy UI, and settings fields reordered with secret controls", () => {
-  const css = read("style.css");
 
   // 1. Key/Model deduplication preserving first occurrence
   const sliceFn = (startMarker, endMarker) =>

@@ -42,16 +42,31 @@ Cloudflare AI Gateway（custom-{别名}）→ 上游 API
 ```text
 public/
   _worker.js     Cloudflare Pages 网关（API、轮询转发与 KV/D1 转接层）
+                 ⚠ 生成文件：由 `npm run build` 从 src/*.js 依序拼接而来
+                 ⚠ Cloudflare Pages 進階模式規定 _worker.js 必須是單一可執行檔，勿直接編輯
   index.html     前端页面
-  style.css      页面样式
-  app.js         前端逻辑
+  style.css      页面样式（基础段；样式另拆为 style-forms/modals/deadkeys/proxy/rwd.css，
+                 由 index.html 依序加载）
+  app.js         前端逻辑入口（事件绑定与启动；其余逻辑拆分于 public/js/*.js，
+                 由 index.html 依序加载，均为共享全局作用域的普通脚本）
+  js/            前端逻辑分段（mock / state / settings / providers / proxy / results /
+                 dead-keys 等，载入顺序必须与拆分前一致）
+src/             _worker.js 的源码分段（entry / storage / auth / settings / dead-keys /
+                 proxy / proxy-handlers / storage-migrate 等，拼接顺序由
+                 scripts/build-worker.mjs 固定）
 scripts/
+  build-worker.mjs      将 src/*.js 拼接回 public/_worker.js
+  check-syntax.mjs      对所有 JS 文件做 node --check
   migrate-kv-to-d1.mjs  KV → D1 迁移与备份恢复工具
 tests/                  离线回归测试套件（模拟 KV/D1 与本地 mock 上游）
 async_test_keys.py      每日批量并发检测脚本
 .github/workflows/      GitHub Actions 定时工作流
 docs/                   规范快照、扩展计划与决策记录
 ```
+
+> **修改 Worker 程式码**：一律编辑 `src/*.js` 后执行 `npm run build`（`npm run check`
+> 也会先执行一次），再提交生成的 `public/_worker.js`。Cloudflare Pages 進階模式在部署時
+> 只讀取單一 `_worker.js`，因此生成檔需一併入库。
 
 ## 快速开始
 
@@ -161,6 +176,7 @@ npm run dev:d1    # 本地 D1（需在根目录 .dev.vars 配置 ADMIN_PASSWORD�
 # 浏览器打开 http://127.0.0.1:8788/?mock
 
 # 4. 语法检查与离线回归测试（使用模拟 KV/D1 与本地 mock 上游，不请求真实密钥）
+#    check 会先执行 npm run build 将 src/*.js 拼接回 public/_worker.js
 npm run check
 npm test
 ```

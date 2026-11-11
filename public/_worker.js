@@ -1,3 +1,4 @@
+// src/entry.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 /**
  * Cloudflare Pages API Gateway — async_test_keys edition
  *
@@ -157,6 +158,7 @@ export default {
 // until they have created D1, bound it as DB and run the migration — deploying
 // without that order turns every /api request into a 500.
 
+// src/storage.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const D1_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS store (k TEXT PRIMARY KEY, v TEXT NOT NULL)",
   "CREATE TABLE IF NOT EXISTS key_state (" +
@@ -324,6 +326,7 @@ function text(value, status = 200) {
 
 // ─── auth ───────────────────────────────────────────────────────────────────
 
+// src/auth.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const SESSION_COOKIE = "atk_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // Bumping this invalidates every cookie in circulation without touching the password.
@@ -465,6 +468,7 @@ async function sha256Hex(str) {
     .join("");
 }
 
+// src/utils.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 /**
  * Compute provider fingerprint.
  * Keys sorted alphabetically: { api_base, provider_type }
@@ -483,6 +487,7 @@ function getNonEmptyString(url, param) {
 
 // ─── /api/settings ──────────────────────────────────────────────────────────
 
+// src/settings.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const SETTINGS_KEY = "app_settings";
 
 const DEFAULT_SETTINGS = {
@@ -752,6 +757,7 @@ function validateProviderAliases(providers) {
   return null;
 }
 
+// src/settings-handlers.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 async function handleGetSettings(request, env) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
@@ -1065,6 +1071,7 @@ function settingsDataEqual(existing, next) {
 
 // ─── /api/results ────────────────────────────────────────────────────────────
 
+// src/results.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 async function handleGetResults(request, env, url) {
   // Authenticated: the stored results carry plaintext keys (valid_keys and
   // invalid_records[].api_key), and fp is derived from public inputs
@@ -1156,6 +1163,7 @@ async function handlePostResults(request, env) {
 
 // ─── /api/run-status ─────────────────────────────────────────────────────────
 
+// src/run-status.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const RUN_STATUS_KEY = "test_run_status";
 const RUN_STATUS_TTL_MS = 90 * 60 * 1000;
 
@@ -1227,6 +1235,7 @@ async function handleDeleteRunStatus(request, env) {
 
 // ─── /api/dead-keys ──────────────────────────────────────────────────────────
 
+// src/dead-keys.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const DEAD_KEYS_KEY = "dead_keys";
 
 async function readDeadKeys(kv) {
@@ -1649,6 +1658,7 @@ async function handleDeleteDeadKey(request, env, url) {
   return json({ ok: true, deleted: removed.length, dead_keys: next });
 }
 
+// src/proxy.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 // ─── shared proxy helpers ───────────────────────────────────────────────────
 
 // Fetch already decodes the body, so re-streaming it while keeping the upstream
@@ -2225,6 +2235,7 @@ async function handleProxy(request, env, url) {
 
 // ─── /api/proxy/state ──────────────────────────────────────────────────────
 
+// src/proxy-handlers.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const SAMPLE_PATHS = {
   openai: "/chat/completions",
   gemini: "/models/{model}:streamGenerateContent?alt=sse",
@@ -2681,6 +2692,7 @@ async function handleProxyTestModel(request, env) {
   return json({ ok: true, test_model: model });
 }
 
+// src/storage-migrate.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 // ─── /api/storage/* (migration + backup) ───────────────────────────────────
 // These endpoints deliberately work even when STORAGE_BACKEND points at a
 // backend that is not usable yet: export only needs KV, and that is exactly the

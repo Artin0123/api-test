@@ -1,0 +1,263 @@
+/* Split from the original style.css; loaded in original order (after style.css). */
+/* ── Proxy (rotation / forwarding) tab ──────────────────────────────────── */
+/* Toolbar on top (provider picker + actions), one card per key below.
+   The provider itself is a <select>, not a card: per-provider cards turned into
+   very tall columns once a provider had more than a handful of keys.
+
+   The toolbar shares its framed surface with .dk-filter-panel above,
+   while the empty state reuses .state-card. */
+.proxy-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.proxy-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Keep toolbar captions styled identically to .field-label in dead-keys/modals. */
+.proxy-toolbar-label,
+.proxy-summary-label,
+.proxy-model-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Segmented two-cell readout matching --control-h beside the model controls:
+   each count sits in its own bordered compartment and expands with digits. */
+.proxy-summary-group {
+    display: inline-flex;
+    align-items: stretch;
+    height: var(--control-h);
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.proxy-summary-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    /* Fixed width sized for up to 5 glyphs (e.g. "9999+"); never widens past that. */
+    width: calc(5ch + 1.5rem);
+    padding: 0 0.75rem;
+}
+
+.proxy-summary-cell + .proxy-summary-cell {
+    border-left: 1px solid var(--border);
+}
+
+.proxy-summary-ok {
+    color: var(--ok-soft);
+}
+
+.proxy-summary-fail {
+    color: var(--fail-soft);
+}
+
+.proxy-summary-num {
+    font-size: var(--text-base);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.proxy-toolbar-row {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+/* Controls in these rows share --control-h with single-line inputs/selects.
+   .btn-sm stays on the HTML for tighter horizontal padding, while vertical
+   padding and font size match adjacent selects so the band reads as one line. */
+.proxy-toolbar-row .btn:not(.btn-icon),
+.keys-toolbar .btn:not(.btn-icon),
+.add-header-btn {
+    min-height: var(--control-h);
+}
+
+.proxy-toolbar-row .btn:not(.btn-icon) {
+    height: var(--control-h);
+    padding-block: 0;
+    font-size: var(--text-sm);
+}
+
+/* The provider select is one block, as wide as a provider card in the other tab
+   (340px at the 1280 three-column layout), and the forwarding URL fills the rest
+   of the line. A fixed width rather than a share of the row: the select is the
+   same object here as a card is there, so it should look the same size. The API
+   format lives inside each option now, so there is no caption under the select. */
+.proxy-provider-col {
+    flex: 0 0 21.25rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.proxy-provider-col .input-select {
+    width: 100%;
+}
+
+/* The provider row is a select and the URL beside it. Both are one control tall,
+   so they share the same top and centre line. */
+.proxy-toolbar-row--provider {
+    align-items: center;
+}
+
+/* Row two: probe model selector and key-state counts left-aligned together,
+   with batch test / recover actions anchored against the right edge. */
+.proxy-toolbar-row--model {
+    align-items: center;
+}
+
+.proxy-provider-group,
+.proxy-url-group,
+.proxy-model-group,
+.proxy-action-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.proxy-provider-group {
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+
+.proxy-url-group {
+    flex: 1 1 20rem;
+    min-width: 0;
+}
+
+.proxy-model-group,
+.proxy-action-group {
+    flex-wrap: wrap;
+}
+
+.proxy-action-group {
+    margin-left: auto;
+}
+
+.proxy-model-heading {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+/* The probe model now comes from the provider's own Models list (来源设定), so it
+   is a select too — 15rem, enough for the longest model name without taking a
+   third of the row. `flex: none` plus an explicit width matter for the group's
+   intrinsic size: with a shrinkable flex-basis the group measured only the
+   select's text width and wrapped its last two buttons onto a second line. */
+.proxy-model-select,
+.proxy-model-group > .custom-select {
+    flex: none;
+    width: 15rem;
+    max-width: 100%;
+}
+
+.proxy-url-wrap {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+/* Square copy button matching the select/URL row height (--control-h) at every
+   breakpoint, with its vector icon scaled up proportionally. */
+.btn.proxy-url-copy {
+    width: var(--control-h);
+    height: var(--control-h);
+    padding: 0;
+}
+
+.btn.proxy-url-copy svg {
+    width: 1.15rem;
+    height: 1.15rem;
+}
+
+/* Display-only monospace forwarding URL box paired with a uniform copy button. */
+.proxy-url {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    padding: 0 0.9rem;
+    line-height: calc(var(--control-h) - 2px);
+    background: var(--bg-3);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* No alias on this provider, so show muted placeholder text. */
+.proxy-url.is-disabled {
+    color: var(--text-muted);
+}
+
+.proxy-key-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+/* Typography & truncation are shared with .provider-card-host above.
+   min-width: 0 + padding: 0 + background: none drop the inline <code> chip box. */
+.proxy-key-mask {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    font-family: var(--mono);
+    color: var(--text);
+}
+
+.proxy-key-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.proxy-key-card-btns {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+/* No reserved height: an untested key should not look like it is hiding text,
+   and :empty keeps the card's flex gap from adding a phantom row. */
+.proxy-test-result {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+.proxy-test-result:empty {
+    display: none;
+}
+
+.proxy-test-result.ok {
+    color: var(--ok);
+}
+
+.proxy-test-result.fail {
+    color: var(--fail);
+}
