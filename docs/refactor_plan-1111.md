@@ -129,6 +129,6 @@
 
 - [x] **Batch 1（P1, P3, P6, P8）**：禁止重複服務商與移除 `fp#0`、移除 `dead_keys` 編輯功能、改用 `fp` 對帳與刪卡連動清理、`db.batch()` 原子同步設定與 `key_state`（移除熱路徑幽靈／補列防線）、移除 `gateway_provider` 改由 `alias` 取代
 - [x] **Batch 2（P4, P7, P9, P10, P13）**：強制經由 Cloudflare AI Gateway（從 Logs URL 反拆雙 ID）、轉發設定與密碼搬入「`设定`」彈窗、`cf-aig-metadata` 明文送出、`only reply 1.` / `max_tokens: 8` 非串流探測、手動測試成功自動歸零並解除禁用
-- [ ] **Batch 3（P2, P5, P11, P12 UI）**：移除各分頁「`重新读取`」、全域 `/api/run-status`（90 分鐘惰性過期）與「`⏳ 执行中`」膠囊、「`立即执行`」移入「`测试结果`」、移除「`avg TTFT`」欄、全站統一為複製圖示按鈕
+- [x] **Batch 3（P2, P5, P11, P12 UI）**：移除各分頁「`重新读取`」、全域 `/api/run-status`（90 分鐘惰性過期）與「`⏳ 执行中`」膠囊、「`立即执行`」移入「`测试结果`」、移除「`avg TTFT`」欄、全站統一為複製圖示按鈕
 - [ ] **Batch 4（P5 GHA/Python, P12 Engine）**：`async_test_keys.py` 純非串流、僅分 `2xx`／非 `2xx`、僅 `401` 熔斷、僅保留 `Ctrl+C` 寫入 `checkpoint.json`、前後連動 `/api/run-status` ＋ `.github/workflows/main.yml` 加入 `if: always()` 清除狀態
 - [ ] **Batch 5（文件與最終驗證）**：更新並改名 `docs/decision-*.md`、更新 `docs/architecture.md` 與 `README.md`、全套語法與離線測試驗證通過

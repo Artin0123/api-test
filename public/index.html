@@ -114,14 +114,6 @@
                         </button>
                     </nav>
                     <div class="topbar-actions">
-                        <a
-                            id="run-now-btn"
-                            class="btn btn-primary"
-                            href="#"
-                            target="_blank"
-                            rel="noreferrer"
-                            >立即执行</a
-                        >
                         <button
                             id="settings-btn"
                             class="btn btn-secondary"
@@ -210,15 +202,29 @@
                 <section id="tab-results" class="tab-panel hidden">
                     <div class="panel-head">
                         <div>
-                            <h2>测试结果</h2>
+                            <div class="results-title-row">
+                                <h2>测试结果</h2>
+                                <span
+                                    id="results-running-badge"
+                                    class="badge badge-warn hidden"
+                                    >⏳ 执行中</span
+                                >
+                            </div>
                         </div>
-                        <button
-                            id="refresh-results-btn"
-                            class="btn btn-secondary"
-                            type="button"
-                        >
-                            重新读取
-                        </button>
+                        <div class="panel-head-actions">
+                            <a
+                                id="run-now-btn"
+                                class="btn btn-primary"
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-disabled="true"
+                                >立即执行<span
+                                    class="btn-ext"
+                                    aria-hidden="true"
+                                    >↗</span
+                                ></a
+                            >
+                        </div>
                     </div>
 
                     <div id="results-loading" class="state-card">
@@ -242,15 +248,6 @@
                             <p class="muted">
                                 自动记录已失效的 Key、失效时间与供应商回传的错误讯息。
                             </p>
-                        </div>
-                        <div class="panel-head-actions">
-                            <button
-                                id="dk-refresh-btn"
-                                class="btn btn-secondary"
-                                type="button"
-                            >
-                                重新读取
-                            </button>
                         </div>
                     </div>
 
@@ -395,13 +392,6 @@
                             </p>
                         </div>
                         <div class="panel-head-actions">
-                            <button
-                                id="proxy-refresh-btn"
-                                class="btn btn-secondary"
-                                type="button"
-                            >
-                                重新读取
-                            </button>
                             <a
                                 id="proxy-logs"
                                 class="btn btn-primary"
@@ -434,13 +424,20 @@
                                     aria-label="服务商"
                                 ></select>
                             </div>
-                            <code
-                                id="proxy-url"
-                                class="input-text proxy-url"
-                                role="button"
-                                tabindex="0"
-                                title="点击复制转发网址"
-                            ></code>
+                            <div class="proxy-url-wrap">
+                                <code
+                                    id="proxy-url"
+                                    class="input-text proxy-url"
+                                ></code>
+                                <button
+                                    id="proxy-url-copy"
+                                    class="btn btn-ghost btn-xs btn-icon copy-btn"
+                                    type="button"
+                                    title="复制转发网址"
+                                    aria-label="复制转发网址"
+                                    disabled
+                                ></button>
+                            </div>
                         </div>
                         <div class="proxy-toolbar-row proxy-toolbar-row--model">
                             <div id="proxy-summary" class="proxy-summary"></div>

@@ -212,3 +212,22 @@ test("Batch 2 moves gateway and proxy config into settings modal without env rea
   assert.ok(!worker.includes("metadataKeyTag"), "_worker.js still has metadataKeyTag");
   assert.ok(!app.includes("AI_GATEWAY_LOGS_URL"), "app.js should not refer to env AI_GATEWAY_LOGS_URL");
 });
+
+test("Batch 3 removes refresh buttons, checkpoint bars, avg TTFT, and unifies copy icon buttons", () => {
+  const css = read("style.css");
+  for (const id of ["refresh-results-btn", "dk-refresh-btn", "proxy-refresh-btn"]) {
+    assert.ok(!html.includes(`id="${id}"`), `index.html still has #${id}`);
+    assert.ok(!app.includes(id), `app.js still references ${id}`);
+  }
+  const resultsMatch = html.match(/<section id="tab-results"[\s\S]*?<\/section>/);
+  assert.ok(resultsMatch, "#tab-results section not found");
+  assert.ok(resultsMatch[0].includes('id="run-now-btn"'), "run-now-btn must live inside #tab-results");
+  assert.ok(resultsMatch[0].includes('id="results-running-badge"'), "results-running-badge missing from #tab-results");
+  assert.ok(html.includes('id="proxy-url-copy"'), "index.html missing #proxy-url-copy");
+  assert.ok(css.includes(".proxy-url-wrap"), "style.css missing .proxy-url-wrap");
+  assert.ok(css.includes(".results-title-row"), "style.css missing .results-title-row");
+  for (const deadToken of ["hasUsableCheckpoint", "renderCheckpointBar", "copyProxyUrl", "avg TTFT", "一键复制"]) {
+    assert.ok(!app.includes(deadToken), `app.js still contains ${deadToken}`);
+  }
+  assert.ok(!css.includes(".checkpoint-bar"), "style.css still contains .checkpoint-bar");
+});

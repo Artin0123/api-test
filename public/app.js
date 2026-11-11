@@ -160,7 +160,7 @@ const dom = {
   configSaveError: $("config-save-error"),
 
   // results tab
-  refreshBtn: $("refresh-results-btn"),
+  resultsRunningBadge: $("results-running-badge"),
   resultsLoading: $("results-loading"),
   resultsError: $("results-error"),
   resultsEmpty: $("results-empty"),
@@ -218,7 +218,6 @@ const dom = {
   sampleContent: $("sample-content"),
 
   // dead keys tab
-  dkRefreshBtn: $("dk-refresh-btn"),
   dkBulkDelBtn: $("dk-bulk-del-btn"),
   dkFHost: $("dk-f-host"),
   dkFKey: $("dk-f-key"),
@@ -246,7 +245,6 @@ const dom = {
   errDetailContent: $("errdetail-content"),
 
   // proxy tab
-  proxyRefreshBtn: $("proxy-refresh-btn"),
   proxyNotice: $("proxy-notice"),
   proxyLoading: $("proxy-loading"),
   proxyError: $("proxy-error"),
@@ -256,6 +254,7 @@ const dom = {
   proxyProvider: $("proxy-provider"),
   proxySummary: $("proxy-summary"),
   proxyUrl: $("proxy-url"),
+  proxyUrlCopy: $("proxy-url-copy"),
   proxyTestModel: $("proxy-test-model"),
   proxySaveModel: $("proxy-save-model"),
   proxyTestActive: $("proxy-test-active"),
@@ -1087,7 +1086,16 @@ async function testDiscordWebhook() {
 
 function applySettingsToUI() {
   const s = state.settings || {};
-  if (s.github_url) dom.runNowBtn.href = s.github_url;
+  const url = String(s.github_url || "").trim();
+  if (url) {
+    dom.runNowBtn.href = url;
+    dom.runNowBtn.removeAttribute("aria-disabled");
+    dom.runNowBtn.title = "前往 GitHub Actions 立即执行测试";
+  } else {
+    dom.runNowBtn.removeAttribute("href");
+    dom.runNowBtn.setAttribute("aria-disabled", "true");
+    dom.runNowBtn.title = "请在右上角「设定」填写 GitHub Actions URL 后可用";
+  }
 }
 
 // ── Config tab ─────────────────────────────────────────────────────────────
@@ -2021,16 +2029,11 @@ function renderProxyModelSelect(p) {
 }
 
 let proxySaveModelTimer = null;
-let proxyUrlTimer = null;
 
 function renderProxyToolbar() {
   if (proxySaveModelTimer) {
     clearTimeout(proxySaveModelTimer);
     proxySaveModelTimer = null;
-  }
-  if (proxyUrlTimer) {
-    clearTimeout(proxyUrlTimer);
-    proxyUrlTimer = null;
   }
   dom.proxySaveModel.textContent = "保存模型";
   const p = selectedProxyProvider();
@@ -2060,10 +2063,9 @@ function renderProxyToolbar() {
     makeSummaryItem("proxy-summary-fail", "无效", Math.max(total - available, 0)),
   );
   dom.proxyUrl.textContent = url || "（尚未设定转发别名）";
-  dom.proxyUrl.dataset.copyVal = url;
-  // Nothing to copy without an alias, so the field must not look clickable.
   dom.proxyUrl.classList.toggle("is-disabled", !url);
-  dom.proxyUrl.classList.remove("is-copied");
+  dom.proxyUrlCopy.dataset.copyVal = url;
+  dom.proxyUrlCopy.disabled = !url;
   renderProxyModelSelect(p);
   const hasModels = proxyModelOptions(p).length > 0;
   dom.proxyTestModel.disabled = !enabled || !hasModels;
@@ -2357,7 +2359,6 @@ function proxyActionButtons() {
     dom.proxyTestDisabled,
     dom.proxyRecoverAll,
     dom.proxySaveModel,
-    dom.proxyRefreshBtn,
     dom.proxyProvider,
   ];
 }
@@ -2403,7 +2404,6 @@ async function runProxyBatch(mode) {
   } finally {
     // Reset both flag and UI controls even if requests or reload fail.
     state.proxyBusy = false;
-    dom.proxyRefreshBtn.disabled = false;
     dom.proxyProvider.disabled = false;
     renderProxyToolbar();
     updateProxyCardButtonsDisabled();
@@ -2553,7 +2553,6 @@ async function recoverAllProxyKeys() {
     return;
   } finally {
     state.proxyBusy = false;
-    dom.proxyRefreshBtn.disabled = false;
     dom.proxyProvider.disabled = false;
     renderProxyToolbar();
     updateProxyCardButtonsDisabled();
@@ -2586,6 +2585,7 @@ async function loadResults() {
         const mock = await getMock();
         if (reqId !== state.reqSeq.results) return;
         state.settings = mock.settings;
+        applySettingsToUI();
       } else {
         const d = await api("/api/settings", { auth: true });
         if (reqId !== state.reqSeq.results) return;
@@ -2595,63 +2595,72 @@ async function loadResults() {
     }
 
     const providers = state.settings.providers || [];
+    const runStatusPromise = MOCK
+      ? getMock().then((m) => m.run_status || { running: false })
+      : api("/api/run-status", { auth: true }).catch(() => ({
+          running: false,
+        }));
+
     if (!providers.length) {
+      const runStatus = await runStatusPromise;
+      if (reqId !== state.reqSeq.results) return;
+      const running = !!(runStatus && runStatus.running);
+      dom.resultsRunningBadge.classList.toggle("hidden", !running);
+      dom.resultsEmpty.textContent = running
+        ? "测试正在进行中，尚无历史结果。"
+        : "尚无测试结果，请先执行一次测试。";
       dom.resultsEmpty.classList.remove("hidden");
       return;
     }
 
-    // Fetch results + checkpoints per provider in parallel
-    const bundles = await Promise.all(
-      providers.map(async (p) => {
-        const payload = fingerprintPayload(p);
-        let fp = state.fpCache.get(payload);
-        if (!fp) {
-          fp = await sha256(payload);
-          state.fpCache.set(payload, fp);
-        }
-        const host = extractHost(p.api_base);
+    // Fetch per-provider results and global test_run_status in parallel
+    const [bundles, runStatus] = await Promise.all([
+      Promise.all(
+        providers.map(async (p) => {
+          const payload = fingerprintPayload(p);
+          let fp = state.fpCache.get(payload);
+          if (!fp) {
+            fp = await sha256(payload);
+            state.fpCache.set(payload, fp);
+          }
+          const host = extractHost(p.api_base);
 
-        let resultData = { exists: false };
-        let checkpointData = { exists: false };
-
-        if (MOCK) {
-          const mock = await getMock();
-          resultData = (mock.results || {})[host] || { exists: false };
-          checkpointData = (mock.checkpoints || {})[host] || { exists: false };
-        } else {
-          [resultData, checkpointData] = await Promise.all([
-            api(`/api/results?fp=${encodeURIComponent(fp)}`, {
-              auth: true,
-            }).catch(() => ({ exists: false })),
-            api(`/api/checkpoint?fp=${encodeURIComponent(fp)}`, {
-              auth: true,
-            }).catch(() => ({ exists: false })),
-          ]);
-        }
-        return { provider: p, fp, host, resultData, checkpointData };
-      }),
-    );
+          let resultData = { exists: false };
+          if (MOCK) {
+            const mock = await getMock();
+            resultData = (mock.results || {})[host] || { exists: false };
+          } else {
+            resultData = await api(
+              `/api/results?fp=${encodeURIComponent(fp)}`,
+              { auth: true },
+            ).catch(() => ({ exists: false }));
+          }
+          return { provider: p, fp, host, resultData };
+        }),
+      ),
+      runStatusPromise,
+    ]);
 
     if (reqId !== state.reqSeq.results) return;
 
-    const hasAny = bundles.some(
-      (b) =>
-        b.resultData.exists ||
-        hasUsableCheckpoint(b.resultData, b.checkpointData),
-    );
-    if (!hasAny) {
+    const running = !!(runStatus && runStatus.running);
+    dom.resultsRunningBadge.classList.toggle("hidden", !running);
+    if (running && runStatus.started_at) {
+      dom.resultsRunningBadge.title = `开始于 ${fmtDateTime(runStatus.started_at)}`;
+    } else {
+      dom.resultsRunningBadge.removeAttribute("title");
+    }
+
+    const withResults = bundles.filter((b) => b.resultData.exists);
+    if (!withResults.length) {
+      dom.resultsEmpty.textContent = running
+        ? "测试正在进行中，尚无历史结果。"
+        : "尚无测试结果，请先执行一次测试。";
       dom.resultsEmpty.classList.remove("hidden");
       return;
     }
 
-    // Sort: executing (has usable checkpoint) first
-    bundles.sort((a, b) => {
-      const aExec = hasUsableCheckpoint(a.resultData, a.checkpointData) ? 1 : 0;
-      const bExec = hasUsableCheckpoint(b.resultData, b.checkpointData) ? 1 : 0;
-      return bExec - aExec;
-    });
-
-    dom.resultsBody.innerHTML = bundles.map(renderProviderResult).join("");
+    dom.resultsBody.innerHTML = withResults.map(renderProviderResult).join("");
     // Seed line numbers in result copy blocks
     dom.resultsBody
       .querySelectorAll(".result-lined-editor textarea")
@@ -2670,20 +2679,14 @@ async function loadResults() {
   }
 }
 
-function renderProviderResult({ provider, host, resultData, checkpointData }) {
-  const hasResult = resultData.exists;
-  const hasCheckpoint = hasUsableCheckpoint(resultData, checkpointData);
-  const r = hasResult ? resultData.results : null;
+function renderProviderResult({ provider, host, resultData }) {
+  const r = resultData.exists ? resultData.results : null;
 
   const uploadedAt = r?.uploaded_at
     ? `上次更新：${fmtDateTime(r.uploaded_at)}`
     : "";
 
-  const checkpointHtml = hasCheckpoint
-    ? renderCheckpointBar(checkpointData.checkpoint || checkpointData)
-    : "";
-
-  const bodyHtml = hasResult
+  const bodyHtml = r
     ? renderResultBody(r)
     : `<p class="muted empty-note">尚无测试结果。</p>`;
 
@@ -2693,47 +2696,15 @@ function renderProviderResult({ provider, host, resultData, checkpointData }) {
         <div class="rgh-main">
           <div class="rgh-top">
             <span class="badge">${esc(provider.provider_type)}</span>
-            ${hasCheckpoint ? `<span class="badge badge-warn">⏳ 执行中</span>` : ""}
             <span class="rgh-arrow">▼</span>
           </div>
           <div class="rgh-host" title="${esc(provider.api_base)}">${esc(host)}</div>
           ${uploadedAt ? `<div class="rgh-time muted">${esc(uploadedAt)}</div>` : ""}
         </div>
       </div>
-      ${checkpointHtml}
       <div class="result-group-body">
         ${bodyHtml}
       </div>
-    </div>
-  `;
-}
-
-function hasUsableCheckpoint(resultData, checkpointData) {
-  if (!checkpointData.exists) return false;
-  if (!resultData.exists) return true;
-
-  const r = resultData.results;
-  if (!r?.uploaded_at) return true;
-
-  const ck = checkpointData.checkpoint || checkpointData;
-  const ckTime = ck?.saved_at ? new Date(ck.saved_at).getTime() : 0;
-  const resTime = new Date(r.uploaded_at).getTime();
-  if (!Number.isFinite(resTime)) return true;
-  if (!Number.isFinite(ckTime) || ckTime <= 0) return false;
-  return ckTime >= resTime;
-}
-
-function renderCheckpointBar(ck) {
-  const completed = ck.completed_tasks ?? 0;
-  const total = ck.total_tasks ?? 0;
-  const deadCount = Array.isArray(ck.dead_keys) ? ck.dead_keys.length : 0;
-  const savedAt = ck.saved_at ? fmtTime(ck.saved_at) : "-";
-  return `
-    <div class="checkpoint-bar">
-      <span class="checkpoint-bar-label">⏳ 进行中</span>
-      <span class="checkpoint-bar-meta">进度：${completed} / ${total} 任务</span>
-      <span class="checkpoint-bar-meta">已判死 Key：${deadCount} 个</span>
-      <span class="checkpoint-bar-meta">最后存档：${esc(savedAt)}</span>
     </div>
   `;
 }
@@ -2756,7 +2727,7 @@ function renderResultBody(r) {
           <div class="line-nums" aria-hidden="true"></div>
           <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(validKeys.join("\n"))}</textarea>
         </div>
-        <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(validKeys.join("\n"))}" type="button">一键复制</button>
+        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(validKeys.join("\n"))}" type="button" title="复制全部有效 Key" aria-label="复制全部有效 Key">${COPY_ICON_SVG}</button>
       </div>
     </div>
 
@@ -2770,7 +2741,7 @@ function renderResultBody(r) {
           <div class="line-nums" aria-hidden="true"></div>
           <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(provenModels.join(","))}</textarea>
         </div>
-        <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(provenModels.join(","))}" type="button">一键复制</button>
+        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(provenModels.join(","))}" type="button" title="复制全部有效模型" aria-label="复制全部有效模型">${COPY_ICON_SVG}</button>
       </div>
     </div>
 
@@ -2805,7 +2776,6 @@ function renderPerfTable(modelPerf) {
   const rows = models
     .map((model) => {
       const p = modelPerf[model];
-      const ttft = p.avg_ttft != null ? `${p.avg_ttft}s` : "-";
       const total = p.avg_total != null ? `${p.avg_total}s` : "-";
       const toRate =
         p.timeout_rate != null
@@ -2832,7 +2802,6 @@ function renderPerfTable(modelPerf) {
       return `<tr>
       <td data-value="${esc(model)}"><code>${esc(model)}</code></td>
       <td data-value="${p.sample_count ?? ""}">${p.sample_count ?? 0}</td>
-      <td data-value="${p.avg_ttft ?? ""}" class="na">${esc(ttft)}</td>
       <td data-value="${p.avg_total ?? ""}" class="na">${esc(total)}</td>
       <td data-value="${p.timeout_rate ?? ""}">${toRate}</td>
       <td data-value="${p.has_thinking_ratio ?? ""}" class="na">${esc(thinkRatio)}</td>
@@ -2848,7 +2817,6 @@ function renderPerfTable(modelPerf) {
         <thead><tr>
           <th data-sort="model">模型 <span class="sort-indicator"></span></th>
           <th data-sort="sample_count">成功数 <span class="sort-indicator"></span></th>
-          <th data-sort="avg_ttft">avg TTFT <span class="sort-indicator"></span></th>
           <th data-sort="avg_total">avg 总耗时 <span class="sort-indicator"></span></th>
           <th data-sort="timeout_rate">超时率 <span class="sort-indicator"></span></th>
           <th data-sort="has_thinking_ratio">有思考 <span class="sort-indicator"></span></th>
@@ -2915,7 +2883,7 @@ function renderInvalidGroups(records) {
         <span class="inv-group-title" title="${escAttr(reason)}">${esc(title)}</span>
         <span class="badge badge-fail">${recs.length}</span>
         ${detailBtn}
-        <button class="btn btn-secondary btn-sm copy-btn" data-copy-val="${escAttr(keysToCopy)}" type="button">一键复制</button>
+        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(keysToCopy)}" type="button" title="复制本组全部 KEY" aria-label="复制本组全部 KEY">${COPY_ICON_SVG}</button>
         <span class="inv-group-toggle">▼</span>
       </div>
       <div class="inv-group-body">${items}</div>
@@ -3765,37 +3733,20 @@ function copyText(text, btn) {
     const prevTimer = copyBtnTimers.get(btn);
     if (prevTimer) clearTimeout(prevTimer);
 
-    const isIconOnly =
-      btn.classList.contains("btn-icon") || !btn.textContent.trim();
-    if (isIconOnly) {
-      const origHtml = btn.dataset.origHtml ?? btn.innerHTML;
-      btn.dataset.origHtml = origHtml;
-      btn.innerHTML = CHECK_ICON_SVG;
-      btn.classList.add("copied");
-      btn.disabled = true;
-      const timer = setTimeout(() => {
-        copyBtnTimers.delete(btn);
-        if (!btn.isConnected) return;
-        btn.innerHTML = origHtml;
-        delete btn.dataset.origHtml;
-        btn.classList.remove("copied");
-        btn.disabled = false;
-      }, 1500);
-      copyBtnTimers.set(btn, timer);
-    } else {
-      const orig = btn.dataset.origText ?? btn.textContent;
-      btn.dataset.origText = orig;
-      btn.textContent = "已复制!";
-      btn.disabled = true;
-      const timer = setTimeout(() => {
-        copyBtnTimers.delete(btn);
-        if (!btn.isConnected) return;
-        btn.textContent = orig;
-        delete btn.dataset.origText;
-        btn.disabled = false;
-      }, 1500);
-      copyBtnTimers.set(btn, timer);
-    }
+    const origHtml = btn.dataset.origHtml ?? btn.innerHTML;
+    btn.dataset.origHtml = origHtml;
+    btn.innerHTML = CHECK_ICON_SVG;
+    btn.classList.add("copied");
+    btn.disabled = true;
+    const timer = setTimeout(() => {
+      copyBtnTimers.delete(btn);
+      if (!btn.isConnected) return;
+      btn.innerHTML = origHtml;
+      delete btn.dataset.origHtml;
+      btn.classList.remove("copied");
+      btn.disabled = false;
+    }, 1500);
+    copyBtnTimers.set(btn, timer);
   };
 
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -3810,27 +3761,6 @@ function copyText(text, btn) {
     fallbackCopy(text);
     doFeedback();
   }
-}
-
-/** The forwarding URL field is the button: click anywhere on it to copy, and the
- *  field says 已复制 for a moment instead of a second control beside it. The text
- *  only goes back if nothing re-rendered meanwhile — switching providers during
- *  the flash would otherwise put the previous provider's URL back on screen.
- *  copyText() is given no element on purpose: its button feedback would have
- *  replaced the URL with 已复制! and then a re-render would have to fight it. */
-function copyProxyUrl() {
-  const url = dom.proxyUrl.dataset.copyVal || "";
-  if (!url) return;
-  copyText(url, null);
-  if (proxyUrlTimer) clearTimeout(proxyUrlTimer);
-  dom.proxyUrl.textContent = "已复制";
-  dom.proxyUrl.classList.add("is-copied");
-  proxyUrlTimer = setTimeout(() => {
-    proxyUrlTimer = null;
-    if (!dom.proxyUrl.isConnected || !dom.proxyUrl.classList.contains("is-copied")) return;
-    dom.proxyUrl.textContent = url;
-    dom.proxyUrl.classList.remove("is-copied");
-  }, 1200);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -3890,12 +3820,6 @@ function fmtDateTime(value) {
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function fmtTime(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
 function extractHost(url) {
@@ -4014,18 +3938,16 @@ function bindEvents() {
   });
 
   // Proxy tab
-  dom.proxyRefreshBtn.addEventListener("click", () => loadProxyState());
   dom.proxyProvider.addEventListener("change", () => {
     state.proxySelected = dom.proxyProvider.value;
     clearProxyNotice({ keepGlobal: true });
     renderProxyToolbar();
     renderProxyKeyCards();
   });
-  dom.proxyUrl.addEventListener("click", copyProxyUrl);
-  dom.proxyUrl.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    e.preventDefault();
-    copyProxyUrl();
+  dom.proxyUrlCopy.innerHTML = COPY_ICON_SVG;
+  dom.proxyUrlCopy.addEventListener("click", () => {
+    const url = dom.proxyUrlCopy.dataset.copyVal || "";
+    if (url) copyText(url, dom.proxyUrlCopy);
   });
   dom.proxySaveModel.addEventListener("click", saveProxyTestModel);
   dom.proxyTestActive.addEventListener("click", () => runProxyBatch("active"));
@@ -4049,9 +3971,6 @@ function bindEvents() {
       );
     }
   });
-
-  // Results
-  dom.refreshBtn.addEventListener("click", loadResults);
 
   // Result body delegated scroll (capture phase — scroll doesn't bubble from textarea)
   dom.resultsBody.addEventListener(
@@ -4191,7 +4110,6 @@ function bindEvents() {
   });
 
   // Dead keys tab
-  dom.dkRefreshBtn.addEventListener("click", () => loadDeadKeys(true));
   dom.dkBulkDelBtn.addEventListener("click", onDkBulkDelClick);
   [dom.dkFHost, dom.dkFCode].forEach((el) =>
     el.addEventListener("change", renderDeadKeys),

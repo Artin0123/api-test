@@ -1,11 +1,10 @@
 /**
  * Cloudflare Pages API Gateway — async_test_keys edition
  *
- * KV bindings required:
- *   KV_STORE
- *     app_settings               { providers[], github_url, discord_webhook_url }
+ * KV / D1 store keys:
+ *     app_settings               { providers[], github_url, discord_webhook_url, ... }
  *     results:{fingerprint}      per-provider latest test results
- *     checkpoint:{fingerprint}   per-provider in-progress checkpoint
+ *     test_run_status            global { started_at } flag for running workflow (90m TTL)
  *     dead_keys                  synced dead key records (array)
  *
  * Secrets required:
@@ -27,9 +26,9 @@ const ROUTES = {
   "POST /api/settings": handlePostSettings,
   "GET /api/results": handleGetResults,
   "POST /api/results": handlePostResults,
-  "GET /api/checkpoint": handleGetCheckpoint,
-  "POST /api/checkpoint": handlePostCheckpoint,
-  "DELETE /api/checkpoint": handleDeleteCheckpoint,
+  "GET /api/run-status": handleGetRunStatus,
+  "POST /api/run-status": handlePostRunStatus,
+  "DELETE /api/run-status": handleDeleteRunStatus,
   "GET /api/dead-keys": handleGetDeadKeys,
   "DELETE /api/dead-keys": handleDeleteDeadKey,
   "GET /api/proxy/state": handleGetProxyState,
@@ -276,7 +275,7 @@ function kvStore(env) {
   return env.KV_STORE;
 }
 
-/** The one entry point every handler uses for settings / results / checkpoint /
+/** The one entry point every handler uses for settings / results / run-status /
  *  dead_keys. The proxy's own key_state table is SQL-only and lives in D1. */
 function store(env) {
   return storageBackendName(env) === "d1" ? d1Store(env) : kvStore(env);
@@ -829,8 +828,8 @@ async function handlePostSettings(request, env) {
     Object.entries(next.proxy_test_models).filter(([fp]) => liveFps.has(fp)),
   );
 
-  // Clean up results / checkpoints belonging to removed or identity-changed
-  // providers, and drop dead keys whose card or key is no longer configured.
+  // Clean up results belonging to removed or identity-changed providers, and
+  // drop dead keys whose card or key is no longer configured.
   const oldEntries = await providerFpEntries(existing.providers || []);
   const staleFps = [...new Set(oldEntries.map((e) => e.fp))].filter(
     (fp) => !liveFps.has(fp),
@@ -858,9 +857,6 @@ async function handlePostSettings(request, env) {
     for (const staleFp of staleFps) {
       stmts.push(
         db.prepare("DELETE FROM store WHERE k = ?").bind(`results:${staleFp}`),
-        db
-          .prepare("DELETE FROM store WHERE k = ?")
-          .bind(`checkpoint:${staleFp}`),
       );
     }
     if (keptDeadKeys !== null) {
@@ -886,10 +882,7 @@ async function handlePostSettings(request, env) {
     await kv.put(SETTINGS_KEY, JSON.stringify(next));
     if (staleFps.length) {
       await Promise.all(
-        staleFps.flatMap((staleFp) => [
-          kv.delete(`results:${staleFp}`),
-          kv.delete(`checkpoint:${staleFp}`),
-        ]),
+        staleFps.map((staleFp) => kv.delete(`results:${staleFp}`)),
       );
     }
     if (keptDeadKeys !== null) {
@@ -955,8 +948,6 @@ async function handlePostResults(request, env) {
   const kv = store(env);
   const payload = { ...body, uploaded_at: new Date().toISOString() };
   await kv.put(`results:${fp}`, JSON.stringify(payload));
-  // Auto-clean checkpoint so frontend won't show stale "执行中"
-  await kv.delete(`checkpoint:${fp}`);
 
   // Best-effort: the results are already stored, so a failure here must not make
   // the uploader think the whole run was lost and retry it.
@@ -993,56 +984,75 @@ async function handlePostResults(request, env) {
   });
 }
 
-// ─── /api/checkpoint ─────────────────────────────────────────────────────────
+// ─── /api/run-status ─────────────────────────────────────────────────────────
 
-async function handleGetCheckpoint(request, env, url) {
+const RUN_STATUS_KEY = "test_run_status";
+const RUN_STATUS_TTL_MS = 90 * 60 * 1000;
+
+async function handleGetRunStatus(request, env) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
-
-  const fp = getNonEmptyString(url, "fp");
-  if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
 
   const kv = store(env);
-  const raw = await kv.get(`checkpoint:${fp}`);
-  if (!raw) return json({ exists: false });
-
-  const checkpoint = parseJsonOrNull(raw);
-  if (!checkpoint) return json({ exists: false });
-  return json({ exists: true, checkpoint });
+  const raw = await kv.get(RUN_STATUS_KEY);
+  if (raw === null || raw === undefined) {
+    return json({ ok: true, running: false, started_at: null });
+  }
+  const parsed = parseJsonObject(raw);
+  const startedAt =
+    parsed && typeof parsed.started_at === "string"
+      ? parsed.started_at.trim()
+      : "";
+  const startedMs = startedAt ? Date.parse(startedAt) : NaN;
+  if (!startedAt || !Number.isFinite(startedMs)) {
+    await kv.delete(RUN_STATUS_KEY);
+    return json({ ok: true, running: false, started_at: null });
+  }
+  if (Date.now() - startedMs > RUN_STATUS_TTL_MS) {
+    await kv.delete(RUN_STATUS_KEY);
+    return json({ ok: true, running: false, started_at: null, expired: true });
+  }
+  return json({ ok: true, running: true, started_at: startedAt });
 }
 
-async function handlePostCheckpoint(request, env) {
+async function handlePostRunStatus(request, env) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
 
-  let body;
+  let body = {};
   try {
-    body = await request.json();
+    const raw = (await request.text()).trim();
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        body = parsed;
+      } else {
+        return json({ error: "Invalid JSON body" }, 400);
+      }
+    }
   } catch {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  const { provider_type, api_base } = body;
-  if (!provider_type || !api_base)
-    return json({ error: "provider_type and api_base required" }, 400);
+  const candidate =
+    typeof body.started_at === "string" ? body.started_at.trim() : "";
+  const startedAt =
+    candidate && Number.isFinite(Date.parse(candidate))
+      ? candidate
+      : new Date().toISOString();
 
-  const fp = await providerFingerprint(provider_type.trim(), api_base.trim());
   const kv = store(env);
-  const payload = { ...body, saved_at: new Date().toISOString() };
-  await kv.put(`checkpoint:${fp}`, JSON.stringify(payload));
-  return json({ ok: true, fingerprint: fp });
+  await kv.put(RUN_STATUS_KEY, JSON.stringify({ started_at: startedAt }));
+  return json({ ok: true, running: true, started_at: startedAt });
 }
 
-async function handleDeleteCheckpoint(request, env, url) {
+async function handleDeleteRunStatus(request, env) {
   if (!(await requireAuth(request, env)))
     return json({ error: "Unauthorized" }, 401);
 
-  const fp = getNonEmptyString(url, "fp");
-  if (!fp) return json({ error: "fp (fingerprint) required" }, 400);
-
   const kv = store(env);
-  await kv.delete(`checkpoint:${fp}`);
-  return json({ ok: true });
+  await kv.delete(RUN_STATUS_KEY);
+  return json({ ok: true, running: false });
 }
 
 // ─── /api/dead-keys ──────────────────────────────────────────────────────────

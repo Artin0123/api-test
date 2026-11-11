@@ -1247,26 +1247,11 @@ a:focus-visible,
     color: var(--text);
 }
 
-/* ── Checkpoint summary ────────────────────────────────────────────────── */
-.checkpoint-bar {
-    background: rgba(245, 158, 11, 0.07);
-    border-top: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    padding: 0.75rem 1.25rem;
+.results-title-row {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.65rem;
     flex-wrap: wrap;
-    font-size: var(--text-sm);
-}
-
-.checkpoint-bar-label {
-    font-weight: 600;
-    color: var(--warn);
-}
-
-.checkpoint-bar-meta {
-    color: var(--text-muted);
 }
 
 /* ── Badges ────────────────────────────────────────────────────────────── */
@@ -2019,13 +2004,13 @@ code {
 /* Controls in these rows share --control-h with single-line inputs/selects.
    .btn-sm stays on the HTML for tighter horizontal padding, while vertical
    padding and font size match adjacent selects so the band reads as one line. */
-.proxy-toolbar-row .btn,
-.keys-toolbar .btn,
+.proxy-toolbar-row .btn:not(.btn-icon),
+.keys-toolbar .btn:not(.btn-icon),
 .add-header-btn {
     min-height: var(--control-h);
 }
 
-.proxy-toolbar-row .btn {
+.proxy-toolbar-row .btn:not(.btn-icon) {
     height: var(--control-h);
     padding-block: 0;
     font-size: var(--text-sm);
@@ -2104,11 +2089,15 @@ code {
     user-select: none;
 }
 
-/* A text field you can click: the whole URL is the button, so the copy button
-   and the example path that used to sit next to it are gone. Height, border and
-   radius come from .input-text (same 2.5rem as every other single-line input);
-   what is added here is the mono face, one line that truncates instead of
-   growing, and the affordances that say "this is clickable". */
+.proxy-url-wrap {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+/* Display-only monospace forwarding URL box paired with a uniform copy button. */
 .proxy-url {
     flex: 1 1 0;
     width: auto;
@@ -2122,34 +2111,11 @@ code {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    cursor: pointer;
-    user-select: none;
 }
 
-.proxy-url:hover {
-    border-color: var(--accent);
-}
-
-.proxy-url:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-}
-
-/* Copied a second ago: the text itself already says so, the colour confirms it. */
-.proxy-url.is-copied {
-    border-color: var(--ok);
-    color: var(--ok);
-}
-
-/* No alias on this provider, so there is nothing to copy and nothing to click. */
+/* No alias on this provider, so show muted placeholder text. */
 .proxy-url.is-disabled {
     color: var(--text-muted);
-    cursor: default;
-}
-
-.proxy-url.is-disabled:hover {
-    border-color: var(--border);
 }
 
 .proxy-key-card-head {
@@ -2362,17 +2328,21 @@ code {
         flex: 1 1 100%;
     }
 
-    .proxy-toolbar-row .btn {
+    .proxy-toolbar-row .btn:not(.btn-icon) {
         flex: 1 1 auto;
         min-height: var(--control-h);
     }
 
-    /* The row is a column here, so .proxy-url's flex-basis becomes a height: the
-       URL chip grew to 16rem tall. Give it an explicit auto height instead, and
-       let a long production URL wrap to as many lines as it needs. */
-    .proxy-url {
+    /* Stack proxy-url-wrap to full width on mobile while keeping its icon copy
+       button aligned at the right side. */
+    .proxy-url-wrap {
         flex: none;
         width: 100%;
+    }
+
+    .proxy-url {
+        flex: 1 1 0;
+        width: auto;
         height: auto;
         min-height: var(--control-h);
         padding: 0.45rem 0.9rem;
@@ -2401,18 +2371,9 @@ code {
         width: 100%;
     }
 
-    /* Copy block: stack vertically */
+    /* Copy block stays row-aligned so the compact icon button sits beside the editor */
     .copy-block {
-        flex-direction: column;
-    }
-
-    .copy-block .btn {
-        align-self: flex-start;
-    }
-
-    .result-lined-editor {
-        width: 100%;
-        flex: none;
+        gap: 0.5rem;
     }
 
     /* Dead keys: stack full-width filters and keep date fields compact */
@@ -2525,13 +2486,6 @@ code {
     /* Auth card */
     .auth-card {
         padding: 2rem 1.25rem;
-    }
-
-    /* Checkpoint bar: stack */
-    .checkpoint-bar {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.4rem;
     }
 }
 /* ── Key editor toolbar ─────────────────────────────────────────────────── */

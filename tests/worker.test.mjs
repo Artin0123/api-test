@@ -1199,18 +1199,13 @@ test("duplicate (provider_type, api_base) is rejected at save time", async () =>
   assert.equal(diffType.status, 200);
 });
 
-test("removing a key or deleting a provider prunes results, checkpoints, and dead_keys with detail rebalance", async () => {
+test("removing a key or deleting a provider prunes results and dead_keys with detail rebalance", async () => {
   const env = makeEnv();
   const base = `${upstreamBase()}/prune/v1`;
   const p = provider({ api_base: base, keys: "sk-dead1\nsk-dead2\nsk-good1" });
   await postSettings(env, [p]);
   const fp = await fingerprintOf(env, p);
 
-  await request(env, "/api/checkpoint", {
-    method: "POST",
-    headers: { ...adminHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ provider_type: "openai", api_base: base, completed_tasks: 1, total_tasks: 3 }),
-  });
   await request(env, "/api/results", {
     method: "POST",
     headers: { ...adminHeaders(), "Content-Type": "application/json" },
@@ -1632,4 +1627,76 @@ test("POST /api/proxy/recover with all:true recovers only disabled keys of the t
   assert.equal(second.status, 200);
   assert.equal(second.data.recovered, 0);
   assert.deepEqual(second.data.ids, []);
+});
+
+test("global /api/run-status replaces /api/checkpoint and expires lazily after 90 minutes", async () => {
+  const env = makeEnv();
+
+  // Legacy /api/checkpoint endpoints are gone.
+  const oldGet = await request(env, "/api/checkpoint?fp=abc", { headers: adminHeaders() });
+  assert.equal(oldGet.status, 404);
+  const oldPost = await request(env, "/api/checkpoint", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(oldPost.status, 404);
+
+  // Initial state is not running.
+  const initial = await asJson(
+    await request(env, "/api/run-status", { headers: adminHeaders() }),
+  );
+  assert.equal(initial.status, 200);
+  assert.equal(initial.data.running, false);
+  assert.equal(initial.data.started_at, null);
+
+  // POST marks global run active.
+  const started = await asJson(
+    await request(env, "/api/run-status", {
+      method: "POST",
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(started.status, 200);
+  assert.equal(started.data.running, true);
+  assert.ok(started.data.started_at);
+
+  const running = await asJson(
+    await request(env, "/api/run-status", { headers: adminHeaders() }),
+  );
+  assert.equal(running.data.running, true);
+  assert.equal(running.data.started_at, started.data.started_at);
+
+  // Exceeding 90 minutes lazily clears test_run_status on GET.
+  const staleTime = new Date(Date.now() - 91 * 60 * 1000).toISOString();
+  await env.DB.prepare("UPDATE store SET v = ? WHERE k = 'test_run_status'")
+    .bind(JSON.stringify({ started_at: staleTime }))
+    .run();
+  const expired = await asJson(
+    await request(env, "/api/run-status", { headers: adminHeaders() }),
+  );
+  assert.equal(expired.data.running, false);
+  assert.equal(expired.data.expired, true);
+  const cleanedRow = await env.DB.prepare(
+    "SELECT v FROM store WHERE k = 'test_run_status'",
+  ).first();
+  assert.equal(cleanedRow, null);
+
+  // Explicit DELETE clears an active run immediately.
+  await request(env, "/api/run-status", {
+    method: "POST",
+    headers: adminHeaders(),
+  });
+  const del = await asJson(
+    await request(env, "/api/run-status", {
+      method: "DELETE",
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(del.status, 200);
+  assert.equal(del.data.running, false);
+  const afterDel = await asJson(
+    await request(env, "/api/run-status", { headers: adminHeaders() }),
+  );
+  assert.equal(afterDel.data.running, false);
 });
