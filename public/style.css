@@ -1,4 +1,5 @@
-/* Split from the original style.css; loaded in original order (after style.css). */
+/* Split from the original single style.css; the style-*.css files continue
+   this sheet in the load order defined by index.html. */
 /* ── Reset & base ──────────────────────────────────────────────────────── */
 *,
 *::before,
