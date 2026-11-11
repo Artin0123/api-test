@@ -203,6 +203,18 @@ test("the design-comparison preview pages stay removed", () => {
   }
 });
 
+test("the 404 page stays CSP-clean and links home", () => {
+  // With public/404.html present, Cloudflare Pages answers every unknown
+  // static path with a real 404 instead of the SPA fallback to index.html.
+  // The page is served through the same CSP as the app, so it must keep the
+  // same invariants: no inline script, no inline <style>, no style="".
+  const page = read("404.html");
+  assert.ok(!/<script(?![^>]*\bsrc=)/i.test(page), "404.html must not have inline <script>");
+  assert.ok(!/<style[\s>]/i.test(page), "404.html must not have inline <style> (CSP style-src 'self')");
+  assert.ok(!/\sstyle="/i.test(page), '404.html must not have style="" attributes');
+  assert.match(page, /<a\s[^>]*href="\/"[^>]*>/, "404.html must link back to the app");
+});
+
 test("proxy toolbar places recover-all button next to test-disabled and scopes by fp", () => {
   const groupMatch = html.match(/<div\s+class="proxy-action-group">([\s\S]*?)<\/div>/);
   assert.ok(groupMatch, "proxy-action-group not found");

@@ -45,6 +45,7 @@ public/
                  ⚠ 生成文件：由 `npm run build` 从 src/*.js 依序拼接而来
                  ⚠ Cloudflare Pages 進階模式規定 _worker.js 必須是單一可執行檔，勿直接編輯
   index.html     前端页面
+  404.html       未匹配靜態路徑的錯誤頁（Pages 以 HTTP 404 提供，取代 SPA fallback）
   style.css      页面样式（基础段；样式另拆为 style-forms/modals/deadkeys/proxy/rwd.css，
                  由 index.html 依序加载）
   app.js         前端逻辑入口（事件绑定与启动；其余逻辑拆分于 public/js/*.js，
