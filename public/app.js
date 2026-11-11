@@ -2203,24 +2203,31 @@ function renderProxyToolbar() {
 
   const available = Number(p.keys_available || 0);
   const total = Number(p.keys_total || 0);
-  // Two separate spans so the healthy and unhealthy counts can carry their own
-  // colour without colouring the whole line. The old "可用 x / y" slash is gone:
-  // 有效 x 無效 y says both numbers in words.
-  const makeSummaryItem = (cls, label, count) => {
-    const wrap = document.createElement("span");
-    wrap.className = cls;
-    const textSpan = document.createElement("span");
-    textSpan.textContent = label;
-    const numSpan = document.createElement("span");
-    numSpan.className = "proxy-summary-num";
-    numSpan.textContent = String(count);
-    wrap.append(textSpan, numSpan);
-    return wrap;
+  const disabled = Math.max(total - available, 0);
+  // Single neutral label + control-height segmented two-cell readout so counts
+  // stay framed alongside the adjacent select/button row and hover reveals meaning.
+  const labelSpan = document.createElement("span");
+  labelSpan.className = "proxy-summary-label";
+  labelSpan.textContent = "密钥状态";
+
+  const makeCount = (cls, count, title) => {
+    const span = document.createElement("span");
+    span.className = `proxy-summary-cell ${cls} proxy-summary-num`;
+    span.textContent = String(count);
+    span.title = title;
+    return span;
   };
-  dom.proxySummary.replaceChildren(
-    makeSummaryItem("proxy-summary-ok", "有效", available),
-    makeSummaryItem("proxy-summary-fail", "无效", Math.max(total - available, 0)),
+  const countsGroup = document.createElement("span");
+  countsGroup.className = "proxy-summary-group";
+  countsGroup.append(
+    makeCount("proxy-summary-ok", available, "有效数量"),
+    makeCount("proxy-summary-fail", disabled, "无效数量"),
   );
+  dom.proxySummary.setAttribute(
+    "aria-label",
+    `有效 ${available}，无效 ${disabled}`,
+  );
+  dom.proxySummary.replaceChildren(labelSpan, countsGroup);
   dom.proxyUrl.textContent = url || "（尚未设定转发别名）";
   dom.proxyUrl.classList.toggle("is-disabled", !url);
   dom.proxyUrlCopy.dataset.copyVal = url;
@@ -2881,13 +2888,11 @@ function renderResultBody(r) {
       <div class="section-title">
         有效 Key
         <span class="badge badge-ok">${validKeys.length}</span>
+        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(validKeys.join("\n"))}" type="button" title="复制全部有效 Key" aria-label="复制全部有效 Key"${validKeys.length ? "" : " disabled"}>${COPY_ICON_SVG}</button>
       </div>
-      <div class="copy-block">
-        <div class="lined-editor result-lined-editor result-editor-box">
-          <div class="line-nums" aria-hidden="true"></div>
-          <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(validKeys.join("\n"))}</textarea>
-        </div>
-        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(validKeys.join("\n"))}" type="button" title="复制全部有效 Key" aria-label="复制全部有效 Key">${COPY_ICON_SVG}</button>
+      <div class="lined-editor result-lined-editor result-editor-box">
+        <div class="line-nums" aria-hidden="true"></div>
+        <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(validKeys.join("\n"))}</textarea>
       </div>
     </div>
 
@@ -2895,13 +2900,11 @@ function renderResultBody(r) {
       <div class="section-title">
         有效模型
         <span class="badge badge-ok">${provenModels.length}</span>
+        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(provenModels.join(","))}" type="button" title="复制全部有效模型" aria-label="复制全部有效模型"${provenModels.length ? "" : " disabled"}>${COPY_ICON_SVG}</button>
       </div>
-      <div class="copy-block">
-        <div class="lined-editor lined-editor--wrap result-lined-editor result-editor-box">
-          <div class="line-nums" aria-hidden="true"></div>
-          <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(provenModels.join(","))}</textarea>
-        </div>
-        <button class="btn btn-ghost btn-xs btn-icon copy-btn" data-copy-val="${escAttr(provenModels.join(","))}" type="button" title="复制全部有效模型" aria-label="复制全部有效模型">${COPY_ICON_SVG}</button>
+      <div class="lined-editor lined-editor--wrap result-lined-editor result-editor-box">
+        <div class="line-nums" aria-hidden="true"></div>
+        <textarea class="copy-textarea lined-textarea" readonly spellcheck="false">${esc(provenModels.join(","))}</textarea>
       </div>
     </div>
 
@@ -2920,7 +2923,7 @@ function renderResultBody(r) {
 
     <div class="result-section">
       <div class="section-title">
-        无效 Key
+        失效 Key
         <span class="badge badge-fail">${invalidRecs.length}</span>
       </div>
       ${renderInvalidGroups(invalidRecs)}
@@ -3009,15 +3012,11 @@ function renderInvalidGroups(records) {
       // Every record keeps its own message; the group shows the first one.
       const reason = recs[0].error_reason || "未知原因";
       const items = recs
-        .map((rec) => {
-          const copyBtn = rec.api_key
-            ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rec.api_key)}">${COPY_ICON_SVG}</button>`
-            : "";
-          return `<div class="inv-key-item">
+        .map(
+          (rec) => `<div class="inv-key-item">
         <span class="inv-key-mono">${esc(rec.api_key || "")}</span>
-        ${copyBtn}
-      </div>`;
-        })
+      </div>`,
+        )
         .join("");
 
       // Only one record per cause carries error_detail (the rest are nulled by dedup).
@@ -3180,9 +3179,7 @@ function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
     if (!val || seenValues.has(val)) continue;
     seenValues.add(val);
     if (e.host) liveHosts.add(e.host);
-    const label = e.multiOnHost
-      ? providerFormatLabel(e.provider, e.host)
-      : providerDisplayName(e.provider, e.host);
+    const label = providerFormatLabel(e.provider, e.host);
     const base = String(e.provider?.api_base || "").trim();
     const title = base ? `${label}\n${base}` : label;
     options.push({ value: val, label, title });

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-TW" data-theme="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+        />
+        <title>密鑰狀態樣式比較預覽 — API Key Tester</title>
+        <script src="/boot.js"></script>
+        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href="/summary-preview.css" />
+    </head>
+    <body>
+        <main class="preview-shell">
+            <header class="preview-header">
+                <div>
+                    <h1>密鑰狀態外框樣式預覽</h1>
+                    <p class="muted">
+                        將「<code>密钥状态</code>」與右側數字放進與同列控制項等高（<code>--control-h: 2.5rem</code>）的真實工具列中比較；可切換「雙位／三位數字」與「深色／淺色主題」，滑鼠停在數字上皆保留「有效数量 / 无效数量」提示。
+                    </p>
+                </div>
+                <div class="preview-header-actions">
+                    <button
+                        id="preview-digits-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        切換大數字 (128 / 14)
+                    </button>
+                    <button
+                        id="preview-theme-btn"
+                        class="btn btn-secondary"
+                        type="button"
+                    >
+                        切換淺色主題
+                    </button>
+                    <a href="/?mock" class="btn btn-primary">返回主頁 (?mock)</a>
+                </div>
+            </header>
+
+            <section class="preview-grid">
+                <!-- 1 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 1：同高單框膠囊（與網址列／選單等高）</h2>
+                            <p class="muted">
+                                「<code>密钥状态</code>」維持提示文字在外，兩個數字共用一個與選單等高（<code>2.5rem</code>）、<code>--bg-3</code> 底色＋<code>1px</code> 外框的圓角盒，最貼近全站既有表單框語言。
+                            </p>
+                        </div>
+                        <span class="badge badge-ok">推薦・最耐看</span>
+                    </div>
+                    <div class="proxy-toolbar preview-panel">
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div class="proxy-summary preview-summary--box">
+                                <span class="proxy-summary-label">密钥状态</span>
+                                <span class="preview-box">
+                                    <span class="proxy-summary-ok preview-num" data-ok title="有效数量">3</span>
+                                    <span class="proxy-summary-fail preview-num" data-fail title="无效数量">1</span>
+                                </span>
+                            </div>
+                            <div class="proxy-model-group preview-model-group">
+                                <span class="proxy-model-label">测试模型</span>
+                                <div class="input-select preview-mock-select">gpt-4o</div>
+                                <button type="button" class="btn btn-secondary btn-sm">保存模型</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试有效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试无效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">恢复所有密钥</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- 2 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 2：同高分隔雙格（Segmented Readout）</h2>
+                            <p class="muted">
+                                外框同樣對齊 <code>2.5rem</code>，中間用一條細邊線把有效與無效數字各自隔成獨立小格，邊界感與保護感最明確，也不會多出額外間距跳動。
+                            </p>
+                        </div>
+                        <span class="badge">分格清楚</span>
+                    </div>
+                    <div class="proxy-toolbar preview-panel">
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div class="proxy-summary preview-summary--split">
+                                <span class="proxy-summary-label">密钥状态</span>
+                                <span class="preview-split">
+                                    <span class="preview-split-cell proxy-summary-ok preview-num" data-ok title="有效数量">3</span>
+                                    <span class="preview-split-cell proxy-summary-fail preview-num" data-fail title="无效数量">1</span>
+                                </span>
+                            </div>
+                            <div class="proxy-model-group preview-model-group">
+                                <span class="proxy-model-label">测试模型</span>
+                                <div class="input-select preview-mock-select">gpt-4o</div>
+                                <button type="button" class="btn btn-secondary btn-sm">保存模型</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试有效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试无效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">恢复所有密钥</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- 3 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 3：雙獨立柔色方塊（Twin Soft-Tinted Boxes）</h2>
+                            <p class="muted">
+                                兩個數字各自擁有同高 <code>2.5rem</code> 的微透明綠／紅底色與柔色描邊框，延續測試結果頁徽章與按鈕的語意色彩，視覺辨識度最高。
+                            </p>
+                        </div>
+                        <span class="badge">色彩包覆</span>
+                    </div>
+                    <div class="proxy-toolbar preview-panel">
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div class="proxy-summary preview-summary--twin">
+                                <span class="proxy-summary-label">密钥状态</span>
+                                <span class="preview-twin-group">
+                                    <span class="preview-twin-box preview-twin-ok preview-num" data-ok title="有效数量">3</span>
+                                    <span class="preview-twin-box preview-twin-fail preview-num" data-fail title="无效数量">1</span>
+                                </span>
+                            </div>
+                            <div class="proxy-model-group preview-model-group">
+                                <span class="proxy-model-label">测试模型</span>
+                                <div class="input-select preview-mock-select">gpt-4o</div>
+                                <button type="button" class="btn btn-secondary btn-sm">保存模型</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试有效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试无效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">恢复所有密钥</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- 4 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 4：狀態圓點同高框（Dot-Annotated Box）</h2>
+                            <p class="muted">
+                                在單一 <code>2.5rem</code> 內凹框（<code>--bg</code> 底）裡，幫每個數字加上一顆小小的綠／紅狀態圓點，像儀表板指示燈一樣柔和又直覺。
+                            </p>
+                        </div>
+                        <span class="badge">指示燈感</span>
+                    </div>
+                    <div class="proxy-toolbar preview-panel">
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div class="proxy-summary preview-summary--dots">
+                                <span class="proxy-summary-label">密钥状态</span>
+                                <span class="preview-dots-box">
+                                    <span class="preview-dot-item proxy-summary-ok" title="有效数量">
+                                        <span class="preview-dot preview-dot-ok" aria-hidden="true"></span>
+                                        <span class="preview-num" data-ok>3</span>
+                                    </span>
+                                    <span class="preview-dot-item proxy-summary-fail" title="无效数量">
+                                        <span class="preview-dot preview-dot-fail" aria-hidden="true"></span>
+                                        <span class="preview-num" data-fail>1</span>
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="proxy-model-group preview-model-group">
+                                <span class="proxy-model-label">测试模型</span>
+                                <div class="input-select preview-mock-select">gpt-4o</div>
+                                <button type="button" class="btn btn-secondary btn-sm">保存模型</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试有效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试无效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">恢复所有密钥</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- 5 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 5：內凹斜線比例盒（Recessed Ratio Box）</h2>
+                            <p class="muted">
+                                採用 <code>--bg</code> 內凹底色＋<code>1px</code> 外框（呼應上方轉發網址與輸入框），中間加上淡色 <code>/</code> 區隔 <code>X / Y</code>，整體感最緊湊。
+                            </p>
+                        </div>
+                        <span class="badge">精簡緊湊</span>
+                    </div>
+                    <div class="proxy-toolbar preview-panel">
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div class="proxy-summary preview-summary--ratio">
+                                <span class="proxy-summary-label">密钥状态</span>
+                                <span class="preview-ratio-box">
+                                    <span class="proxy-summary-ok preview-num" data-ok title="有效数量">3</span>
+                                    <span class="preview-ratio-sep" aria-hidden="true">/</span>
+                                    <span class="proxy-summary-fail preview-num" data-fail title="无效数量">1</span>
+                                </span>
+                            </div>
+                            <div class="proxy-model-group preview-model-group">
+                                <span class="proxy-model-label">测试模型</span>
+                                <div class="input-select preview-mock-select">gpt-4o</div>
+                                <button type="button" class="btn btn-secondary btn-sm">保存模型</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试有效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试无效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">恢复所有密钥</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <!-- 6 -->
+                <article class="preview-card">
+                    <div class="preview-card-head">
+                        <div>
+                            <h2>樣式 6：雙層質感整合盒（Label + Recessed Well）</h2>
+                            <p class="muted">
+                                將原本左邊的「<code>密钥状态</code>」提示一起收進同一個 <code>2.5rem</code> 圓角外框左側（<code>--bg-3</code>），右側直接嵌一個內凹數字槽（<code>--bg</code>），保護感與一體感最強。
+                            </p>
+                        </div>
+                        <span class="badge">一體雙層</span>
+                    </div>
+                    <div class="proxy-toolbar preview-panel">
+                        <div class="proxy-toolbar-row proxy-toolbar-row--model">
+                            <div class="proxy-summary preview-summary--shell">
+                                <span class="preview-shell-box">
+                                    <span class="preview-shell-title">密钥状态</span>
+                                    <span class="preview-shell-well">
+                                        <span class="proxy-summary-ok preview-num" data-ok title="有效数量">3</span>
+                                        <span class="proxy-summary-fail preview-num" data-fail title="无效数量">1</span>
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="proxy-model-group preview-model-group">
+                                <span class="proxy-model-label">测试模型</span>
+                                <div class="input-select preview-mock-select">gpt-4o</div>
+                                <button type="button" class="btn btn-secondary btn-sm">保存模型</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试有效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">测试无效密钥</button>
+                                <button type="button" class="btn btn-secondary btn-sm">恢复所有密钥</button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            </section>
+        </main>
+
+        <script src="/summary-preview.js"></script>
+    </body>
+</html>
+

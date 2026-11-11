@@ -413,13 +413,7 @@ a:focus-visible,
     margin-bottom: 1rem;
 }
 
-/* ── Copy block ────────────────────────────────────────────────────────── */
-.copy-block {
-    display: flex;
-    gap: 0.75rem;
-    align-items: flex-start;
-}
-
+/* ── Result lined editors ──────────────────────────────────────────────── */
 .copy-textarea {
     flex: 1;
     background: var(--bg-2);
@@ -438,11 +432,6 @@ a:focus-visible,
 .copy-textarea:focus {
     outline: none;
     border-color: var(--accent);
-}
-
-/* result page lined editors inherit flex-1 from copy-block */
-.result-lined-editor {
-    flex: 1;
 }
 
 /* ── Table ─────────────────────────────────────────────────────────────── */
@@ -2014,28 +2003,41 @@ code {
 
 .proxy-summary {
     display: flex;
-    align-items: baseline;
-    gap: 2.4rem;
+    align-items: center;
+    gap: 0.75rem;
     font-variant-numeric: tabular-nums;
-    /* One step above the 14px body text and bold: these two counts are the answer
-       the page exists to give, so they read as a statement, not as a caption —
-       without turning into a second heading. */
-    font-size: var(--text-base);
-    font-weight: 700;
     white-space: nowrap;
 }
 
-/* The two counts say different things, so they get different colours instead of
-   one muted sentence. The numbers themselves are enough; no slash, no separator.
-   These take the soft pair, not --ok/--fail: at 16px bold the vivid badge
-   colours turn into a traffic light, and the point here is a calm readout.
-   Each item keeps a 1-space minimum gap before a right-aligned 2-digit slot;
-   3+ digits grow rightwards while keeping the 8-space gap before 无效. */
-.proxy-summary-ok,
-.proxy-summary-fail {
+.proxy-summary-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* Segmented two-cell readout matching --control-h beside the model controls:
+   each count sits in its own bordered compartment and expands with digits. */
+.proxy-summary-group {
     display: inline-flex;
-    align-items: baseline;
-    gap: 0.3rem;
+    align-items: stretch;
+    height: var(--control-h);
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.proxy-summary-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Holds up to 3 tabular digits + horizontal padding before expanding. */
+    min-width: calc(3ch + 1.5rem);
+    padding: 0 0.75rem;
+}
+
+.proxy-summary-cell + .proxy-summary-cell {
+    border-left: 1px solid var(--border);
 }
 
 .proxy-summary-ok {
@@ -2047,8 +2049,9 @@ code {
 }
 
 .proxy-summary-num {
-    min-width: 2ch;
-    text-align: right;
+    font-size: var(--text-base);
+    font-weight: 700;
+    line-height: 1;
 }
 
 .proxy-toolbar-row {
@@ -2152,6 +2155,19 @@ code {
     display: flex;
     align-items: center;
     gap: 0.45rem;
+}
+
+/* Square copy button matching the select/URL row height (--control-h) at every
+   breakpoint, with its vector icon scaled up proportionally. */
+.btn.proxy-url-copy {
+    width: var(--control-h);
+    height: var(--control-h);
+    padding: 0;
+}
+
+.btn.proxy-url-copy svg {
+    width: 1.15rem;
+    height: 1.15rem;
 }
 
 /* Display-only monospace forwarding URL box paired with a uniform copy button. */
@@ -2426,11 +2442,6 @@ code {
     .proxy-model-group > .custom-select {
         flex: none;
         width: 100%;
-    }
-
-    /* Copy block stays row-aligned so the compact icon button sits beside the editor */
-    .copy-block {
-        gap: 0.5rem;
     }
 
     /* Dead keys: stack full-width filters and keep date fields compact */

@@ -114,7 +114,12 @@ test("proxy toolbar keeps an outer frame with inner spacing", () => {
   assert.match(block[1], /\bpadding\s*:/, ".proxy-toolbar needs inner padding");
   assert.ok(css.includes(".proxy-key-card-btns"), "style.css is missing .proxy-key-card-btns");
   assert.ok(css.includes(".proxy-key-state-tag"), "style.css is missing .proxy-key-state-tag");
+  assert.ok(css.includes(".proxy-summary-group"), "style.css is missing .proxy-summary-group");
   assert.ok(css.includes(".proxy-summary-num"), "style.css is missing .proxy-summary-num");
+  const numRule = css.match(/\.proxy-summary-num\s*\{([^}]+)\}/);
+  assert.ok(numRule, ".proxy-summary-num rule not found");
+  assert.doesNotMatch(numRule[1], /\bmin-width\s*:/, ".proxy-summary-num must grow naturally rightwards without fixed min-width");
+  assert.doesNotMatch(numRule[1], /\btext-align\s*:\s*right/, ".proxy-summary-num must not right-pad single digits");
 });
 
 test("shared button borders, select height, and mobile compact button rules stay aligned", () => {
@@ -164,6 +169,12 @@ test("dead keys provider labels, responsive key masking, and flat desktop select
   assert.ok(!/<script(?![^>]*\bsrc=)/i.test(previewHtml), "no inline <script> in select-preview.html");
   assert.ok(!/\sstyle="/i.test(previewHtml), 'no style="" attribute in select-preview.html');
   assert.ok(!/\sstyle="/i.test(previewJs), 'select-preview.js must not build style="" attributes');
+
+  const summaryPreviewHtml = read("summary-preview.html");
+  const summaryPreviewJs = read("summary-preview.js");
+  assert.ok(!/<script(?![^>]*\bsrc=)/i.test(summaryPreviewHtml), "no inline <script> in summary-preview.html");
+  assert.ok(!/\sstyle="/i.test(summaryPreviewHtml), 'no style="" attribute in summary-preview.html');
+  assert.ok(!/\sstyle="/i.test(summaryPreviewJs), 'summary-preview.js must not build style="" attributes');
 });
 
 test("proxy toolbar places recover-all button next to test-disabled and scopes by fp", () => {
@@ -316,4 +327,49 @@ test("editor and settings modals replace inline hint text with info tooltips and
   const saveBody = app.slice(app.indexOf("async function saveEditor()"), app.indexOf("async function deleteProvider("));
   assert.doesNotMatch(saveBody, /dom\.edModels\.value\s*=/, "saveEditor should only validate, not rewrite edModels display");
   assert.doesNotMatch(saveBody, /dom\.edKeys\.value\s*=/, "saveEditor should only validate, not rewrite edKeys display");
+});
+
+test("dead keys host menu uses Name - Format, date filters stay empty, proxy summary uses segmented readout + count tooltips, and results copy buttons sit on titles", () => {
+  const css = read("style.css");
+  const fillHostFn = app.slice(app.indexOf("function fillHostSelect"), app.indexOf("const DK_CODE_NONE"));
+  assert.match(fillHostFn, /providerFormatLabel\(e\.provider,\s*e\.host\)/);
+  assert.doesNotMatch(fillHostFn, /e\.multiOnHost/);
+
+  assert.doesNotMatch(app, /todayFilterDate/);
+  const summaryCss = css.match(/\.proxy-summary\s*\{([^}]+)\}/);
+  assert.ok(summaryCss, ".proxy-summary rule not found");
+  assert.match(summaryCss[1], /\bgap:\s*0\.75rem;/);
+  const summaryLabelCss = css.match(/\.proxy-summary-label\s*\{([^}]+)\}/);
+  assert.ok(summaryLabelCss, ".proxy-summary-label rule not found");
+  assert.match(summaryLabelCss[1], /\bcolor:\s*var\(--text\);/);
+  const summaryGroupCss = css.match(/\.proxy-summary-group\s*\{([^}]+)\}/);
+  assert.ok(summaryGroupCss, ".proxy-summary-group rule not found");
+  assert.match(summaryGroupCss[1], /\bheight:\s*var\(--control-h\);/);
+  assert.match(summaryGroupCss[1], /\bbackground:\s*var\(--bg-3\);/);
+  assert.match(summaryGroupCss[1], /\bborder:\s*1px solid var\(--border\);/);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*min-width:\s*calc\(3ch \+ 1\.5rem\);/s);
+  assert.match(css, /\.proxy-summary-cell\s*\+\s*\.proxy-summary-cell\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s);
+
+  const urlCopyBtn = html.match(/<button[^>]*id="proxy-url-copy"[^>]*>/);
+  assert.ok(urlCopyBtn, "#proxy-url-copy button not found");
+  assert.match(urlCopyBtn[0], /\bproxy-url-copy\b/);
+  assert.doesNotMatch(urlCopyBtn[0], /\bbtn-xs\b/);
+  assert.match(css, /\.btn\.proxy-url-copy\s*\{[^}]*width:\s*var\(--control-h\);[^}]*height:\s*var\(--control-h\);/s);
+  assert.match(css, /\.btn\.proxy-url-copy svg\s*\{[^}]*width:\s*1\.15rem;[^}]*height:\s*1\.15rem;/s);
+
+  const summaryFn = app.slice(app.indexOf("function renderProxyToolbar()"), app.indexOf("function renderProxyLogsLink()"));
+  assert.match(summaryFn, /"密钥状态"/);
+  assert.match(summaryFn, /makeCount\("proxy-summary-ok",\s*available,\s*"有效数量"\)/);
+  assert.match(summaryFn, /makeCount\("proxy-summary-fail",\s*disabled,\s*"无效数量"\)/);
+
+  const resultBodyFn = app.slice(app.indexOf("function renderResultBody("), app.indexOf("function renderPerfTable("));
+  assert.match(resultBodyFn, /有效 Key[\s\S]*?badge-ok[\s\S]*?复制全部有效 Key[\s\S]*?<\/div>\s*<div class="lined-editor/);
+  assert.match(resultBodyFn, /有效模型[\s\S]*?badge-ok[\s\S]*?复制全部有效模型[\s\S]*?<\/div>\s*<div class="lined-editor/);
+  assert.doesNotMatch(resultBodyFn, /copy-block/);
+  assert.match(resultBodyFn, /失效 Key/);
+  assert.doesNotMatch(resultBodyFn, /无效 Key/);
+
+  const invalidGroupsFn = app.slice(app.indexOf("function renderInvalidGroups("), app.indexOf("function openErrorDetail("));
+  assert.match(invalidGroupsFn, /复制本组全部 KEY/);
+  assert.doesNotMatch(invalidGroupsFn, /title="复制 KEY"/);
 });
