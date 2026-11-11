@@ -4,7 +4,7 @@
 
 Cloudflare Pages（管理界面、API 与转发网关）+ GitHub Actions（每日定时测试）+ `async_test_keys.py`（并发测试脚本）。
 
-架构背景见 [docs/SPEC-0813.md](./docs/SPEC-0813.md)（2026-08-13 历史快照）；设计决策、取舍与实作注意事项见 `docs/decision-*.md`；扩展需求与资料表规划见 [docs/api-test-擴充需求計畫書.md](./docs/api-test-擴充需求計畫書.md)。
+完整项目架构与整体流程见 [docs/architecture.md](./docs/architecture.md)；架构背景见 [docs/SPEC-0813.md](./docs/SPEC-0813.md)（2026-08-13 历史快照）；设计决策、取舍与实作注意事项见 `docs/decision-*.md`；扩展需求与资料表规划见 [docs/api-test-擴充需求計畫書.md](./docs/api-test-擴充需求計畫書.md)。
 
 <img src="https://i.ibb.co/BVkvnvCW/Pix-Pin-2026-08-18-14-08-57.jpg" alt="Pix Pin 2026 08 18 14 08 57" border="0">
 
