@@ -247,13 +247,19 @@
 
                     <div id="proxy-toolbar" class="proxy-toolbar hidden">
                         <div class="proxy-toolbar-row proxy-toolbar-row--provider">
-                            <div class="proxy-provider-col">
-                                <select id="proxy-provider" class="input-select" aria-label="服务商"></select>
+                            <div class="proxy-provider-group">
+                                <label class="proxy-toolbar-label" for="proxy-provider">供应商</label>
+                                <div class="proxy-provider-col">
+                                    <select id="proxy-provider" class="input-select"></select>
+                                </div>
                             </div>
-                            <div class="proxy-url-wrap">
-                                <code id="proxy-url" class="input-text proxy-url"></code>
-                                <button id="proxy-url-copy" class="btn btn-ghost btn-icon copy-btn proxy-url-copy"
-                                    type="button" title="复制转发网址" aria-label="复制转发网址" disabled></button>
+                            <div class="proxy-url-group">
+                                <span class="proxy-toolbar-label">转发地址</span>
+                                <div class="proxy-url-wrap">
+                                    <code id="proxy-url" class="input-text proxy-url"></code>
+                                    <button id="proxy-url-copy" class="btn btn-ghost btn-icon copy-btn proxy-url-copy"
+                                        type="button" title="复制转发网址" aria-label="复制转发网址" disabled></button>
+                                </div>
                             </div>
                         </div>
                         <div class="proxy-toolbar-row proxy-toolbar-row--model">

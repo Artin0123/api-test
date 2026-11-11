@@ -338,11 +338,16 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   const summaryCss = css.match(/\.proxy-summary\s*\{([^}]+)\}/);
   assert.ok(summaryCss, ".proxy-summary rule not found");
   assert.match(summaryCss[1], /\bgap:\s*0\.75rem;/);
-  const summaryLabelCss = css.match(/\.proxy-summary-label,\s*\.proxy-model-label\s*\{([^}]+)\}/);
-  assert.ok(summaryLabelCss, "shared .proxy-summary-label, .proxy-model-label rule not found");
+  const summaryLabelCss = css.match(/\.proxy-toolbar-label,\s*\.proxy-summary-label,\s*\.proxy-model-label\s*\{([^}]+)\}/);
+  assert.ok(summaryLabelCss, "shared toolbar label rule not found");
   assert.match(summaryLabelCss[1], /\bcolor:\s*var\(--text-muted\);/);
   assert.match(summaryLabelCss[1], /\bfont-size:\s*var\(--text-sm\);/);
-  assert.doesNotMatch(summaryLabelCss[1], /\bfont-weight\s*:/);
+  assert.match(summaryLabelCss[1], /\bfont-weight:\s*600;/);
+
+  const rowProvider = html.match(/<div class="proxy-toolbar-row proxy-toolbar-row--provider">([\s\S]*?)<\/div>\s*<div class="proxy-toolbar-row proxy-toolbar-row--model">/);
+  assert.ok(rowProvider, "proxy-toolbar-row--provider not found");
+  assert.match(rowProvider[1], /class="proxy-toolbar-label"[^>]*for="proxy-provider">供应商<\/label>[\s\S]*?id="proxy-provider"/);
+  assert.match(rowProvider[1], /class="proxy-toolbar-label">转发地址<\/span>[\s\S]*?id="proxy-url"/);
 
   for (const dead of ["proxy-save-model", "saveProxyTestModel", "proxySaveModel"]) {
     assert.ok(!html.includes(dead), `index.html must not keep ${dead}`);
@@ -367,6 +372,9 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   const desktopModelCss = css.slice(0, css.indexOf("/* ── RWD"));
   assert.match(desktopModelCss, /\.proxy-action-group\s*\{\s*margin-left:\s*auto;\s*\}/);
   assert.doesNotMatch(desktopModelCss, /\.proxy-model-group\s*\{[^}]*margin-left:\s*auto/s);
+  const mobileCss = css.slice(css.indexOf("/* ── RWD"));
+  assert.match(mobileCss, /\.topbar-actions\s*\{[^}]*\bmargin-top:\s*auto;/s);
+  assert.match(mobileCss, /\.proxy-url-group,[\s\S]*?flex:\s*none;[^}]*flex-direction:\s*column;/s);
   assert.match(app, /body:\s*\{\s*fp,\s*id:\s*Number\(targetId\),\s*model:\s*selectedModel\s*\}/);
 
   const recoverFn = app.slice(app.indexOf("async function recoverProxyKey("), app.indexOf("async function recoverAllProxyKeys("));

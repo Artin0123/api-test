@@ -2047,9 +2047,12 @@ code {
     white-space: nowrap;
 }
 
+/* Keep toolbar captions styled identically to .field-label in dead-keys/modals. */
+.proxy-toolbar-label,
 .proxy-summary-label,
 .proxy-model-label {
     font-size: var(--text-sm);
+    font-weight: 600;
     color: var(--text-muted);
     white-space: nowrap;
 }
@@ -2143,12 +2146,28 @@ code {
     align-items: center;
 }
 
+.proxy-provider-group,
+.proxy-url-group,
 .proxy-model-group,
 .proxy-action-group {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     gap: 0.75rem;
+}
+
+.proxy-provider-group {
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+
+.proxy-url-group {
+    flex: 1 1 20rem;
+    min-width: 0;
+}
+
+.proxy-model-group,
+.proxy-action-group {
+    flex-wrap: wrap;
 }
 
 .proxy-action-group {
@@ -2329,6 +2348,8 @@ code {
         align-items: stretch;
         gap: 1.5rem;
         padding: 1.5rem 1.25rem;
+        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+        overflow-y: auto;
         transform: translateX(100%);
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -2352,6 +2373,7 @@ code {
         flex-direction: column;
         align-items: stretch;
         gap: 0.75rem;
+        margin-top: auto;
         border-top: 1px solid var(--border);
         padding-top: 1.5rem;
     }
@@ -2419,22 +2441,10 @@ code {
         align-items: stretch;
     }
 
-    /* One column here: the provider block, then the URL under it. The provider
-       block also gives up its fixed card width — there is only one column. */
-    .proxy-provider-col {
-        flex: 1 1 100%;
-    }
-
     .proxy-toolbar-row .btn:not(.btn-icon) {
-        flex: 1 1 auto;
-        min-height: var(--control-h);
-    }
-
-    /* Stack proxy-url-wrap to full width on mobile while keeping its icon copy
-       button aligned at the right side. */
-    .proxy-url-wrap {
         flex: none;
         width: 100%;
+        min-height: var(--control-h);
     }
 
     .proxy-url {
@@ -2449,24 +2459,44 @@ code {
         text-overflow: clip;
     }
 
-    /* Stack the model selector, summary readout, and action buttons full width
-       with one control per line below 640px. */
+    /* Stack labeled toolbar groups full width on mobile and reset flex-basis on
+       both the groups and their inner wrappers so flex-direction: column never
+       treats desktop flex-basis (e.g. 20rem) as vertical height. */
+    .proxy-provider-group,
+    .proxy-url-group,
     .proxy-model-group,
+    .proxy-summary,
     .proxy-action-group {
+        flex: none;
         width: 100%;
         margin-left: 0;
         flex-direction: column;
         align-items: stretch;
     }
 
-    .proxy-model-heading {
+    .proxy-provider-group,
+    .proxy-url-group,
+    .proxy-model-group,
+    .proxy-summary {
+        gap: 0.5rem;
+    }
+
+    .proxy-summary-group {
         align-self: flex-start;
     }
 
+    .proxy-provider-col,
+    .proxy-url-wrap,
     .proxy-model-select,
     .proxy-model-group > .custom-select {
         flex: none;
         width: 100%;
+    }
+
+    .proxy-toolbar-label,
+    .proxy-summary-label,
+    .proxy-model-heading {
+        align-self: flex-start;
     }
 
     /* Dead keys: stack full-width filters and keep date fields compact */
