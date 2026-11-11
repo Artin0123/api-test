@@ -178,3 +178,19 @@ test("proxy toolbar places recover-all button next to test-disabled and scopes b
   assert.match(app, /async function recoverAllProxyKeys\(/);
   assert.match(app, /body:\s*\{\s*fp:\s*currentProvider\.fp,\s*all:\s*true\s*\}/);
 });
+
+test("Batch 1 simplifications remove dead-key editor, gateway_provider, and _uiKey", () => {
+  const css = read("style.css");
+  for (const id of ["ed-gateway-provider", "dkedit-overlay", "dkedit-save-btn", "dke-host"]) {
+    assert.ok(!html.includes(`id="${id}"`), `index.html still has #${id}`);
+  }
+  for (const token of ["_uiKey", "assignProxyUiKeys", "openDkEdit", "saveDkEdit", "providerHosts("]) {
+    assert.ok(!app.includes(token), `app.js still contains ${token}`);
+  }
+  for (const cls of [".dk-edit-col", ".input-errcode", ".dk-actions"]) {
+    assert.ok(!css.includes(cls), `style.css still contains ${cls}`);
+  }
+  assert.ok(!worker.includes("handlePutDeadKey"), "_worker.js still has handlePutDeadKey");
+  assert.ok(!worker.includes("collectConfiguredKeysForHost"), "_worker.js still has collectConfiguredKeysForHost");
+  assert.match(app, /已存在相同的 \$\{pType\} 与 API Base 服务商/);
+});

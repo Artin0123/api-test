@@ -54,6 +54,21 @@ class FakeD1 {
   prepare(sql) {
     return new FakeStatement(this.db, sql);
   }
+
+  async batch(stmts) {
+    this.db.exec("BEGIN");
+    try {
+      const results = [];
+      for (const stmt of stmts) {
+        results.push(await stmt.run());
+      }
+      this.db.exec("COMMIT");
+      return results;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
 }
 
 // ── KV shim ────────────────────────────────────────────────────────────────
@@ -1063,60 +1078,142 @@ test("export requires auth and a preview can be taken without a working backend"
   assert.equal(ok.data.entry_count, 1);
 });
 
-test("a ghost key_state row is never forwarded and gets deleted", async () => {
-  useUpstream((req, res) => {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end("{}");
-  });
+test("D1 settings save writes store and key_state in one atomic batch and rolls back on failure", async () => {
   const env = makeEnv();
-  const p = provider({ alias: "openai", keys: "k1" });
-  await postSettings(env, [p]);
-  const fp = await fingerprintOf(env, p);
+  const initial = provider({ alias: "openai", keys: "k1\nk2" });
+  const initRes = await postSettings(env, [initial]);
+  assert.equal(initRes.status, 200);
+  const fp = await fingerprintOf(env, initial);
 
-  // Simulate "the notebook deleted this key but syncKeyState never ran": the row
-  // is the least-recently-used one, so it would be picked first.
-  await env.DB.prepare("UPDATE key_state SET last_used_at = ?").bind(Date.now()).run();
+  // Poison key_state inserts inside SQLite so the key_state part of the batch fails.
   await env.DB.prepare(
-    "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
-      "VALUES (?, 'sk-deleted', NULL, 0, 0, ?)",
-  )
-    .bind(fp, Date.now())
-    .run();
+    "CREATE TRIGGER block_k3 BEFORE INSERT ON key_state WHEN NEW.api_key = 'k3' " +
+      "BEGIN SELECT RAISE(ABORT, 'simulated failure'); END;",
+  ).run();
 
-  const response = await proxy(env, "/proxy/openai/chat/completions");
-  assert.equal(response.status, 200);
-  assert.equal(captured.length, 1);
-  assert.match(captured[0].headers.authorization, /^Bearer k1$/);
-  const ghost = await env.DB.prepare(
-    "SELECT id FROM key_state WHERE api_key = 'sk-deleted'",
-  ).first();
-  assert.equal(ghost, null, "幽靈列應該被清掉");
+  const failedRes = await postSettings(env, [
+    { ...initial, alias: "renamed", keys: "k1\nk3" },
+  ]);
+  assert.equal(failedRes.status, 500);
+
+  // Rollback: both app_settings (alias) and key_state (k2 still present, k3 absent) remain unchanged.
+  const settingsRes = await asJson(
+    await request(env, "/api/settings", { headers: adminHeaders() }),
+  );
+  assert.equal(settingsRes.data.settings.providers[0].alias, "openai");
+  const rows = await getKeyRows(env, fp);
+  assert.deepEqual(rows.map((r) => r.masked), ["k1", "k2"]);
 });
 
-test("a provider with no ledger rows at all is seeded on the first request", async () => {
-  useUpstream((req, res) => {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end("{}");
-  });
+test("duplicate (provider_type, api_base) is rejected at save time", async () => {
   const env = makeEnv();
-  const p = provider({ alias: "openai", keys: "k1\nk2" });
+  const res = await postSettings(env, [
+    provider({ provider_type: "openai", api_base: "https://dup.example/v1", keys: "k1" }),
+    provider({ provider_type: "openai", api_base: "https://dup.example/v1/", keys: "k2" }),
+  ]);
+  assert.equal(res.status, 400);
+  assert.match(res.data.error, /重复/);
+
+  // Same api_base with a different provider_type is allowed.
+  const diffType = await postSettings(env, [
+    provider({ provider_type: "openai", api_base: "https://dup.example/v1", alias: "oa", keys: "k1" }),
+    provider({ provider_type: "anthropic", api_base: "https://dup.example/v1", alias: "an", keys: "k2" }),
+  ]);
+  assert.equal(diffType.status, 200);
+});
+
+test("removing a key or deleting a provider prunes results, checkpoints, and dead_keys with detail rebalance", async () => {
+  const env = makeEnv();
+  const base = `${upstreamBase()}/prune/v1`;
+  const p = provider({ api_base: base, keys: "sk-dead1\nsk-dead2\nsk-good1" });
   await postSettings(env, [p]);
   const fp = await fingerprintOf(env, p);
-  // Simulate the insert half of syncKeyState failing.
-  await env.DB.prepare("DELETE FROM key_state WHERE fp = ?").bind(fp).run();
 
-  const response = await proxy(env, "/proxy/openai/chat/completions");
-  assert.equal(response.status, 200);
-  assert.equal(captured.length, 1);
-  const rows = await env.DB.prepare(
-    "SELECT api_key FROM key_state WHERE fp = ? ORDER BY api_key",
-  )
-    .bind(fp)
-    .all();
-  assert.deepEqual(
-    (rows.results || []).map((r) => r.api_key),
-    ["k1", "k2"],
+  await request(env, "/api/checkpoint", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_type: "openai", api_base: base, completed_tasks: 1, total_tasks: 3 }),
+  });
+  await request(env, "/api/results", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider_type: "openai",
+      api_base: base,
+      valid_keys: ["sk-good1"],
+      invalid_records: [
+        { api_key: "sk-dead1", error_code: 401, error_reason: "invalid", error_detail: { message: "bad key" } },
+        { api_key: "sk-dead2", error_code: 401, error_reason: "invalid", error_detail: null },
+      ],
+      proven_working_models: ["m1"],
+      failed_models: [],
+    }),
+  });
+
+  // Remove sk-dead1 in 来源设定 -> dead_keys drops sk-dead1 and hands error_detail to sk-dead2.
+  const editRes = await postSettings(env, [{ ...p, keys: "sk-dead2\nsk-good1" }]);
+  assert.equal(editRes.status, 200);
+  const dkAfterEdit = await asJson(
+    await request(env, "/api/dead-keys", { headers: adminHeaders() }),
   );
+  assert.equal(dkAfterEdit.data.dead_keys.length, 1);
+  assert.equal(dkAfterEdit.data.dead_keys[0].api_key, "sk-dead2");
+  assert.deepEqual(dkAfterEdit.data.dead_keys[0].error_detail, { message: "bad key" });
+
+  // Delete the entire provider -> results:{fp} and dead_keys for fp are purged too.
+  const delRes = await postSettings(env, []);
+  assert.equal(delRes.status, 200);
+  const resAfterDel = await asJson(
+    await request(env, `/api/results?fp=${fp}`, { headers: adminHeaders() }),
+  );
+  assert.equal(resAfterDel.data.exists, false);
+  const dkAfterDel = await asJson(
+    await request(env, "/api/dead-keys", { headers: adminHeaders() }),
+  );
+  assert.equal(dkAfterDel.data.dead_keys.length, 0);
+});
+
+test("dead_keys is scoped by fp so same-host different-format cards stay independent", async () => {
+  const env = makeEnv();
+  const base = `${upstreamBase()}/shared/v1`;
+  const oa = provider({ provider_type: "openai", alias: "oa", api_base: base, keys: "sk-oa-dead\nsk-oa-ok" });
+  const an = provider({ provider_type: "anthropic", alias: "an", api_base: base, keys: "sk-an-dead\nsk-an-ok" });
+  await postSettings(env, [oa, an]);
+  const fpOa = await fingerprintOf(env, oa);
+  const fpAn = await fingerprintOf(env, an);
+
+  await request(env, "/api/results", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider_type: "openai",
+      api_base: base,
+      valid_keys: ["sk-oa-ok"],
+      invalid_records: [{ api_key: "sk-oa-dead", error_code: 401, error_reason: "oa err", error_detail: { message: "oa err" } }],
+      proven_working_models: ["m1"],
+      failed_models: [],
+    }),
+  });
+  await request(env, "/api/results", {
+    method: "POST",
+    headers: { ...adminHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider_type: "anthropic",
+      api_base: base,
+      valid_keys: ["sk-an-ok"],
+      invalid_records: [{ api_key: "sk-an-dead", error_code: 401, error_reason: "an err", error_detail: { message: "an err" } }],
+      proven_working_models: ["m1"],
+      failed_models: [],
+    }),
+  });
+
+  const list = await asJson(await request(env, "/api/dead-keys", { headers: adminHeaders() }));
+  assert.equal(list.data.dead_keys.length, 2);
+  const oaRec = list.data.dead_keys.find((r) => r.fp === fpOa);
+  const anRec = list.data.dead_keys.find((r) => r.fp === fpAn);
+  assert.ok(oaRec && anRec);
+  assert.deepEqual(oaRec.error_detail, { message: "oa err" });
+  assert.deepEqual(anRec.error_detail, { message: "an err" });
 });
 
 test("restore writes a backup back including key_state", async () => {
@@ -1168,7 +1265,7 @@ test("restore writes a backup back including key_state", async () => {
 
 // ── AI Gateway (fetch intercepted) ─────────────────────────────────────────
 
-test("gateway mode builds the custom-provider URL and writes ASCII metadata", async () => {
+test("gateway mode builds custom-{alias} URL and ignores removed gateway_provider field", async () => {
   const env = makeEnv({
     vars: {
       AI_GATEWAY_ACCOUNT_ID: "acct",
@@ -1177,8 +1274,17 @@ test("gateway mode builds the custom-provider URL and writes ASCII metadata", as
     },
   });
   await postSettings(env, [
-    provider({ alias: "openai", keys: "sk-abcdefghij1234", gateway_provider: "openai-main" }),
+    provider({ alias: "openai", keys: "sk-abcdefghij1234", gateway_provider: "legacy-ignored" }),
   ]);
+
+  const saved = await asJson(
+    await request(env, "/api/settings", { headers: adminHeaders() }),
+  );
+  assert.equal("gateway_provider" in saved.data.settings.providers[0], false);
+  const proxyState = await asJson(
+    await request(env, "/api/proxy/state", { headers: adminHeaders() }),
+  );
+  assert.equal("gateway_provider" in proxyState.data.providers[0], false);
 
   const realFetch = globalThis.fetch;
   let seen = null;
@@ -1198,7 +1304,7 @@ test("gateway mode builds the custom-provider URL and writes ASCII metadata", as
 
   assert.equal(
     seen.url,
-    "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai-main/chat/completions?q=1",
+    "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai/chat/completions?q=1",
   );
   assert.equal(seen.headers.get("cf-aig-skip-cache"), "true");
   assert.equal(seen.headers.get("cf-aig-max-attempts"), "1");
@@ -1210,7 +1316,7 @@ test("gateway mode builds the custom-provider URL and writes ASCII metadata", as
   assert.ok(/^[\x20-\x7e]*$/.test(metadata));
 });
 
-test("POST /api/dead-keys is removed while GET/PUT/DELETE remain active", async () => {
+test("POST and PUT /api/dead-keys are removed while GET/DELETE remain active", async () => {
   const env = makeEnv();
   const postRes = await request(env, "/api/dead-keys", {
     method: "POST",
@@ -1240,6 +1346,7 @@ test("POST /api/dead-keys is removed while GET/PUT/DELETE remain active", async 
   assert.equal(list.status, 200);
   assert.equal(list.data.dead_keys.length, 1);
   const id = list.data.dead_keys[0].id;
+  assert.ok(list.data.dead_keys[0].fp);
 
   const putRes = await asJson(
     await request(env, `/api/dead-keys?id=${encodeURIComponent(id)}`, {
@@ -1248,8 +1355,7 @@ test("POST /api/dead-keys is removed while GET/PUT/DELETE remain active", async 
       body: JSON.stringify({ error_code: 403 }),
     }),
   );
-  assert.equal(putRes.status, 200);
-  assert.equal(putRes.data.record.error_code, 403);
+  assert.equal(putRes.status, 404);
 
   const delRes = await asJson(
     await request(env, "/api/dead-keys", {

@@ -31,7 +31,6 @@ const ROUTES = {
   "POST /api/checkpoint": handlePostCheckpoint,
   "DELETE /api/checkpoint": handleDeleteCheckpoint,
   "GET /api/dead-keys": handleGetDeadKeys,
-  "PUT /api/dead-keys": handlePutDeadKey,
   "DELETE /api/dead-keys": handleDeleteDeadKey,
   "GET /api/proxy/state": handleGetProxyState,
   "POST /api/proxy/test": handleProxyTest,
@@ -503,8 +502,7 @@ function settingsVersion(settings) {
 // 400 here, not turn into a mystery 404 at forward time.
 const PROXY_ALIAS_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/** Trim the two proxy fields and drop them when empty so old providers keep the
- *  exact shape they had before this feature existed. */
+/** Normalize alias formatting and drop empty/removed legacy proxy fields. */
 function normalizeProviderForStorage(p) {
   if (!p || typeof p !== "object") return p;
   const out = { ...p };
@@ -513,12 +511,47 @@ function normalizeProviderForStorage(p) {
     if (alias) out.alias = alias;
     else delete out.alias;
   }
-  if (typeof p.gateway_provider === "string") {
-    const slug = p.gateway_provider.trim();
-    if (slug) out.gateway_provider = slug;
-    else delete out.gateway_provider;
-  }
+  delete out.gateway_provider;
   return out;
+}
+
+async function providerFpEntries(providers) {
+  const entries = [];
+  for (const p of providers || []) {
+    if (!p || typeof p !== "object") continue;
+    const providerType =
+      typeof p.provider_type === "string" ? p.provider_type.trim() : "";
+    const apiBase = typeof p.api_base === "string" ? p.api_base.trim() : "";
+    if (!providerType || !apiBase) continue;
+    entries.push({
+      provider: p,
+      providerType,
+      apiBase,
+      fp: await providerFingerprint(providerType, apiBase),
+    });
+  }
+  return entries;
+}
+
+function validateProviderDuplicates(providers) {
+  const seen = new Map();
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    const type =
+      typeof p.provider_type === "string" ? p.provider_type.trim() : "";
+    const base =
+      typeof p.api_base === "string"
+        ? p.api_base.trim().replace(/\/+$/, "")
+        : "";
+    if (!type || !base) continue;
+    const key = `${type}\u0000${base}`;
+    if (seen.has(key)) {
+      return `providers[${i}] 与 providers[${seen.get(key)}] 的 provider_type (${type}) 与 api_base 重复`;
+    }
+    seen.set(key, i);
+  }
+  return null;
 }
 
 // Only these three provider families are supported. `ollama` was removed on
@@ -664,63 +697,83 @@ async function handlePostSettings(request, env) {
   const keyError = validateProviderKeys(next.providers || []);
   if (keyError) return json({ error: keyError }, 400);
 
+  const dupError = validateProviderDuplicates(next.providers || []);
+  if (dupError) return json({ error: dupError }, 400);
+
   // Drop test-model entries whose provider no longer exists, so editing api_base
   // (new fingerprint) or deleting a provider cannot leave the map growing.
-  const liveFps = new Set(
-    await Promise.all(
-      (next.providers || [])
-        .filter((p) => p && p.provider_type?.trim() && p.api_base?.trim())
-        .map((p) =>
-          providerFingerprint(p.provider_type.trim(), p.api_base.trim()),
-        ),
-    ),
-  );
+  const nextEntries = await providerFpEntries(next.providers || []);
+  const liveFps = new Set(nextEntries.map((e) => e.fp));
   next.proxy_test_models = Object.fromEntries(
     Object.entries(next.proxy_test_models).filter(([fp]) => liveFps.has(fp)),
   );
 
-  await kv.put(SETTINGS_KEY, JSON.stringify(next));
+  // Clean up results / checkpoints belonging to removed or identity-changed
+  // providers, and drop dead keys whose card or key is no longer configured.
+  const oldEntries = await providerFpEntries(existing.providers || []);
+  const staleFps = [...new Set(oldEntries.map((e) => e.fp))].filter(
+    (fp) => !liveFps.has(fp),
+  );
+  const rawDeadKeys = await kv.get(DEAD_KEYS_KEY);
+  const keptDeadKeys = await pruneDeadKeysForSettings(
+    rawDeadKeys,
+    next.providers || [],
+  );
 
-  // key_state mirrors the settings key list, so removals and fingerprint changes
-  // are reconciled right here. Doing it lazily at forward time would leave stale
-  // rows behind forever on a site nobody calls. A failure here must not roll back
-  // the settings write that already succeeded.
-  try {
-    await syncKeyState(env, next.providers || []);
-  } catch (err) {
-    console.error("key_state sync failed", err);
-  }
-
-  // Cleanup stale checkpoints: only delete for providers that were REMOVED or had their
-  // identity (api_base / provider_type) changed — i.e. old fingerprints not present in
-  // the new settings. Providers that still exist keep their checkpoint intact.
-  const oldProviders = existing.providers || [];
-  if (oldProviders.length > 0) {
-    const newFpSet = new Set(
-      await Promise.all(
-        (next.providers || [])
-          .filter((p) => p && p.provider_type?.trim() && p.api_base?.trim())
-          .map((p) =>
-            providerFingerprint(p.provider_type.trim(), p.api_base.trim()),
-          ),
+  if (storageBackendName(env) === "d1") {
+    const db = env.DB;
+    await ensureSchemaFor(db);
+    const current = await db
+      .prepare("SELECT id, fp, api_key FROM key_state")
+      .all();
+    const stmts = [
+      db
+        .prepare(
+          "INSERT INTO store (k, v) VALUES (?, ?) " +
+            "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        )
+        .bind(SETTINGS_KEY, JSON.stringify(next)),
+    ];
+    for (const staleFp of staleFps) {
+      stmts.push(
+        db.prepare("DELETE FROM store WHERE k = ?").bind(`results:${staleFp}`),
+        db
+          .prepare("DELETE FROM store WHERE k = ?")
+          .bind(`checkpoint:${staleFp}`),
+      );
+    }
+    if (keptDeadKeys !== null) {
+      stmts.push(
+        db
+          .prepare(
+            "INSERT INTO store (k, v) VALUES (?, ?) " +
+              "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+          )
+          .bind(DEAD_KEYS_KEY, JSON.stringify(keptDeadKeys)),
+      );
+    }
+    stmts.push(
+      ...buildKeyStateSyncStmts(
+        db,
+        nextEntries,
+        current.results || [],
+        Date.now(),
       ),
     );
-    await Promise.allSettled(
-      oldProviders.map(async (p) => {
-        if (
-          !p ||
-          typeof p.provider_type !== "string" ||
-          typeof p.api_base !== "string"
-        )
-          return;
-        if (!p.provider_type.trim() || !p.api_base.trim()) return;
-        const fp = await providerFingerprint(
-          p.provider_type.trim(),
-          p.api_base.trim(),
-        );
-        if (!newFpSet.has(fp)) await kv.delete(`checkpoint:${fp}`);
-      }),
-    );
+    await db.batch(stmts);
+  } else {
+    await kv.put(SETTINGS_KEY, JSON.stringify(next));
+    if (staleFps.length) {
+      await Promise.all(
+        staleFps.flatMap((staleFp) => [
+          kv.delete(`results:${staleFp}`),
+          kv.delete(`checkpoint:${staleFp}`),
+        ]),
+      );
+    }
+    if (keptDeadKeys !== null) {
+      await kv.put(DEAD_KEYS_KEY, JSON.stringify(keptDeadKeys));
+    }
   }
 
   return json({ ok: true, version: next.version });
@@ -790,6 +843,7 @@ async function handlePostResults(request, env) {
   try {
     synced = await syncDeadKeysFromResults(
       kv,
+      fp,
       api_base.trim(),
       body.valid_keys,
       body.invalid_records,
@@ -887,10 +941,16 @@ function normalizeErrorCode(value) {
 
 /** error_detail is deduped per provider_host + error_code — same host, same
  *  status code means the same provider message, so it is stored only once. */
+function deadKeyScope(rec) {
+  return typeof rec?.fp === "string" && rec.fp.trim()
+    ? rec.fp.trim()
+    : rec?.provider_host || "";
+}
+
 function sameDedupGroup(a, b) {
   return (
-    a.provider_host === b.provider_host &&
-    normalizeErrorCode(a.error_code) === normalizeErrorCode(b.error_code)
+    deadKeyScope(a) === deadKeyScope(b) &&
+    normalizeErrorCode(a?.error_code) === normalizeErrorCode(b?.error_code)
   );
 }
 
@@ -949,37 +1009,63 @@ function areErrorDetailsEqual(a, b) {
   return true;
 }
 
-/** Providers store keys as a newline-separated string (normalizeKeys in app.js),
- *  not an array. Union every card on this host so one upload cannot drop another
- *  card's still-configured dead keys. */
-function collectConfiguredKeysForHost(settings, provider_host) {
-  const keys = new Set();
-  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
-  for (const p of providers) {
-    if (!p || typeof p.api_base !== "string" || typeof p.keys !== "string") continue;
+/** Build lookup sets of configured keys keyed by card fingerprint `fp`, plus a
+ *  host fallback for pre-P1 dead_keys records that were created without `fp`. */
+async function configuredKeysIndex(providers) {
+  const byFp = new Map();
+  const byHost = new Map();
+  for (const { provider: p, apiBase, fp } of await providerFpEntries(providers)) {
+    const keys = providerKeys(p);
+    let fpSet = byFp.get(fp);
+    if (!fpSet) {
+      fpSet = new Set();
+      byFp.set(fp, fpSet);
+    }
+    for (const k of keys) fpSet.add(k);
     try {
-      if (new URL(p.api_base.trim()).hostname !== provider_host) continue;
-    } catch {
-      continue;
-    }
-    for (const line of p.keys.split("\n")) {
-      const k = line.trim();
-      if (k) keys.add(k);
-    }
+      const host = new URL(apiBase).hostname;
+      if (host) {
+        let hostSet = byHost.get(host);
+        if (!hostSet) {
+          hostSet = new Set();
+          byHost.set(host, hostSet);
+        }
+        for (const k of keys) hostSet.add(k);
+      }
+    } catch {}
   }
-  return keys;
+  return { byFp, byHost };
 }
 
-/** Reconcile the dead key list against one test run and the current 来源设定.
- *  The list means "keys currently failing in source", not a permanent ledger —
- *  which is what lets us record any failure code, since a transient one (429,
- *  500, 全网皆败) clears itself on the next successful run. A key dropped from
- *  来源设定 is also dropped here (ghost cleanup). 来源设定 itself is never
- *  rewritten by this path. Existing records keep id/expired_at/created_at;
- *  error_code and error_detail are refreshed in two stages so Python's
- *  per-cause holder (often a different key) cannot wipe or skip the KV holder. */
+/** Drop dead_keys entries whose card (fp) was deleted or whose key was removed
+ *  from 来源设定, returning null if nothing changed so saves avoid empty writes. */
+async function pruneDeadKeysForSettings(rawDeadKeys, providers) {
+  const list = parseJsonOrNull(rawDeadKeys);
+  if (!Array.isArray(list) || !list.length) return null;
+  const { byFp, byHost } = await configuredKeysIndex(providers);
+  const kept = [];
+  const removed = [];
+  for (const r of list) {
+    if (!r || typeof r !== "object") continue;
+    const key = typeof r.api_key === "string" ? r.api_key.trim() : "";
+    const recFp = typeof r.fp === "string" ? r.fp.trim() : "";
+    const configured = recFp
+      ? !!(key && byFp.get(recFp)?.has(key))
+      : !!(key && byHost.get(r.provider_host)?.has(key));
+    if (configured) kept.push(r);
+    else removed.push(r);
+  }
+  if (!removed.length) return null;
+  rebalanceErrorDetail(removed, kept);
+  return kept;
+}
+
+/** Reconcile dead_keys for one provider `fp` against a fresh test upload and
+ *  来源设定. Recovered keys and keys no longer configured on this card are
+ *  dropped; error_code/error_detail stay deduplicated within `(fp, code)`. */
 async function syncDeadKeysFromResults(
   kv,
+  fp,
   api_base,
   validKeys,
   invalidRecords,
@@ -1002,18 +1088,19 @@ async function syncDeadKeysFromResults(
   let list = parseJsonOrNull(rawDeadKeys);
   if (!Array.isArray(list)) list = [];
 
-  // KV miss or corrupt JSON must not look like "source is empty" — that would
-  // wipe every dead key on this host. A real {providers:[]} is available and
-  // correctly means nothing is configured.
+  // KV/store miss or corrupt JSON must not look like "source is empty" — that
+  // would wipe every dead key on this provider.
   const settingsParsed = parseJsonOrNull(rawSettings);
   const settingsAvailable =
     !!rawSettings &&
     !!settingsParsed &&
     typeof settingsParsed === "object" &&
     !Array.isArray(settingsParsed);
-  const configuredKeysForHost = settingsAvailable
-    ? collectConfiguredKeysForHost(settingsParsed, provider_host)
-    : null;
+  const { byFp, byHost } = settingsAvailable
+    ? await configuredKeysIndex(settingsParsed.providers)
+    : { byFp: new Map(), byHost: new Map() };
+  const configuredKeysForFp = byFp.get(fp) || new Set();
+  const configuredKeysForHost = byHost.get(provider_host) || new Set();
 
   const recovered = new Set(
     (Array.isArray(validKeys) ? validKeys : [])
@@ -1022,27 +1109,11 @@ async function syncDeadKeysFromResults(
       .filter(Boolean),
   );
 
-  const keep = [];
-  const dropped = [];
-  for (const r of list) {
-    if (!r || r.provider_host !== provider_host) {
-      keep.push(r);
-      continue;
-    }
-    const key = typeof r.api_key === "string" ? r.api_key.trim() : "";
-    const isRecovered = key && recovered.has(key);
-    const isRemovedFromSettings =
-      settingsAvailable && key && !configuredKeysForHost.has(key);
-    if (isRecovered || isRemovedFromSettings) dropped.push(r);
-    else keep.push(r);
-  }
-  if (dropped.length) rebalanceErrorDetail(dropped, keep);
-
   const invList = Array.isArray(invalidRecords) ? invalidRecords : [];
   const invMap = new Map();
   // First non-empty detail per error_code from this upload. Python only stores
   // error_detail on one key per (code, normalized message), which is often not
-  // the same key as the KV group's current holder.
+  // the same key as the store group's current holder.
   const newGroupDetails = new Map();
 
   for (const rec of invList) {
@@ -1057,15 +1128,63 @@ async function syncDeadKeysFromResults(
     }
   }
 
+  const keep = [];
+  const dropped = [];
+  let fpMigrated = false;
+  for (const r of list) {
+    if (!r) continue;
+    const key = typeof r.api_key === "string" ? r.api_key.trim() : "";
+    const recFp = typeof r.fp === "string" ? r.fp.trim() : "";
+    if (recFp) {
+      if (recFp !== fp) {
+        keep.push(r);
+        continue;
+      }
+      const isRecovered = key && recovered.has(key);
+      const isRemovedFromSettings =
+        settingsAvailable && (!key || !configuredKeysForFp.has(key));
+      if (isRecovered || isRemovedFromSettings) dropped.push(r);
+      else keep.push(r);
+      continue;
+    }
+
+    // Legacy record without `fp`: leave it untouched if it belongs to another
+    // live card on the same host; otherwise reconcile under this card and stamp `fp`.
+    if (r.provider_host !== provider_host) {
+      keep.push(r);
+      continue;
+    }
+    const belongsToOtherCard =
+      settingsAvailable &&
+      key &&
+      configuredKeysForHost.has(key) &&
+      !configuredKeysForFp.has(key) &&
+      !recovered.has(key) &&
+      !invMap.has(key);
+    if (belongsToOtherCard) {
+      keep.push(r);
+      continue;
+    }
+    const isRecovered = key && recovered.has(key);
+    const isRemovedFromSettings =
+      settingsAvailable && (!key || !configuredKeysForFp.has(key));
+    if (isRecovered || isRemovedFromSettings) {
+      dropped.push(r);
+    } else {
+      r.fp = fp;
+      fpMigrated = true;
+      keep.push(r);
+    }
+  }
+  if (dropped.length) rebalanceErrorDetail(dropped, keep);
+
   let codeUpdates = 0;
   let detailUpdates = 0;
 
-  // Stage 1: migrate error_code per key. Hand off the old group's detail
-  // immediately — waiting until the end would drop it if several keys leave
-  // the same group in one pass.
+  // Stage 1: migrate error_code per key within this provider `fp`.
   for (let i = 0; i < keep.length; i++) {
     const r = keep[i];
-    if (!r || r.provider_host !== provider_host) continue;
+    if (!r || r.fp !== fp) continue;
 
     const recKey = typeof r.api_key === "string" ? r.api_key.trim() : "";
     if (!recKey) continue;
@@ -1087,21 +1206,17 @@ async function syncDeadKeysFromResults(
     codeUpdates++;
   }
 
-  // Stage 2: one holder per (host, code); refresh from this upload's
-  // representative detail. A missing body must not wipe an existing 📋.
-  const hostCodes = new Set();
+  // Stage 2: one holder per (fp, code); refresh from this upload's detail.
+  const fpCodes = new Set();
   for (const r of keep) {
-    if (r && r.provider_host === provider_host) {
-      hostCodes.add(normalizeErrorCode(r.error_code));
+    if (r && r.fp === fp) {
+      fpCodes.add(normalizeErrorCode(r.error_code));
     }
   }
 
-  for (const code of hostCodes) {
+  for (const code of fpCodes) {
     const siblings = keep.filter(
-      (r) =>
-        r &&
-        r.provider_host === provider_host &&
-        normalizeErrorCode(r.error_code) === code,
+      (r) => r && r.fp === fp && normalizeErrorCode(r.error_code) === code,
     );
     if (!siblings.length) continue;
 
@@ -1123,13 +1238,10 @@ async function syncDeadKeysFromResults(
   const removed = dropped.length;
   let added = 0;
 
-  // Keys that failed get recorded. expired_at is stored as the calendar day at
-  // midnight UTC — the same shape date-only edits use (toIsoDay in app.js) —
-  // because the UI reads it as a date; the precise moment stays in created_at.
   const expired_at = `${String(uploadedAt).slice(0, 10)}T00:00:00.000Z`;
   const known = new Set();
   for (const r of listNext) {
-    if (r && typeof r.api_key === "string" && r.api_key.trim()) {
+    if (r && r.fp === fp && typeof r.api_key === "string" && r.api_key.trim()) {
       known.add(r.api_key.trim());
     }
   }
@@ -1138,13 +1250,11 @@ async function syncDeadKeysFromResults(
     if (!rec || typeof rec.api_key !== "string" || !rec.api_key.trim()) continue;
     const api_key = rec.api_key.trim();
     if (known.has(api_key)) continue;
-    // Source is the unique standard: a key already gone from 来源设定 must not
-    // be re-recorded from a stale in-flight run.
-    if (settingsAvailable && !configuredKeysForHost.has(api_key)) continue;
+    if (settingsAvailable && !configuredKeysForFp.has(api_key)) continue;
 
     const error_code = normalizeErrorCode(rec.error_code);
     const hasHolder = listNext.some(
-      (r) => r && r.error_detail && sameDedupGroup(r, { provider_host, error_code }),
+      (r) => r && r.error_detail && sameDedupGroup(r, { fp, provider_host, error_code }),
     );
     const error_detail = hasHolder
       ? null
@@ -1152,6 +1262,7 @@ async function syncDeadKeysFromResults(
 
     listNext.push({
       id: crypto.randomUUID(),
+      fp,
       provider_host,
       api_key,
       expired_at,
@@ -1164,7 +1275,7 @@ async function syncDeadKeysFromResults(
   }
 
   const updated = codeUpdates + detailUpdates;
-  if (added || removed || updated) {
+  if (added || removed || updated || fpMigrated) {
     await kv.put(DEAD_KEYS_KEY, JSON.stringify(listNext));
   }
   return { added, removed, updated };
@@ -1175,81 +1286,6 @@ async function handleGetDeadKeys(request, env) {
     return json({ error: "Unauthorized" }, 401);
   const kv = store(env);
   return json({ ok: true, dead_keys: await readDeadKeys(kv) });
-}
-
-async function handlePutDeadKey(request, env, url) {
-  if (!(await requireAuth(request, env)))
-    return json({ error: "Unauthorized" }, 401);
-
-  const id = getNonEmptyString(url, "id");
-  if (!id) return json({ error: "id required" }, 400);
-
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Invalid JSON" }, 400);
-  }
-
-  const kv = store(env);
-  const list = await readDeadKeys(kv);
-  const idx = list.findIndex((r) => r && r.id === id);
-  if (idx === -1) return json({ error: "Not Found" }, 404);
-
-  const prev = list[idx];
-  const next = { ...prev };
-
-  if (typeof body.api_key === "string") {
-    const api_key = body.api_key.trim();
-    if (!api_key) return json({ error: "api_key must not be empty" }, 400);
-    if (list.some((r, i) => i !== idx && r && r.api_key === api_key)) {
-      return json({ error: "api_key already recorded", duplicated: true }, 409);
-    }
-    next.api_key = api_key;
-  }
-  if (typeof body.provider_host === "string") {
-    const provider_host = body.provider_host.trim();
-    if (!provider_host)
-      return json({ error: "provider_host must not be empty" }, 400);
-    next.provider_host = provider_host;
-  }
-  if (body.expired_at !== undefined) {
-    next.expired_at =
-      typeof body.expired_at === "string" && body.expired_at.trim()
-        ? body.expired_at.trim()
-        : null;
-  }
-  if (body.error_code !== undefined) {
-    next.error_code = normalizeErrorCode(body.error_code);
-  }
-  if (body.error_detail !== undefined) {
-    next.error_detail = normalizeErrorDetail(body.error_detail);
-  }
-
-  list[idx] = next;
-
-  // Editing host or error_code moves the record between dedup groups. Without
-  // rebalancing, the old group loses its only stored detail and the new group
-  // can end up holding two copies.
-  if (!sameDedupGroup(prev, next)) {
-    if (prev.error_detail) {
-      const heir = list.find(
-        (r, i) => i !== idx && r && !r.error_detail && sameDedupGroup(r, prev),
-      );
-      if (heir) heir.error_detail = prev.error_detail;
-    }
-    if (
-      next.error_detail &&
-      list.some(
-        (r, i) => i !== idx && r && r.error_detail && sameDedupGroup(r, next),
-      )
-    ) {
-      next.error_detail = null;
-    }
-  }
-
-  await kv.put(DEAD_KEYS_KEY, JSON.stringify(list));
-  return json({ ok: true, record: next });
 }
 
 async function collectDeleteIds(request, url) {
@@ -1426,14 +1462,11 @@ function applyProviderAuth(headers, providerType, apiKey) {
   }
 }
 
-/** Direct upstream or AI Gateway custom-provider. The custom provider's base_url
- *  is registered as the provider's api_base, so `custom-{slug}` + caller path
- *  lands on exactly the same URL as the direct call. No per-type append logic. */
+/** Direct upstream or AI Gateway custom-provider. The custom provider's slug
+ *  matches `alias`, so `custom-{alias}` + caller path routes through Gateway. */
 function upstreamFor(env, provider) {
   const slug =
-    typeof provider.gateway_provider === "string"
-      ? provider.gateway_provider.trim()
-      : "";
+    typeof provider.alias === "string" ? provider.alias.trim() : "";
   const account = (env.AI_GATEWAY_ACCOUNT_ID || "").trim();
   const gateway = (env.AI_GATEWAY_ID || "").trim();
   const token = (env.AI_GATEWAY_TOKEN || "").trim();
@@ -1584,53 +1617,42 @@ function ensureSchemaFor(db) {
   return ready;
 }
 
-async function syncKeyState(env, providers) {
-  if (storageBackendName(env) !== "d1" || !hasD1(env)) return;
-  const db = env.DB;
-  await ensureSchemaFor(db);
-  const now = Date.now();
-
+function buildKeyStateSyncStmts(db, entries, existingRows, now) {
   const wanted = [];
-  for (const p of providers || []) {
-    if (
-      !p ||
-      typeof p.provider_type !== "string" ||
-      typeof p.api_base !== "string"
-    ) {
-      continue;
-    }
-    const providerType = p.provider_type.trim();
-    const apiBase = p.api_base.trim();
-    if (!providerType || !apiBase) continue;
-    const fp = await providerFingerprint(providerType, apiBase);
+  for (const { provider: p, fp } of entries || []) {
     for (const apiKey of providerKeys(p)) wanted.push({ fp, apiKey });
   }
 
   const identity = (row) => `${row.fp}\u0000${row.api_key}`;
-  const current = await db
-    .prepare("SELECT id, fp, api_key FROM key_state")
-    .all();
-  const rows = current.results || [];
   const wantedSet = new Set(wanted.map((w) => `${w.fp}\u0000${w.apiKey}`));
-  const existingSet = new Set(rows.map(identity));
+  const existingSet = new Set((existingRows || []).map(identity));
+  const stmts = [];
 
-  const staleIds = rows.filter((r) => !wantedSet.has(identity(r))).map((r) => r.id);
+  const staleIds = (existingRows || [])
+    .filter((r) => !wantedSet.has(identity(r)))
+    .map((r) => r.id);
   for (let i = 0; i < staleIds.length; i += 100) {
     const chunk = staleIds.slice(i, i + 100);
     const sql = `DELETE FROM key_state WHERE id IN (${chunk.map(() => "?").join(",")})`;
-    await db.prepare(sql).bind(...chunk).run();
+    stmts.push(db.prepare(sql).bind(...chunk));
   }
 
-  for (const w of wanted) {
-    if (existingSet.has(`${w.fp}\u0000${w.apiKey}`)) continue;
-    await db
-      .prepare(
-        "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
-          "VALUES (?, ?, NULL, 0, 0, ?) ON CONFLICT(fp, api_key) DO NOTHING",
-      )
-      .bind(w.fp, w.apiKey, now)
-      .run();
+  const missing = wanted.filter(
+    (w) => !existingSet.has(`${w.fp}\u0000${w.apiKey}`),
+  );
+  // 3 bound parameters per row -> cap at 30 rows per statement (<= 90 params < 100 D1 limit).
+  for (let i = 0; i < missing.length; i += 30) {
+    const chunk = missing.slice(i, i + 30);
+    const sql =
+      "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
+      `VALUES ${chunk.map(() => "(?, ?, NULL, 0, 0, ?)").join(",")} ` +
+      "ON CONFLICT(fp, api_key) DO NOTHING";
+    const params = [];
+    for (const w of chunk) params.push(w.fp, w.apiKey, now);
+    stmts.push(db.prepare(sql).bind(...params));
   }
+
+  return stmts;
 }
 
 /** One atomic statement picks the least-recently-used enabled key and stamps it.
@@ -1704,21 +1726,6 @@ async function recoverKeysFromResults(env, fp, validKeys) {
     recovered += Number(res.meta?.changes || 0);
   }
   return recovered;
-}
-
-/** Insert a row for every key that has none yet; existing rows are untouched.
- *  Chunked because SQLite caps bound parameters. */
-async function seedKeyRows(db, fp, keys, now) {
-  for (let i = 0; i < keys.length; i += 100) {
-    const chunk = keys.slice(i, i + 100);
-    const sql =
-      "INSERT INTO key_state (fp, api_key, last_used_at, fail_count, disabled, updated_at) " +
-      `VALUES ${chunk.map(() => "(?, ?, NULL, 0, 0, ?)").join(",")} ` +
-      "ON CONFLICT(fp, api_key) DO NOTHING";
-    const params = [];
-    for (const key of chunk) params.push(fp, key, now);
-    await db.prepare(sql).bind(...params).run();
-  }
 }
 
 async function resetKeyFailure(db, id) {
@@ -1802,41 +1809,10 @@ async function handleProxy(request, env, url) {
   };
 
   const tried = new Set();
-  const notebookKeys = providerKeys(provider);
   let lastFailure = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    let keyRow = await pickKeyRow(db, fp, [...tried]);
-
-    // Ghost guard (B′): the notebook is the authority on *which* keys may be
-    // used; key_state only carries their counters. A row whose key was deleted
-    // from the notebook but never pruned (sync failed) must never reach the
-    // upstream — drop it and pick again. Happy path costs nothing extra.
-    for (let ghosts = 0; keyRow && ghosts < 5; ghosts++) {
-      if (notebookKeys.includes(keyRow.api_key)) break;
-      try {
-        await db.prepare("DELETE FROM key_state WHERE id = ?").bind(keyRow.id).run();
-      } catch (dbErr) {
-        console.error("ghost key_state row cleanup failed", dbErr);
-      }
-      keyRow = await pickKeyRow(db, fp, [...tried]);
-    }
-
-    // Opposite direction: the notebook lists keys but the ledger has no row at
-    // all (sync failed on insert). Seed once and pick again. Partial gaps are
-    // not detected here on purpose — they are safe (a key that is missing a row
-    // simply gets no traffic) and the card shows `synced: false`.
-    if (!keyRow && notebookKeys.length) {
-      const count = await db
-        .prepare("SELECT COUNT(*) AS n FROM key_state WHERE fp = ?")
-        .bind(fp)
-        .first();
-      if (!count || Number(count.n) === 0) {
-        await seedKeyRows(db, fp, notebookKeys, Date.now());
-        keyRow = await pickKeyRow(db, fp, [...tried]);
-      }
-    }
-
+    const keyRow = await pickKeyRow(db, fp, [...tried]);
     if (!keyRow) {
       if (!lastFailure) {
         return json(
@@ -1949,19 +1925,7 @@ async function handleGetProxyState(request, env) {
   // Resolve fingerprint per provider first, so the key_state read can be scoped to
   // this site's providers. A full table scan would bill every row on every tab
   // switch once the table grows.
-  const entries = [];
-  for (const p of providers) {
-    if (!p || typeof p !== "object") continue;
-    const providerType = String(p.provider_type || "").trim();
-    const apiBase = String(p.api_base || "").trim();
-    if (!providerType || !apiBase) continue;
-    entries.push({
-      provider: p,
-      providerType,
-      apiBase,
-      fp: await providerFingerprint(providerType, apiBase),
-    });
-  }
+  const entries = await providerFpEntries(providers);
 
   const testModels =
     settings &&
@@ -2019,8 +1983,6 @@ async function handleGetProxyState(request, env) {
       provider_type: providerType,
       enabled: p.enabled !== false,
       via_gateway: upstream.kind === "gateway",
-      gateway_provider:
-        typeof p.gateway_provider === "string" ? p.gateway_provider : "",
       proxy_url: alias ? `/proxy/${alias}` : "",
       sample_path: SAMPLE_PATHS[providerType] || "/chat/completions",
       test_model:

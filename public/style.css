@@ -1487,10 +1487,6 @@ a:focus-visible,
     width: 7rem;
 }
 
-.input-errcode {
-    width: 8rem;
-}
-
 .mono-list {
     font-family: var(--mono);
     font-size: var(--text-xs);
@@ -1710,12 +1706,6 @@ code {
     min-width: 0;
 }
 
-.dk-actions {
-    display: flex;
-    gap: 0.35rem;
-    white-space: nowrap;
-}
-
 /* 全站 box-sizing:border-box，所以 width = 左内距 + 内容 + 右内距。
  * 改 padding 或箭头槽时同步改 width，否则内容区被挤（或多出空白）。
  * 编号：5rem = 1rem + 3.5rem + 0.5rem；3.5rem 要放下「编号」+ .sort-indicator。
@@ -1781,13 +1771,6 @@ code {
 .data-table th.dk-msg-col,
 .data-table td.dk-msg-col {
     min-width: 10rem;
-}
-
-.data-table th.dk-edit-col,
-.data-table td.dk-edit-col {
-    width: 4.2rem;
-    padding-left: 0.5rem;
-    padding-right: 0.85rem;
 }
 
 .dk-num-cell {
@@ -2476,13 +2459,6 @@ code {
     .data-table th.dk-msg-col,
     .data-table td.dk-msg-col {
         min-width: 10em;
-    }
-
-    .data-table th.dk-edit-col,
-    .data-table td.dk-edit-col {
-        width: 5rem;
-        padding-left: 0.4rem;
-        padding-right: 1rem;
     }
 
     .errdetail-row {

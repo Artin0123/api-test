@@ -17,9 +17,88 @@ async function getMock() {
   return _mockData;
 }
 
+function cachedProviderFp(p) {
+  if (!p || !p.provider_type || !p.api_base) return "";
+  return state.fpCache.get(fingerprintPayload(p)) || "";
+}
+
+async function ensureProviderFps(providers) {
+  for (const p of providers || []) {
+    if (!p || !p.provider_type || !p.api_base) continue;
+    const payload = fingerprintPayload(p);
+    if (!state.fpCache.has(payload)) {
+      state.fpCache.set(payload, await sha256(payload));
+    }
+  }
+}
+
+function dkRecordScope(rec) {
+  return typeof rec?.fp === "string" && rec.fp.trim()
+    ? rec.fp.trim()
+    : rec?.provider_host || "";
+}
+
+function rebalanceDeadKeyDetails(removed, remaining) {
+  for (const gone of removed) {
+    if (!gone || !gone.error_detail) continue;
+    const scope = dkRecordScope(gone);
+    const code = gone.error_code ?? null;
+    if (
+      remaining.some(
+        (r) =>
+          r &&
+          r.error_detail &&
+          dkRecordScope(r) === scope &&
+          (r.error_code ?? null) === code,
+      )
+    ) {
+      continue;
+    }
+    const heir = remaining.find(
+      (r) =>
+        r &&
+        !r.error_detail &&
+        dkRecordScope(r) === scope &&
+        (r.error_code ?? null) === code,
+    );
+    if (heir) heir.error_detail = gone.error_detail;
+  }
+}
+
 function syncMockSettings(settings) {
   if (!MOCK || !_mockData || !settings) return;
   _mockData.settings = settings;
+  const providers = Array.isArray(settings.providers) ? settings.providers : [];
+  if (Array.isArray(_mockData.dead_keys) && _mockData.dead_keys.length) {
+    const byFp = new Map();
+    const byHost = new Map();
+    for (const p of providers) {
+      const keys = new Set(splitKeyLines(p?.keys));
+      const fp = cachedProviderFp(p);
+      if (fp) byFp.set(fp, keys);
+      const host = extractHost(p?.api_base);
+      if (host) {
+        if (!byHost.has(host)) byHost.set(host, new Set());
+        for (const k of keys) byHost.get(host).add(k);
+      }
+    }
+    const kept = [];
+    const removed = [];
+    for (const r of _mockData.dead_keys) {
+      if (!r) continue;
+      const key = String(r.api_key || "").trim();
+      const configured = r.fp
+        ? !!key && !!byFp.get(r.fp)?.has(key)
+        : !!key && !!byHost.get(r.provider_host)?.has(key);
+      if (configured) kept.push(r);
+      else removed.push(r);
+    }
+    if (removed.length) {
+      rebalanceDeadKeyDetails(removed, kept);
+      _mockData.dead_keys = kept;
+      state.deadKeys = kept;
+    }
+  }
 }
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -38,13 +117,13 @@ const state = {
   editorSortMode: "none",
   editorSortOrigin: "",
   proxy: null,
-  proxySelected: null,
+  proxySelected: null, // currently selected provider fp
   proxyBusy: false,
-  proxyPlainKeys: new Map(), // _uiKey (or fp) -> plaintext keys for copy buttons
+  proxyPlainKeys: new Map(), // fp -> plaintext keys for copy buttons
   proxyTestingKeys: new Set(), // `${fp}:${id}` keys currently testing individually
   proxyRecoveringKeys: new Set(), // `${fp}:${id}` keys currently recovering
-  proxyLastResults: new Map(), // _uiKey -> Map<String(id), result> across post-test reloads
-  mockProxyOverrides: new Map(), // mock provider key -> { test_model, keys: Map }
+  proxyLastResults: new Map(), // fp -> Map<String(id), result> across post-test reloads
+  mockProxyOverrides: new Map(), // fp -> { test_model, keys: Map }
   reqSeq: { config: 0, results: 0, deadkeys: 0, proxy: 0 },
   modalStack: [], // active overlay stack for closing only the topmost modal on Esc
 };
@@ -104,7 +183,6 @@ const dom = {
   edHeadersContainer: $("ed-headers-container"),
   edMaxConcurrency: $("ed-max-concurrency"),
   edAlias: $("ed-alias"),
-  edGatewayProvider: $("ed-gateway-provider"),
   edKeysHighlight: $("ed-keys-highlight"),
   edKeysSearch: $("ed-keys-search"),
   edKeysSearchClear: $("ed-keys-search-clear"),
@@ -146,17 +224,6 @@ const dom = {
   dkError: $("dk-error"),
   dkEmpty: $("dk-empty"),
   dkTableWrap: $("dk-table-wrap"),
-
-  // dead key editor modal
-  dkEditOverlay: $("dkedit-overlay"),
-  dkEditId: $("dkedit-id"),
-  dkEditSave: $("dkedit-save-btn"),
-  dkEditCancel: $("dkedit-cancel-btn"),
-  dkEditError: $("dkedit-error"),
-  dkeHost: $("dke-host"),
-  dkeKey: $("dke-key"),
-  dkeExpired: $("dke-expired"),
-  dkeCode: $("dke-code"),
 
   // dead key bulk-delete confirm
   dkConfirmOverlay: $("dkconfirm-overlay"),
@@ -1357,7 +1424,6 @@ function openEditor(index = -1) {
     dom.edModels.value = p.models || "";
     dom.edExtraBody.value = p.extra_body || "";
     dom.edAlias.value = p.alias || "";
-    dom.edGatewayProvider.value = p.gateway_provider || "";
     renderEditorHeaders(p.custom_headers);
     dom.edMaxConcurrency.value =
       p.max_concurrency != null ? String(p.max_concurrency) : "";
@@ -1370,7 +1436,6 @@ function openEditor(index = -1) {
     dom.edModels.value = "";
     dom.edExtraBody.value = "";
     dom.edAlias.value = "";
-    dom.edGatewayProvider.value = "";
     renderEditorHeaders([]);
     dom.edMaxConcurrency.value = "";
   }
@@ -1421,6 +1486,17 @@ async function saveEditor(confirmed = false) {
     dom.editorError.textContent = "请填写 API Base URL";
     return;
   }
+  const dupIdx = existingProviders.findIndex(
+    (p, i) =>
+      i !== index &&
+      p &&
+      (p.provider_type || "").trim() === pType &&
+      (p.api_base || "").trim().replace(/\/+$/, "") === apiBase,
+  );
+  if (dupIdx >= 0) {
+    dom.editorError.textContent = `已存在相同的 ${pType} 与 API Base 服务商`;
+    return;
+  }
   if (!keys.trim()) {
     dom.editorError.textContent = "请填写至少一个 API Key";
     return;
@@ -1463,11 +1539,8 @@ async function saveEditor(confirmed = false) {
     max_concurrency: maxConcurrency,
   };
   const alias = dom.edAlias.value.trim();
-  const gatewayProvider = dom.edGatewayProvider.value.trim();
-  // Omit empty proxy fields so a provider that never used forwarding keeps the
-  // exact shape it had before this feature existed.
+  // Omit empty alias so a provider without forwarding keeps its minimal shape.
   if (alias) entry.alias = alias;
-  if (gatewayProvider) entry.gateway_provider = gatewayProvider;
 
   // A shrinking key list gets an in-place confirmation instead of a popup: the
   // footer grows, so the warning cannot be missed.
@@ -1509,6 +1582,7 @@ async function saveEditor(confirmed = false) {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    await ensureProviderFps(providers);
     syncMockSettings(state.settings);
     hideEditorConfirm();
     state.editorSnapshot = null;
@@ -1539,6 +1613,7 @@ async function deleteProvider(index) {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    await ensureProviderFps(providers);
     syncMockSettings(state.settings);
     state.selectedProviders.clear();
     renderProviderGrid();
@@ -1583,19 +1658,9 @@ async function bulkToggle(enable) {
 }
 
 // ── Proxy tab (rotation / forwarding) ──────────────────────────────────────
-function assignProxyUiKeys(providers) {
-  const counts = new Map();
-  for (const p of providers || []) {
-    const occ = counts.get(p.fp) || 0;
-    counts.set(p.fp, occ + 1);
-    p._uiKey = `${p.fp}#${occ}`;
-  }
-}
-
 function selectedProxyProvider() {
   const providers = (state.proxy && state.proxy.providers) || [];
   return (
-    providers.find((p) => p._uiKey === state.proxySelected) ||
     providers.find((p) => p.fp === state.proxySelected) ||
     providers[0] ||
     null
@@ -1616,12 +1681,12 @@ function clearProxyNotice({ keepGlobal = true } = {}) {
   dom.proxyNotice.classList.add("hidden");
 }
 
-function proxyResultStore(uiKey) {
-  if (!uiKey) return null;
-  let store = state.proxyLastResults.get(uiKey);
+function proxyResultStore(fp) {
+  if (!fp) return null;
+  let store = state.proxyLastResults.get(fp);
   if (!store) {
     store = new Map();
-    state.proxyLastResults.set(uiKey, store);
+    state.proxyLastResults.set(fp, store);
   }
   return store;
 }
@@ -1641,53 +1706,27 @@ async function syncProxyPlainKeys(proxyProviders) {
       state.settings = d.settings || {};
       applySettingsToUI();
     }
+    await ensureProviderFps(state.settings.providers || []);
     const byFp = new Map();
     for (const p of state.settings.providers || []) {
-      if (!p || !p.provider_type || !p.api_base) continue;
-      const payload = fingerprintPayload(p);
-      let fp = state.fpCache.get(payload);
-      if (!fp) {
-        fp = await sha256(payload);
-        state.fpCache.set(payload, fp);
-      }
-      if (!byFp.has(fp)) byFp.set(fp, []);
-      byFp.get(fp).push(splitKeyLines(p.keys));
+      const fp = cachedProviderFp(p);
+      if (fp) byFp.set(fp, splitKeyLines(p.keys));
     }
     return byFp;
   };
 
-  const matchProviders = (byFp) => {
-    const map = new Map();
-    const usedByFp = new Map();
-    let stale = false;
-    for (const pp of proxyProviders || []) {
-      const candidates = byFp.get(pp.fp) || [];
-      let used = usedByFp.get(pp.fp);
-      if (!used) {
-        used = new Set();
-        usedByFp.set(pp.fp, used);
-      }
-      let matchedIdx = candidates.findIndex(
-        (list, idx) => !used.has(idx) && listMatchesProvider(list, pp),
-      );
-      if (matchedIdx < 0) {
-        // Retry once in case cached settings predated an edit in another tab.
-        stale = true;
-        matchedIdx = candidates.findIndex((_, idx) => !used.has(idx));
-      }
-      if (matchedIdx >= 0) {
-        used.add(matchedIdx);
-        map.set(pp._uiKey, candidates[matchedIdx]);
-      } else {
-        map.set(pp._uiKey, []);
-      }
-    }
-    return { map, stale };
-  };
+  let byFp = await buildByFp(false);
+  if (
+    (proxyProviders || []).some(
+      (pp) => pp && !listMatchesProvider(byFp.get(pp.fp), pp),
+    )
+  ) {
+    byFp = await buildByFp(true);
+  }
 
-  let { map, stale } = matchProviders(await buildByFp(false));
-  if (stale) {
-    ({ map } = matchProviders(await buildByFp(true)));
+  const map = new Map();
+  for (const pp of proxyProviders || []) {
+    if (pp && pp.fp) map.set(pp.fp, byFp.get(pp.fp) || []);
   }
   state.proxyPlainKeys = map;
 }
@@ -1712,29 +1751,28 @@ async function loadProxyState({ preserveResults = false } = {}) {
       if (!state.settings) {
         state.settings = mock.settings || {};
       }
+      await ensureProviderFps(state.settings.providers || []);
       data = mockProxyState(state.settings);
     } else {
       data = await api("/api/proxy/state", { auth: true });
     }
     if (reqId !== state.reqSeq.proxy) return false;
     const providers = data.providers || [];
-    assignProxyUiKeys(providers);
     if (!MOCK) {
       await syncProxyPlainKeys(providers);
       if (reqId !== state.reqSeq.proxy) return false;
     } else {
       state.proxyPlainKeys.clear();
       for (const p of providers) {
-        state.proxyPlainKeys.set(p._uiKey, p._mockPlainKeys || []);
+        state.proxyPlainKeys.set(p.fp, p._mockPlainKeys || []);
       }
     }
     state.proxy = data;
     const active =
-      providers.find((p) => p._uiKey === state.proxySelected) ||
       providers.find((p) => p.fp === state.proxySelected) ||
       providers[0] ||
       null;
-    state.proxySelected = active ? active._uiKey : null;
+    state.proxySelected = active ? active.fp : null;
     renderProxyState(data);
     return true;
   } catch (err) {
@@ -1749,24 +1787,19 @@ async function loadProxyState({ preserveResults = false } = {}) {
   }
 }
 
-function mockOverrideForProvider(p, occKey) {
-  let override = state.mockProxyOverrides.get(occKey);
+function mockOverrideForProvider(fp) {
+  let override = state.mockProxyOverrides.get(fp);
   if (!override) {
     override = { test_model: "", keys: new Map() };
-    state.mockProxyOverrides.set(occKey, override);
+    state.mockProxyOverrides.set(fp, override);
   }
   return override;
 }
 
 function mockProxyState(settings) {
-  const counts = new Map();
   const providers = (settings.providers || []).map((p, i) => {
-    const baseId = `${p.provider_type || ""}|${p.api_base || ""}|${p.alias || ""}`;
-    const occ = counts.get(baseId) || 0;
-    counts.set(baseId, occ + 1);
-    const mockKey = `${baseId}#${occ}`;
-    const override = mockOverrideForProvider(p, mockKey);
-    const fp = `mock-${i}`;
+    const fp = cachedProviderFp(p) || `mock-${i}`;
+    const override = mockOverrideForProvider(fp);
     const keys = splitKeyLines(p.keys);
     const keyEntries = keys.map((key, ki) => {
       let entryState = override.keys.get(key);
@@ -1794,14 +1827,12 @@ function mockProxyState(settings) {
     });
     return {
       fp,
-      _mockKey: mockKey,
       _mockPlainKeys: keys,
       alias: p.alias || "",
       host: extractHost(p.api_base),
       provider_type: p.provider_type || "openai",
       enabled: p.enabled !== false,
       via_gateway: false,
-      gateway_provider: p.gateway_provider || "",
       proxy_url: p.alias ? `/proxy/${p.alias}` : "",
       sample_path:
         ({ gemini: "/models/{model}:generateContent", anthropic: "/messages" })[
@@ -1863,12 +1894,12 @@ function renderProxyState(data) {
   dom.proxyProvider.replaceChildren();
   for (const p of providers) {
     const opt = document.createElement("option");
-    opt.value = p._uiKey;
+    opt.value = p.fp;
     // The menu answers two questions at once — which provider, and what API it
     // speaks. The format used to be a separate pill under the select; folding it
     // into the option text keeps one row and makes each choice self-describing.
     opt.textContent = providerFormatLabel(p, p.host);
-    if (p._uiKey === state.proxySelected) opt.selected = true;
+    if (p.fp === state.proxySelected) opt.selected = true;
     dom.proxyProvider.appendChild(opt);
   }
   syncCustomSelect(dom.proxyProvider);
@@ -2045,8 +2076,7 @@ function renderProxyKeyCards() {
   }
   dom.proxyKeyEmpty.classList.add("hidden");
   const canAct = enabled && !!p.test_model;
-  const plainList =
-    state.proxyPlainKeys.get(p._uiKey) || state.proxyPlainKeys.get(p.fp) || [];
+  const plainList = state.proxyPlainKeys.get(p.fp) || [];
   dom.proxyKeyGrid.innerHTML = keys
     .map((k, ki) => {
       const id = k.id == null ? "" : String(k.id);
@@ -2095,7 +2125,7 @@ function renderProxyKeyCards() {
         </article>`;
     })
     .join("");
-  const savedResults = state.proxyLastResults.get(p._uiKey);
+  const savedResults = state.proxyLastResults.get(p.fp);
   if (savedResults) {
     for (const [id, result] of savedResults.entries()) {
       renderProxyTestResult(id, result);
@@ -2135,18 +2165,14 @@ function renderProxyTestResult(id, result) {
 }
 
 /** Returns the result object so the batch loop can count it. */
-async function testProxyKey(
-  fp,
-  id,
-  { fromBatch = false, uiKey = null } = {},
-) {
+async function testProxyKey(fp, id, { fromBatch = false } = {}) {
   if (id == null || id === "") return null;
   if (!fromBatch && state.proxyBusy) return null;
   const targetId = String(id);
   const token = `${fp}:${targetId}`;
   if (state.proxyTestingKeys.has(token)) return null;
 
-  const targetUiKey = uiKey || (selectedProxyProvider() || {})._uiKey || null;
+  const targetFp = fp || (selectedProxyProvider() || {}).fp || null;
   state.proxyTestingKeys.add(token);
   updateProxyCardButtonsDisabled();
 
@@ -2161,7 +2187,7 @@ async function testProxyKey(
   try {
     if (MOCK) {
       const provider = (state.proxy?.providers || []).find(
-        (item) => item._uiKey === targetUiKey || item.fp === fp,
+        (item) => item.fp === targetFp,
       );
       result = {
         ok: true,
@@ -2183,7 +2209,7 @@ async function testProxyKey(
     updateProxyCardButtonsDisabled();
   }
 
-  const store = proxyResultStore(targetUiKey);
+  const store = proxyResultStore(targetFp);
   if (store) store.set(targetId, result);
   renderProxyTestResult(targetId, result);
 
@@ -2194,7 +2220,7 @@ async function testProxyKey(
     typeof result.fail_count === "number"
   ) {
     const provider = (state.proxy?.providers || []).find(
-      (item) => item._uiKey === targetUiKey || item.fp === fp,
+      (item) => item.fp === targetFp,
     );
     for (const k of provider?.keys || []) {
       if (String(k.id ?? "") === targetId) k.fail_count = result.fail_count;
@@ -2247,8 +2273,7 @@ async function runProxyBatch(mode) {
     b.disabled = true;
   });
   updateProxyCardButtonsDisabled();
-  const targetUiKey = p._uiKey;
-  const store = proxyResultStore(targetUiKey);
+  const store = proxyResultStore(p.fp);
   if (store) {
     for (const k of keys) store.delete(String(k.id));
   }
@@ -2263,7 +2288,6 @@ async function runProxyBatch(mode) {
       );
       const result = await testProxyKey(p.fp, keys[i].id, {
         fromBatch: true,
-        uiKey: targetUiKey,
       });
       if (result && result.ok) ok++;
       else fail++;
@@ -2304,9 +2328,7 @@ async function saveProxyTestModel() {
       p.test_model = res.test_model || "";
     } else {
       p.test_model = model;
-      if (p._mockKey) {
-        mockOverrideForProvider(p, p._mockKey).test_model = model;
-      }
+      mockOverrideForProvider(p.fp).test_model = model;
     }
     renderProxyToolbar();
     renderProxyKeyCards();
@@ -2330,7 +2352,7 @@ async function recoverProxyKey(fp, id) {
   if (!confirm("恢复这把密钥？恢复后会重新参与轮用。")) return;
 
   const currentProvider = selectedProxyProvider();
-  const targetUiKey = (currentProvider || {})._uiKey;
+  const targetFp = (currentProvider || {}).fp;
   state.proxyRecoveringKeys.add(token);
   updateProxyCardButtonsDisabled();
   try {
@@ -2340,21 +2362,18 @@ async function recoverProxyKey(fp, id) {
         auth: true,
         body: { fp, id: Number(targetId) },
       });
-    } else if (currentProvider && currentProvider._mockKey) {
+    } else if (currentProvider) {
       const ki = (currentProvider.keys || []).findIndex(
         (k) => String(k.id ?? "") === targetId,
       );
       const rawKey = ki >= 0 ? (currentProvider._mockPlainKeys || [])[ki] : "";
       if (rawKey) {
-        const override = mockOverrideForProvider(
-          currentProvider,
-          currentProvider._mockKey,
-        );
+        const override = mockOverrideForProvider(currentProvider.fp);
         const prev = override.keys.get(rawKey) || {};
         override.keys.set(rawKey, { ...prev, disabled: false, fail_count: 0 });
       }
     }
-    const store = state.proxyLastResults.get(targetUiKey);
+    const store = state.proxyLastResults.get(targetFp);
     if (store) store.delete(targetId);
     await loadProxyState({ preserveResults: true });
   } catch (err) {
@@ -2390,7 +2409,7 @@ async function recoverAllProxyKeys() {
     return;
   }
 
-  const targetUiKey = currentProvider._uiKey;
+  const targetFp = currentProvider.fp;
   state.proxyBusy = true;
   proxyActionButtons().forEach((b) => {
     b.disabled = true;
@@ -2406,11 +2425,8 @@ async function recoverAllProxyKeys() {
         body: { fp: currentProvider.fp, all: true },
       });
       recoveredCount = Number(res.recovered ?? disabledKeys.length);
-    } else if (currentProvider._mockKey) {
-      const override = mockOverrideForProvider(
-        currentProvider,
-        currentProvider._mockKey,
-      );
+    } else {
+      const override = mockOverrideForProvider(currentProvider.fp);
       (currentProvider.keys || []).forEach((k, ki) => {
         if (!k.disabled || k.id == null) return;
         const rawKey = (currentProvider._mockPlainKeys || [])[ki] || "";
@@ -2420,7 +2436,7 @@ async function recoverAllProxyKeys() {
         recoveredCount++;
       });
     }
-    const store = state.proxyLastResults.get(targetUiKey);
+    const store = state.proxyLastResults.get(targetFp);
     if (store) {
       for (const k of disabledKeys) store.delete(String(k.id));
     }
@@ -2827,17 +2843,6 @@ function closeErrorDetail() {
 }
 
 // ── Dead keys tab ─────────────────────────────────────────────────────────
-/** Hosts in the order the providers appear in 来源设定 — not alphabetical, so the
- *  dropdowns and the table read in the same order as the config and results tabs. */
-function providerHosts() {
-  const hosts = [];
-  for (const p of ((state.settings || {}).providers || [])) {
-    const host = extractHost(p.api_base);
-    if (host && !hosts.includes(host)) hosts.push(host);
-  }
-  return hosts;
-}
-
 function providerDisplayName(p, fallbackHost = "") {
   const host = (p && p.host) || extractHost(p && p.api_base) || fallbackHost;
   return String((p && p.alias) || "").trim() || host;
@@ -2849,6 +2854,31 @@ function providerFormatLabel(p, fallbackHost = "") {
   return format ? `${name} - ${format}` : name;
 }
 
+function dkProviderEntries() {
+  const providers = (state.settings || {}).providers || [];
+  const hostCounts = new Map();
+  const entries = providers.map((p) => {
+    const host = extractHost(p?.api_base);
+    if (host) hostCounts.set(host, (hostCounts.get(host) || 0) + 1);
+    return { provider: p, fp: cachedProviderFp(p), host };
+  });
+  return entries.map((e) => ({
+    ...e,
+    multiOnHost: (hostCounts.get(e.host) || 0) > 1,
+  }));
+}
+
+function dkProviderForRecord(rec) {
+  const entries = dkProviderEntries();
+  if (rec && typeof rec === "object") {
+    const recFp = typeof rec.fp === "string" ? rec.fp.trim() : "";
+    if (recFp) return entries.find((e) => e.fp === recFp) || null;
+  }
+  const host = typeof rec === "string" ? rec : rec?.provider_host || "";
+  const byHost = entries.filter((e) => e.host === host);
+  return byHost.length === 1 ? byHost[0] : null;
+}
+
 function dkProvidersByHost(host) {
   if (!host) return [];
   return ((state.settings || {}).providers || []).filter(
@@ -2856,9 +2886,18 @@ function dkProvidersByHost(host) {
   );
 }
 
-function dkProviderLabel(host) {
-  const h = String(host || "");
-  if (!h) return "";
+function dkProviderLabel(recOrHost) {
+  if (!recOrHost) return "";
+  if (typeof recOrHost === "object") {
+    const hit = dkProviderForRecord(recOrHost);
+    if (hit) {
+      return hit.multiOnHost
+        ? providerFormatLabel(hit.provider, hit.host)
+        : providerDisplayName(hit.provider, hit.host);
+    }
+    return dkProviderLabel(recOrHost.provider_host || "");
+  }
+  const h = String(recOrHost);
   const matches = dkProvidersByHost(h);
   if (!matches.length) return h;
   const labels = [];
@@ -2869,9 +2908,18 @@ function dkProviderLabel(host) {
   return labels.join(" / ") || h;
 }
 
-function dkProviderTitle(host) {
-  const h = String(host || "");
-  if (!h) return "";
+function dkProviderTitle(recOrHost) {
+  if (!recOrHost) return "";
+  if (typeof recOrHost === "object") {
+    const hit = dkProviderForRecord(recOrHost);
+    if (hit) {
+      const lbl = dkProviderLabel(recOrHost);
+      const base = String(hit.provider?.api_base || "").trim();
+      return base ? `${lbl}\n${base}` : lbl;
+    }
+    return dkProviderTitle(recOrHost.provider_host || "");
+  }
+  const h = String(recOrHost);
   const label = dkProviderLabel(h);
   const matches = dkProvidersByHost(h);
   if (!matches.length) return h;
@@ -2883,24 +2931,51 @@ function dkProviderTitle(host) {
   return bases.length ? `${label}\n${bases.join("\n")}` : label;
 }
 
-/** Host dropdowns always mirror state.settings.providers, plus any host already
- *  recorded in dead_keys (a provider may have been deleted after the fact). */
+/** Provider dropdown mirrors 来源设定 cards (keyed by fp so same-host
+ *  providers stay separate), plus any orphaned dead_keys scopes. */
 function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
-  const list = providerHosts();
+  const entries = dkProviderEntries();
+  const options = [];
+  const seenValues = new Set();
+  const liveHosts = new Set();
+
+  for (const e of entries) {
+    const val = e.fp || e.host;
+    if (!val || seenValues.has(val)) continue;
+    seenValues.add(val);
+    if (e.host) liveHosts.add(e.host);
+    const label = e.multiOnHost
+      ? providerFormatLabel(e.provider, e.host)
+      : providerDisplayName(e.provider, e.host);
+    const base = String(e.provider?.api_base || "").trim();
+    const title = base ? `${label}\n${base}` : label;
+    options.push({ value: val, label, title });
+  }
+
   for (const r of state.deadKeys) {
-    if (r?.provider_host && !list.includes(r.provider_host)) list.push(r.provider_host);
+    if (!r) continue;
+    const recFp = typeof r.fp === "string" ? r.fp.trim() : "";
+    const val = recFp || r.provider_host || "";
+    if (!val || seenValues.has(val)) continue;
+    if (!recFp && liveHosts.has(val)) continue;
+    seenValues.add(val);
+    options.push({
+      value: val,
+      label: dkProviderLabel(r),
+      title: dkProviderTitle(r),
+    });
   }
 
   const opts = [];
   if (includeAll) opts.push(`<option value="">全部供应商</option>`);
-  else if (!list.length) opts.push(`<option value="">（尚无服务商）</option>`);
-  for (const h of list) {
+  else if (!options.length) opts.push(`<option value="">（尚无服务商）</option>`);
+  for (const o of options) {
     opts.push(
-      `<option value="${escAttr(h)}" title="${escAttr(dkProviderTitle(h))}">${esc(dkProviderLabel(h))}</option>`,
+      `<option value="${escAttr(o.value)}" title="${escAttr(o.title)}">${esc(o.label)}</option>`,
     );
   }
   select.innerHTML = opts.join("");
-  if (selected && list.includes(selected)) select.value = selected;
+  if (selected && seenValues.has(selected)) select.value = selected;
   syncCustomSelect(select);
 }
 
@@ -2945,14 +3020,15 @@ function dkDateOf(rec) {
 }
 
 /** A record whose error_detail was nulled by dedup borrows the one stored on the
- *  first record of its host + code group, so 📋 always shows something. */
+ *  first record of its scope (fp or host) + code group, so 📋 always shows something. */
 function detailFor(rec) {
   if (rec.error_detail) return rec.error_detail;
+  const scope = dkRecordScope(rec);
   const twin = state.deadKeys.find(
     (r) =>
       r &&
       r.error_detail &&
-      r.provider_host === rec.provider_host &&
+      dkRecordScope(r) === scope &&
       (r.error_code ?? null) === (rec.error_code ?? null),
   );
   return twin ? twin.error_detail : null;
@@ -3006,6 +3082,8 @@ async function loadDeadKeys(force = false) {
       if (reqId !== state.reqSeq.deadkeys) return;
       state.deadKeys = Array.isArray(d.dead_keys) ? d.dead_keys : [];
     }
+    await ensureProviderFps((state.settings || {}).providers || []);
+    if (reqId !== state.reqSeq.deadkeys) return;
     if (!force && state.dkSelected.size > 0) {
       const validIds = new Set(state.deadKeys.map((r) => r && r.id).filter(Boolean));
       for (const id of [...state.dkSelected]) {
@@ -3157,7 +3235,10 @@ function resetDateFilterInput(input) {
 }
 
 function filteredDeadKeys() {
-  const host = dom.dkFHost.value;
+  const scope = dom.dkFHost.value;
+  const scopeEntry = scope
+    ? dkProviderEntries().find((e) => (e.fp || e.host) === scope)
+    : null;
   const q = dom.dkFKey.value.trim().toLowerCase();
   const code = dom.dkFCode.value;
   const from = parseFilterDate(dom.dkFFrom.value);
@@ -3169,7 +3250,15 @@ function filteredDeadKeys() {
 
   return state.deadKeys.filter((r) => {
     if (!r) return false;
-    if (host && r.provider_host !== host) return false;
+    if (scope) {
+      if (r.fp) {
+        if (r.fp !== scope && r.provider_host !== scope) return false;
+      } else if (scopeEntry) {
+        if (r.provider_host !== scopeEntry.host) return false;
+      } else if (r.provider_host !== scope) {
+        return false;
+      }
+    }
     if (q && !String(r.api_key || "").toLowerCase().includes(q)) return false;
     if (code === DK_CODE_NONE) {
       if (r.error_code != null) return false;
@@ -3186,17 +3275,26 @@ function filteredDeadKeys() {
   });
 }
 
-/** Order rows by provider order (hosts whose provider is gone go last), keeping
- *  the stored order within each host so the newest entries stay at the bottom. */
+/** Order rows by provider order (providers that are gone go last), keeping
+ *  the stored order within each provider so newest entries stay at the bottom. */
 function sortByProviderOrder(rows) {
-  const order = providerHosts();
-  const rank = (host) => {
-    const i = order.indexOf(host);
-    return i === -1 ? order.length : i;
+  const entries = dkProviderEntries();
+  const indexByFp = new Map();
+  const indexByHost = new Map();
+  entries.forEach((e, idx) => {
+    if (e.fp && !indexByFp.has(e.fp)) indexByFp.set(e.fp, idx);
+    if (e.host && !indexByHost.has(e.host)) indexByHost.set(e.host, idx);
+  });
+  const rank = (r) => {
+    if (r?.fp && indexByFp.has(r.fp)) return indexByFp.get(r.fp);
+    if (r?.provider_host && indexByHost.has(r.provider_host)) {
+      return indexByHost.get(r.provider_host);
+    }
+    return entries.length;
   };
   return rows
     .map((r, i) => ({ r, i }))
-    .sort((a, b) => rank(a.r.provider_host) - rank(b.r.provider_host) || a.i - b.i)
+    .sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i)
     .map((x) => x.r);
 }
 
@@ -3232,9 +3330,7 @@ function compareDeadKeyNullsLast(a, b, col) {
 
 function compareDeadKey(a, b, col) {
   if (col === "host") {
-    return dkProviderLabel(a.provider_host).localeCompare(
-      dkProviderLabel(b.provider_host),
-    );
+    return dkProviderLabel(a).localeCompare(dkProviderLabel(b));
   }
   if (col === "key") {
     return String(a.api_key || "").localeCompare(String(b.api_key || ""));
@@ -3329,14 +3425,11 @@ function renderDeadKeysTable(rows, indexById) {
         : `<td class="dk-check-col dk-num-cell">${indexById.get(r.id) ?? i + 1}</td>`;
       return `<tr>
       ${numOrCheckCell}
-      <td class="dk-host-col"><span class="dk-host-cell" title="${escAttr(dkProviderTitle(r.provider_host))}">${esc(dkProviderLabel(r.provider_host))}</span></td>
+      <td class="dk-host-col"><span class="dk-host-cell" title="${escAttr(dkProviderTitle(r))}">${esc(dkProviderLabel(r))}</span></td>
       <td class="dk-key-col"><div class="dk-key-line"><code class="dk-key-cell" title="${escAttr(r.api_key || "")}">${dkKeyHtml(r.api_key)}</code>${copyKeyBtn}</div></td>
       <td class="dk-date-col dk-date-cell">${esc(dkDateOf(r) || "-")}</td>
       <td class="dk-code-col">${r.error_code != null ? esc(r.error_code) : `<span class="na">-</span>`}</td>
       <td class="dk-msg-col"><div class="dk-msg-line">${detailBtn}${preview}</div></td>
-      <td class="dk-edit-col dk-actions">
-        <button class="btn btn-secondary btn-xs" type="button" title="编辑" aria-label="编辑" data-dk-edit="${escAttr(r.id)}">✏️</button>
-      </td>
     </tr>`;
     })
     .join("");
@@ -3355,7 +3448,6 @@ function renderDeadKeysTable(rows, indexById) {
           ${dkSortHead("expired_at", "失效时间", "dk-date-col")}
           ${dkSortHead("code", "Code", "dk-code-col")}
           <th class="dk-msg-col">错误讯息</th>
-          <th class="dk-edit-col">编辑</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
@@ -3371,100 +3463,11 @@ function dkSortHead(col, label, extraClass) {
   return `<th${cls} data-sort="${col}"${dir} scope="col">${label}<span class="sort-indicator">${mark}</span></th>`;
 }
 
-function toIsoDay(dateStr) {
-  return dateStr ? `${dateStr}T00:00:00.000Z` : null;
-}
-
-function openDkEdit(id) {
-  const rec = state.deadKeys.find((r) => r && r.id === id);
-  if (!rec) return;
-  dom.dkEditId.value = id;
-  dom.dkEditError.textContent = "";
-  fillHostSelect(dom.dkeHost, { selected: rec.provider_host || "" });
-  dom.dkeKey.value = rec.api_key || "";
-  // Records auto-created before expired_at existed have no date; default to today
-  // so the field shows a real value instead of the browser's locale placeholder.
-  dom.dkeExpired.value = dkDateOf(rec) || todayISO();
-  dom.dkeCode.value = rec.error_code != null ? String(rec.error_code) : "";
-  openModal(dom.dkEditOverlay, dom.dkeKey);
-}
-
-function closeDkEdit() {
-  closeModal(dom.dkEditOverlay);
-}
-
-async function saveDkEdit() {
-  const id = dom.dkEditId.value;
-  const rec = state.deadKeys.find((r) => r && r.id === id);
-  if (!rec) return closeDkEdit();
-
-  dom.dkEditError.textContent = "";
-  const api_key = dom.dkeKey.value.trim();
-  if (!api_key) {
-    dom.dkEditError.textContent = "请输入 API Key";
-    return;
-  }
-  const codeRaw = dom.dkeCode.value.trim();
-  const patch = {
-    provider_host: dom.dkeHost.value.trim() || rec.provider_host,
-    api_key,
-    expired_at: toIsoDay(dom.dkeExpired.value),
-    error_code: codeRaw === "" ? null : Number(codeRaw),
-  };
-
-  dom.dkEditSave.disabled = true;
-  try {
-    if (MOCK) {
-      if (state.deadKeys.some((r) => r && r.id !== id && r.api_key === api_key)) {
-        throw new Error("api_key already recorded");
-      }
-      Object.assign(rec, patch);
-    } else {
-      const d = await api(`/api/dead-keys?id=${encodeURIComponent(id)}`, {
-        method: "PUT",
-        auth: true,
-        body: patch,
-      });
-      if (d.record) Object.assign(rec, d.record);
-    }
-    renderDeadKeys();
-    closeDkEdit();
-  } catch (err) {
-    dom.dkEditError.textContent =
-      err.message === "api_key already recorded"
-        ? "此 Key 已存在于其他记录"
-        : err.message;
-  } finally {
-    dom.dkEditSave.disabled = false;
-  }
-}
-
 function removeDeadKeysLocal(ids) {
   const idSet = new Set(ids);
   const removed = state.deadKeys.filter((r) => r && idSet.has(r.id));
   const next = state.deadKeys.filter((r) => !r || !idSet.has(r.id));
-  for (const gone of removed) {
-    if (!gone.error_detail) continue;
-    if (
-      next.some(
-        (r) =>
-          r &&
-          r.error_detail &&
-          r.provider_host === gone.provider_host &&
-          (r.error_code ?? null) === (gone.error_code ?? null),
-      )
-    ) {
-      continue;
-    }
-    const heir = next.find(
-      (r) =>
-        r &&
-        !r.error_detail &&
-        r.provider_host === gone.provider_host &&
-        (r.error_code ?? null) === (gone.error_code ?? null),
-    );
-    if (heir) heir.error_detail = gone.error_detail;
-  }
+  rebalanceDeadKeyDetails(removed, next);
   state.deadKeys = next;
   if (MOCK && _mockData) _mockData.dead_keys = next;
 }
@@ -4123,21 +4126,12 @@ function bindEvents() {
         openErrorDetail(
           rec.error_code,
           detailFor(rec),
-          dkProviderLabel(rec.provider_host),
+          dkProviderLabel(rec),
         );
       return;
     }
-    const editBtn = e.target.closest("[data-dk-edit]");
-    if (editBtn) return openDkEdit(editBtn.dataset.dkEdit);
   });
   dom.dkTableWrap.addEventListener("change", onDkCheckChange);
-
-  // Dead key editor modal
-  dom.dkEditSave.addEventListener("click", saveDkEdit);
-  dom.dkEditCancel.addEventListener("click", closeDkEdit);
-  dom.dkEditOverlay.addEventListener("click", (e) => {
-    if (e.target.dataset.closeModal === "dkedit") closeDkEdit();
-  });
 
   // Dead key bulk-delete confirm
   dom.dkConfirmOk.addEventListener("click", confirmDeleteDeadKeys);
@@ -4175,7 +4169,6 @@ function bindEvents() {
     [dom.editorOverlay, closeEditor],
     [dom.settingsOverlay, closeSettings],
     [dom.sampleOverlay, closeSample],
-    [dom.dkEditOverlay, closeDkEdit],
     [dom.dkConfirmOverlay, closeDkConfirm],
     [dom.errDetailOverlay, closeErrorDetail],
   ]);
