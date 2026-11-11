@@ -833,6 +833,85 @@
                             </button>
                         </div>
                     </label>
+                    <label class="field">
+                        <span class="field-label">
+                            代理转发密码
+                            <small class="muted"
+                                >外部客户端调用 /proxy/{别名} 使用，须与
+                                ADMIN_PASSWORD 不同</small
+                            >
+                        </span>
+                        <input
+                            type="password"
+                            id="set-proxy-password"
+                            class="input-text"
+                            placeholder="设定 PROXY_PASSWORD"
+                            autocomplete="new-password"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <label class="field">
+                        <span class="field-label">
+                            AI Gateway Logs URL
+                            <small class="muted"
+                                >Cloudflare AI Gateway 日志网址，用于提取 Account / Gateway ID</small
+                            >
+                        </span>
+                        <input
+                            type="url"
+                            id="set-gateway-logs-url"
+                            class="input-text"
+                            placeholder="https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs"
+                        />
+                    </label>
+                    <label class="field">
+                        <span class="field-label">AI Gateway Token</span>
+                        <input
+                            type="password"
+                            id="set-gateway-token"
+                            class="input-text"
+                            placeholder="cf-aig-authorization Bearer Token"
+                            autocomplete="new-password"
+                            spellcheck="false"
+                        />
+                    </label>
+                    <div class="settings-grid-3">
+                        <label class="field">
+                            <span class="field-label">失败禁用门槛</span>
+                            <input
+                                type="number"
+                                id="set-proxy-fail-threshold"
+                                class="input-text"
+                                min="1"
+                                step="1"
+                                placeholder="3"
+                            />
+                        </label>
+                        <label class="field">
+                            <span class="field-label">最多重试次数</span>
+                            <input
+                                type="number"
+                                id="set-proxy-max-retries"
+                                class="input-text"
+                                min="0"
+                                max="3"
+                                step="1"
+                                placeholder="3"
+                            />
+                        </label>
+                        <label class="field">
+                            <span class="field-label">上游超时 (ms)</span>
+                            <input
+                                type="number"
+                                id="set-proxy-timeout-ms"
+                                class="input-text"
+                                min="1000"
+                                max="600000"
+                                step="1000"
+                                placeholder="120000"
+                            />
+                        </label>
+                    </div>
                     <p id="settings-error" class="form-error" role="alert"></p>
                     <p id="settings-ok" class="form-ok hidden" role="status">
                         设定已储存。

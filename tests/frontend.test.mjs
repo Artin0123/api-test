@@ -194,3 +194,21 @@ test("Batch 1 simplifications remove dead-key editor, gateway_provider, and _uiK
   assert.ok(!worker.includes("collectConfiguredKeysForHost"), "_worker.js still has collectConfiguredKeysForHost");
   assert.match(app, /已存在相同的 \$\{pType\} 与 API Base 服务商/);
 });
+
+test("Batch 2 moves gateway and proxy config into settings modal without env reads", () => {
+  const css = read("style.css");
+  for (const id of [
+    "set-proxy-password",
+    "set-gateway-logs-url",
+    "set-gateway-token",
+    "set-proxy-fail-threshold",
+    "set-proxy-max-retries",
+    "set-proxy-timeout-ms",
+  ]) {
+    assert.ok(html.includes(`id="${id}"`), `index.html missing #${id}`);
+  }
+  assert.ok(css.includes(".settings-grid-3"), "style.css missing .settings-grid-3");
+  assert.doesNotMatch(worker, /env\.(?:AI_GATEWAY_|PROXY_)/, "_worker.js must not read env gateway/proxy vars");
+  assert.ok(!worker.includes("metadataKeyTag"), "_worker.js still has metadataKeyTag");
+  assert.ok(!app.includes("AI_GATEWAY_LOGS_URL"), "app.js should not refer to env AI_GATEWAY_LOGS_URL");
+});

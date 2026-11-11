@@ -202,6 +202,12 @@ const dom = {
   settingsOk: $("settings-ok"),
   setGithubUrl: $("set-github-url"),
   setDiscordUrl: $("set-discord-url"),
+  setProxyPassword: $("set-proxy-password"),
+  setGatewayLogsUrl: $("set-gateway-logs-url"),
+  setGatewayToken: $("set-gateway-token"),
+  setProxyFailThreshold: $("set-proxy-fail-threshold"),
+  setProxyMaxRetries: $("set-proxy-max-retries"),
+  setProxyTimeoutMs: $("set-proxy-timeout-ms"),
   testDiscordBtn: $("test-discord-btn"),
 
   // sample modal
@@ -951,11 +957,24 @@ function switchTab(name) {
   toggleMobileMenu(false);
 }
 
+const GATEWAY_LOGS_URL_RE =
+  /^https:\/\/dash\.cloudflare\.com\/([^/?#]+)\/ai\/ai-gateway\/gateways\/([^/?#]+)\/logs(?:[/?#].*)?$/i;
+
+function isValidGatewayLogsUrl(url) {
+  return !!url && GATEWAY_LOGS_URL_RE.test(url);
+}
+
 // ── Settings modal ────────────────────────────────────────────────────────
 function openSettings() {
   const s = state.settings || {};
   dom.setGithubUrl.value = s.github_url || "";
   dom.setDiscordUrl.value = s.discord_webhook_url || "";
+  dom.setProxyPassword.value = s.proxy_password || "";
+  dom.setGatewayLogsUrl.value = s.ai_gateway_logs_url || "";
+  dom.setGatewayToken.value = s.ai_gateway_token || "";
+  dom.setProxyFailThreshold.value = String(s.proxy_fail_threshold ?? 3);
+  dom.setProxyMaxRetries.value = String(s.proxy_max_retries ?? 3);
+  dom.setProxyTimeoutMs.value = String(s.proxy_upstream_timeout_ms ?? 120000);
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
   openModal(dom.settingsOverlay, dom.setGithubUrl);
@@ -968,14 +987,57 @@ function closeSettings() {
 async function saveSettings() {
   dom.settingsError.textContent = "";
   dom.settingsOk.classList.add("hidden");
-  dom.settingsSave.disabled = true;
-  const patch = {
-    github_url: dom.setGithubUrl.value.trim(),
-    discord_webhook_url: dom.setDiscordUrl.value.trim(),
+
+  const logsUrl = dom.setGatewayLogsUrl.value.trim();
+  if (logsUrl && !isValidGatewayLogsUrl(logsUrl)) {
+    dom.settingsError.textContent =
+      "AI Gateway Logs URL 格式无效，请填写 https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs";
+    return;
+  }
+
+  const parseSettingInt = (input, fallback, { label, min, max }) => {
+    const raw = input.value.trim();
+    if (!raw) return fallback;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < min || (max != null && n > max)) {
+      const range = max == null ? `>= ${min}` : `${min} ~ ${max}`;
+      throw new Error(`${label} 必须是 ${range} 的整数`);
+    }
+    return n;
   };
+
+  let patch;
   try {
-    // Send only the two fields this modal owns: a full-object write from here
-    // would carry a possibly stale provider list along with it.
+    patch = {
+      github_url: dom.setGithubUrl.value.trim(),
+      discord_webhook_url: dom.setDiscordUrl.value.trim(),
+      proxy_password: dom.setProxyPassword.value.trim(),
+      ai_gateway_logs_url: logsUrl,
+      ai_gateway_token: dom.setGatewayToken.value.trim(),
+      proxy_fail_threshold: parseSettingInt(dom.setProxyFailThreshold, 3, {
+        label: "失败禁用门槛",
+        min: 1,
+        max: null,
+      }),
+      proxy_max_retries: parseSettingInt(dom.setProxyMaxRetries, 3, {
+        label: "最多重试次数",
+        min: 0,
+        max: 3,
+      }),
+      proxy_upstream_timeout_ms: parseSettingInt(dom.setProxyTimeoutMs, 120000, {
+        label: "上游超时 (ms)",
+        min: 1000,
+        max: 600000,
+      }),
+    };
+  } catch (err) {
+    dom.settingsError.textContent = err.message;
+    return;
+  }
+
+  dom.settingsSave.disabled = true;
+  try {
+    // Send only the fields this modal owns so an open edit doesn't race providers[].
     const version = await postSettings(patch);
     const current = state.settings || {};
     state.settings = { ...current, ...patch };
@@ -983,6 +1045,7 @@ async function saveSettings() {
     syncMockSettings(state.settings);
     applySettingsToUI();
     closeSettings();
+    if (state.proxy) loadProxyState({ preserveResults: true });
   } catch (err) {
     dom.settingsError.textContent = err.message;
   } finally {
@@ -1797,6 +1860,16 @@ function mockOverrideForProvider(fp) {
 }
 
 function mockProxyState(settings) {
+  const logsUrl = String(settings.ai_gateway_logs_url || "").trim();
+  const gwToken = String(settings.ai_gateway_token || "").trim();
+  const proxyPass = String(settings.proxy_password || "").trim();
+  const gatewayReady = !!(isValidGatewayLogsUrl(logsUrl) && gwToken);
+  let proxyMessage = "";
+  if (!proxyPass) proxyMessage = "代理密码未设定，请到右上角「设定」填写后再启用转发";
+  else if (!isValidGatewayLogsUrl(logsUrl))
+    proxyMessage = "AI Gateway Logs URL 未设定或格式无效，请到右上角「设定」填写";
+  else if (!gwToken) proxyMessage = "AI Gateway Token 未设定，请到右上角「设定」填写";
+
   const providers = (settings.providers || []).map((p, i) => {
     const fp = cachedProviderFp(p) || `mock-${i}`;
     const override = mockOverrideForProvider(fp);
@@ -1832,14 +1905,14 @@ function mockProxyState(settings) {
       host: extractHost(p.api_base),
       provider_type: p.provider_type || "openai",
       enabled: p.enabled !== false,
-      via_gateway: false,
+      via_gateway: !!(gatewayReady && p.alias),
       proxy_url: p.alias ? `/proxy/${p.alias}` : "",
       sample_path:
         ({ gemini: "/models/{model}:generateContent", anthropic: "/messages" })[
           p.provider_type
         ] || "/chat/completions",
       test_model: override.test_model || "",
-      logs_url: "",
+      logs_url: isValidGatewayLogsUrl(logsUrl) ? logsUrl : "",
       models: splitModels(p.models),
       keys_total: keyEntries.length,
       keys_available: keyEntries.filter((k) => !k.disabled).length,
@@ -1849,10 +1922,10 @@ function mockProxyState(settings) {
   return {
     ok: true,
     backend: "d1",
-    proxy_enabled: true,
-    proxy_message: "",
-    gateway_ready: false,
-    logs_url_template: "",
+    proxy_enabled: !proxyMessage,
+    proxy_message: proxyMessage,
+    gateway_ready: gatewayReady,
+    logs_url_template: logsUrl,
     providers,
   };
 }
@@ -1998,10 +2071,15 @@ function renderProxyToolbar() {
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
   const hasDisabledKeys = (p.keys || []).some((k) => k.disabled && k.id != null);
-  const canTest = enabled && hasKeys && !!p.test_model;
+  const hasAlias = !!String(p.alias || "").trim();
+  const canTest = enabled && hasAlias && hasKeys && !!p.test_model;
   for (const btn of [dom.proxyTestActive, dom.proxyTestDisabled]) {
     btn.disabled = !canTest || state.proxyBusy;
-    btn.title = !p.test_model ? "请先选择并保存测试模型" : "";
+    btn.title = !hasAlias
+      ? "请先在「来源设定」填写转发别名（alias）"
+      : !p.test_model
+        ? "请先选择并保存测试模型"
+        : "";
   }
   dom.proxyRecoverAll.disabled = !enabled || !hasDisabledKeys || state.proxyBusy;
   if (!state.proxy || !state.proxy.proxy_enabled) {
@@ -2034,7 +2112,7 @@ function renderProxyLogsLink() {
   dom.proxyLogs.removeAttribute("href");
   dom.proxyLogs.setAttribute("aria-disabled", "true");
   dom.proxyLogs.title = p
-    ? "部署设定 AI_GATEWAY_LOGS_URL 后可用"
+    ? "请在右上角「设定」填写 AI Gateway Logs URL 后可用"
     : "尚无服务商，先到「来源设定」添加";
 }
 
@@ -2043,7 +2121,7 @@ function updateProxyCardButtonsDisabled() {
   if (!p) return;
   const enabled =
     !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
-  const canAct = enabled && !!p.test_model;
+  const canAct = enabled && !!String(p.alias || "").trim() && !!p.test_model;
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-test]")) {
     const id = btn.dataset.proxyTest;
     const busy =
@@ -2075,7 +2153,7 @@ function renderProxyKeyCards() {
     return;
   }
   dom.proxyKeyEmpty.classList.add("hidden");
-  const canAct = enabled && !!p.test_model;
+  const canAct = enabled && !!String(p.alias || "").trim() && !!p.test_model;
   const plainList = state.proxyPlainKeys.get(p.fp) || [];
   dom.proxyKeyGrid.innerHTML = keys
     .map((k, ki) => {
@@ -2173,6 +2251,16 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
   if (state.proxyTestingKeys.has(token)) return null;
 
   const targetFp = fp || (selectedProxyProvider() || {}).fp || null;
+  const beforeProvider = (state.proxy?.providers || []).find(
+    (item) => item.fp === targetFp,
+  );
+  const beforeKey = (beforeProvider?.keys || []).find(
+    (k) => String(k.id ?? "") === targetId,
+  );
+  const wasDirty = !!(
+    beforeKey &&
+    (beforeKey.disabled || Number(beforeKey.fail_count || 0) > 0)
+  );
   state.proxyTestingKeys.add(token);
   updateProxyCardButtonsDisabled();
 
@@ -2189,11 +2277,28 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
       const provider = (state.proxy?.providers || []).find(
         (item) => item.fp === targetFp,
       );
+      if (provider) {
+        const ki = (provider.keys || []).findIndex(
+          (k) => String(k.id ?? "") === targetId,
+        );
+        const rawKey = ki >= 0 ? (provider._mockPlainKeys || [])[ki] : "";
+        if (rawKey) {
+          const override = mockOverrideForProvider(provider.fp);
+          const prev = override.keys.get(rawKey) || {};
+          override.keys.set(rawKey, {
+            ...prev,
+            disabled: false,
+            fail_count: 0,
+          });
+        }
+      }
       result = {
         ok: true,
         status: 200,
         ms: 123,
         model: (provider && provider.test_model) || "mock",
+        fail_count: 0,
+        disabled: false,
       };
     } else {
       result = await api("/api/proxy/test", {
@@ -2239,6 +2344,9 @@ async function testProxyKey(fp, id, { fromBatch = false } = {}) {
       `这把密钥已达门槛并被禁用（连续失败 ${result.fail_count} 次）。`,
       "error",
     );
+  } else if (!fromBatch && result && result.ok && wasDirty) {
+    await loadProxyState({ preserveResults: true });
+    clearProxyNotice({ keepGlobal: true });
   }
   return result;
 }

@@ -115,10 +115,16 @@ class FakeKV {
 
 const ADMIN = "admin-secret";
 const PROXY = "proxy-secret";
+const DEFAULT_GW_LOGS_URL =
+  "https://dash.cloudflare.com/acct/ai/ai-gateway/gateways/gw/logs";
+const DEFAULT_GW_TOKEN = "gw-token";
 
 let server;
 let upstreamHandler;
 let captured;
+let gatewayCalls;
+let aliasBases;
+let originalFetch;
 
 function defaultUpstream(req, res, body) {
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -133,6 +139,8 @@ function defaultUpstream(req, res, body) {
 
 function resetCaptured() {
   captured = [];
+  gatewayCalls = [];
+  aliasBases = new Map();
 }
 
 function useUpstream(handler) {
@@ -147,7 +155,6 @@ function makeEnv({ db = new FakeD1(), kv = new FakeKV(), vars = {} } = {}) {
       fetch: async () => new Response("static", { status: 200 }),
     },
     ADMIN_PASSWORD: ADMIN,
-    PROXY_PASSWORD: PROXY,
     ...vars,
   };
 }
@@ -203,13 +210,34 @@ function upstreamBase() {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function postSettings(env, providers) {
+async function postSettings(env, providers, settingsOverrides = {}) {
+  const payload = {
+    providers,
+    proxy_password: PROXY,
+    ai_gateway_logs_url: DEFAULT_GW_LOGS_URL,
+    ai_gateway_token: DEFAULT_GW_TOKEN,
+    proxy_fail_threshold: 3,
+    proxy_max_retries: 3,
+    proxy_upstream_timeout_ms: 120000,
+    ...settingsOverrides,
+  };
   const response = await request(env, "/api/settings", {
     method: "POST",
     headers: { ...adminHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ providers }),
+    body: JSON.stringify(payload),
   });
-  return asJson(response);
+  const parsed = await asJson(response);
+  if (parsed.status === 200 && Array.isArray(providers)) {
+    for (const p of providers) {
+      if (p && p.alias && p.api_base) {
+        aliasBases.set(
+          String(p.alias).trim(),
+          String(p.api_base).trim().replace(/\/+$/, ""),
+        );
+      }
+    }
+  }
+  return parsed;
 }
 
 async function postTestModel(env, fp, model) {
@@ -271,6 +299,47 @@ async function fingerprintOf(env, providerEntry) {
 }
 
 test.before(async () => {
+  originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const rawUrl = String(url);
+    const gwPrefix = "https://gateway.ai.cloudflare.com/v1/";
+    if (!rawUrl.startsWith(gwPrefix)) {
+      return originalFetch(url, init);
+    }
+    const parsed = new URL(rawUrl);
+    const match = /^\/v1\/([^/]+)\/([^/]+)\/custom-([^/]+)(\/.*)?$/.exec(
+      parsed.pathname,
+    );
+    if (!match) {
+      throw new Error(`Unexpected AI Gateway path in test: ${parsed.pathname}`);
+    }
+    const accountId = decodeURIComponent(match[1]);
+    const gatewayId = decodeURIComponent(match[2]);
+    const slug = decodeURIComponent(match[3]);
+    const restPath = match[4] || "";
+    const gwHeaders = new Headers(init.headers);
+    gatewayCalls.push({
+      url: rawUrl,
+      accountId,
+      gatewayId,
+      slug,
+      headers: gwHeaders,
+      method: init.method || "GET",
+    });
+
+    // Simulate Cloudflare AI Gateway stripping cf-aig-* control headers before forwarding upstream.
+    const upstreamHeaders = new Headers();
+    for (const [k, v] of gwHeaders.entries()) {
+      if (k.toLowerCase().startsWith("cf-aig-")) continue;
+      upstreamHeaders.append(k, v);
+    }
+    const base = aliasBases.get(slug) || `${upstreamBase()}/v1`;
+    return originalFetch(`${base}${restPath}${parsed.search}`, {
+      ...init,
+      headers: upstreamHeaders,
+    });
+  };
+
   server = http.createServer((req, res) => {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));
@@ -294,6 +363,7 @@ test.beforeEach(() => {
 });
 
 test.after(() => {
+  if (originalFetch) globalThis.fetch = originalFetch;
   server.close();
 });
 
@@ -400,12 +470,17 @@ test("proxy password is independent from the admin password and accepts all thre
   }
 });
 
-test("proxy builds api_base + relative path, keeps the query string and replaces auth", async () => {
+test("proxy routes through AI Gateway custom-{alias}, keeps query string and replaces auth", async () => {
   const env = makeEnv();
   await postSettings(env, [provider({ alias: "openai", keys: "key-aaaa" })]);
 
   const result = await proxy(env, "/proxy/openai/chat/completions?x=1");
   assert.equal(result.status, 200);
+  assert.equal(gatewayCalls.length, 1);
+  assert.equal(
+    gatewayCalls[0].url,
+    "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai/chat/completions?x=1",
+  );
   assert.equal(captured.length, 1);
   assert.equal(captured[0].url, "/v1/chat/completions?x=1");
   assert.equal(captured[0].headers.authorization, "Bearer key-aaaa");
@@ -600,9 +675,9 @@ test("a retryable failure moves to the next key and counts against the first", a
     }
     defaultUpstream(req, res, "");
   });
-  const env = makeEnv({ vars: { PROXY_FAIL_THRESHOLD: "3" } });
+  const env = makeEnv();
   const p = provider({ alias: "openai", keys: "bad\ngood" });
-  await postSettings(env, [p]);
+  await postSettings(env, [p], { proxy_fail_threshold: 3 });
   const fp = await fingerprintOf(env, p);
 
   const result = await proxy(env, "/proxy/openai/chat/completions");
@@ -623,9 +698,9 @@ test("failure threshold disables a key; recovery is manual or via the next daily
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end('{"error":"invalid key"}');
   });
-  const env = makeEnv({ vars: { PROXY_FAIL_THRESHOLD: "1" } });
+  const env = makeEnv();
   const p = provider({ alias: "openai", keys: "only" });
-  await postSettings(env, [p]);
+  await postSettings(env, [p], { proxy_fail_threshold: 1 });
   const fp = await fingerprintOf(env, p);
 
   const first = await proxy(env, "/proxy/openai/chat/completions");
@@ -661,9 +736,9 @@ test("every non-2xx is charged, including a caller-error 400", async () => {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end('{"error":"bad request"}');
   });
-  const env = makeEnv({ vars: { PROXY_FAIL_THRESHOLD: "1" } });
+  const env = makeEnv();
   const p = provider({ alias: "openai", keys: "k1\nk2\nk3" });
-  await postSettings(env, [p]);
+  await postSettings(env, [p], { proxy_fail_threshold: 1 });
   const fp = await fingerprintOf(env, p);
 
   // One request walks all three keys, so each key gets exactly one failure and
@@ -689,9 +764,9 @@ test("a daily result that lists a key as valid clears its proxy ledger", async (
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end('{"error":"invalid key"}');
   });
-  const env = makeEnv({ vars: { PROXY_FAIL_THRESHOLD: "1" } });
+  const env = makeEnv();
   const p = provider({ alias: "openai", keys: "k1\nk2" });
-  await postSettings(env, [p]);
+  await postSettings(env, [p], { proxy_fail_threshold: 1 });
   const fp = await fingerprintOf(env, p);
 
   await proxy(env, "/proxy/openai/chat/completions");
@@ -740,9 +815,9 @@ test("retries stop at four upstream calls and the fifth key is untouched", async
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end('{"error":"invalid key"}');
   });
-  const env = makeEnv({ vars: { PROXY_FAIL_THRESHOLD: "9" } });
+  const env = makeEnv();
   const p = provider({ alias: "openai", keys: "k1\nk2\nk3\nk4\nk5" });
-  await postSettings(env, [p]);
+  await postSettings(env, [p], { proxy_fail_threshold: 9, proxy_max_retries: 3 });
   const fp = await fingerprintOf(env, p);
 
   const result = await proxy(env, "/proxy/openai/chat/completions");
@@ -795,9 +870,9 @@ test("a failed manual test charges the key and can disable it", async () => {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end('{"error":"nope"}');
   });
-  const env = makeEnv({ vars: { PROXY_FAIL_THRESHOLD: "2" } });
+  const env = makeEnv();
   const p = provider({ alias: "openai", keys: "k1" });
-  await postSettings(env, [p]);
+  await postSettings(env, [p], { proxy_fail_threshold: 2 });
   const fp = await fingerprintOf(env, p);
   await postTestModel(env, fp, "probe-model");
   const [key] = await getKeyRows(env, fp);
@@ -826,10 +901,10 @@ test("a failed manual test charges the key and can disable it", async () => {
   assert.equal(after.last_used_at, null, "手動測試不參與輪用，不該蓋最近使用時間");
 });
 
-test("a successful manual test does not clear a disabled key", async () => {
+test("a successful manual test clears fail_count and re-enables a disabled key", async () => {
   useUpstream((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end("{\"ok\":true}");
+    res.end('{"ok":true}');
   });
   const env = makeEnv();
   const p = provider({ alias: "openai", keys: "k1" });
@@ -851,12 +926,14 @@ test("a successful manual test does not clear a disabled key", async () => {
       body: JSON.stringify({ fp, id: key.id }),
     }),
   );
+  assert.equal(result.status, 200);
   assert.equal(result.data.ok, true);
-  assert.equal(result.data.disabled, undefined, "成功不寫帳本");
+  assert.equal(result.data.disabled, false);
+  assert.equal(result.data.fail_count, 0);
 
   const [after] = await getKeyRows(env, fp);
-  assert.equal(after.disabled, true, "恢復只能靠每日結果或手動按钮");
-  assert.equal(after.fail_count, 3);
+  assert.equal(after.disabled, false, "手动测试成功应立即解除禁用");
+  assert.equal(after.fail_count, 0, "手动测试成功应立即归零失败次数");
 });
 
 test("the proxy test model is stored separately, not auto-borrowed", async () => {
@@ -1265,16 +1342,22 @@ test("restore writes a backup back including key_state", async () => {
 
 // ── AI Gateway (fetch intercepted) ─────────────────────────────────────────
 
-test("gateway mode builds custom-{alias} URL and ignores removed gateway_provider field", async () => {
+test("gateway mode parses Logs URL, ignores legacy env vars, and writes plaintext ASCII metadata", async () => {
+  // Legacy env.* vars must be completely ignored in favor of app_settings.
   const env = makeEnv({
     vars: {
-      AI_GATEWAY_ACCOUNT_ID: "acct",
-      AI_GATEWAY_ID: "gw",
-      AI_GATEWAY_TOKEN: "gw-token",
+      PROXY_PASSWORD: "legacy-env-password",
+      AI_GATEWAY_ACCOUNT_ID: "legacy-acct",
+      AI_GATEWAY_ID: "legacy-gw",
+      AI_GATEWAY_TOKEN: "legacy-token",
     },
   });
   await postSettings(env, [
-    provider({ alias: "openai", keys: "sk-abcdefghij1234", gateway_provider: "legacy-ignored" }),
+    provider({
+      alias: "openai",
+      keys: "sk-abcdefghij1234\nsk-short\nsk-caf\u00e9-ok",
+      gateway_provider: "legacy-ignored",
+    }),
   ]);
 
   const saved = await asJson(
@@ -1285,35 +1368,149 @@ test("gateway mode builds custom-{alias} URL and ignores removed gateway_provide
     await request(env, "/api/proxy/state", { headers: adminHeaders() }),
   );
   assert.equal("gateway_provider" in proxyState.data.providers[0], false);
+  assert.equal("tag" in proxyState.data.providers[0].keys[0], false);
+  assert.equal(proxyState.data.providers[0].logs_url, DEFAULT_GW_LOGS_URL);
 
-  const realFetch = globalThis.fetch;
-  let seen = null;
-  globalThis.fetch = async (url, init) => {
-    seen = { url: String(url), headers: new Headers(init.headers) };
-    return new Response('{"ok":true}', {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  };
-  try {
+  for (const expectedKey of ["sk-abcdefghij1234", "sk-short", "sk-caf-ok"]) {
+    gatewayCalls.length = 0;
     const result = await proxy(env, "/proxy/openai/chat/completions?q=1");
     assert.equal(result.status, 200);
-  } finally {
-    globalThis.fetch = realFetch;
+    assert.equal(gatewayCalls.length, 1);
+    const seen = gatewayCalls[0];
+    assert.equal(
+      seen.url,
+      "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai/chat/completions?q=1",
+    );
+    assert.equal(seen.headers.get("cf-aig-skip-cache"), "true");
+    assert.equal(seen.headers.get("cf-aig-max-attempts"), "1");
+    assert.equal(seen.headers.get("cf-aig-authorization"), "Bearer gw-token");
+    const metadata = seen.headers.get("cf-aig-metadata");
+    assert.equal(
+      metadata,
+      JSON.stringify({ key: expectedKey, provider: "openai" }),
+    );
+    // eslint-disable-next-line no-control-regex
+    assert.ok(/^[\x20-\x7e]*$/.test(metadata));
   }
+});
 
-  assert.equal(
-    seen.url,
-    "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai/chat/completions?q=1",
+test("settings validate Gateway Logs URL and proxy/test require Gateway & alias with no direct fallback", async () => {
+  const env = makeEnv();
+
+  const badUrl = await postSettings(env, [], {
+    ai_gateway_logs_url: "https://example.com/not-cloudflare",
+  });
+  assert.equal(badUrl.status, 400);
+  assert.match(badUrl.data.error, /Logs URL/);
+
+  const samePass = await postSettings(env, [], { proxy_password: ADMIN });
+  assert.equal(samePass.status, 400);
+
+  const badRetry = await postSettings(env, [], { proxy_max_retries: 5 });
+  assert.equal(badRetry.status, 400);
+
+  // Incomplete Gateway config blocks both /proxy/* and /api/proxy/test with 503.
+  const noAliasProv = provider({ keys: "k1", models: "m1" });
+  const oaAliasProv = provider({
+    provider_type: "openai",
+    alias: "oa",
+    api_base: `${upstreamBase()}/oa/v1`,
+    extra_body: '{"temperature":0.1,"seed":7}',
+    keys: "k-oa",
+    models: "m-oa",
+  });
+  const gemAliasProv = provider({
+    provider_type: "gemini",
+    alias: "gem",
+    api_base: `${upstreamBase()}/v1beta`,
+    keys: "k-gem",
+    models: "gemini-2.5-pro",
+  });
+  const anAliasProv = provider({
+    provider_type: "anthropic",
+    alias: "cla",
+    api_base: `${upstreamBase()}/ant/v1`,
+    keys: "k-cla",
+    models: "claude-test",
+  });
+
+  await postSettings(env, [oaAliasProv], { ai_gateway_token: "" });
+  const fpOaMissing = await fingerprintOf(env, oaAliasProv);
+  await postTestModel(env, fpOaMissing, "m-oa");
+  const [oaRowMissing] = await getKeyRows(env, fpOaMissing);
+  const proxyDisabled = await proxy(env, "/proxy/oa/chat/completions");
+  assert.equal(proxyDisabled.status, 503);
+  const testDisabled = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp: fpOaMissing, id: oaRowMissing.id }),
+    }),
   );
-  assert.equal(seen.headers.get("cf-aig-skip-cache"), "true");
-  assert.equal(seen.headers.get("cf-aig-max-attempts"), "1");
-  assert.equal(seen.headers.get("cf-aig-authorization"), "Bearer gw-token");
-  assert.equal(seen.headers.get("authorization"), "Bearer sk-abcdefghij1234");
-  const metadata = seen.headers.get("cf-aig-metadata");
-  assert.equal(metadata, JSON.stringify({ key: "sk-a-1234", provider: "openai" }));
-  // eslint-disable-next-line no-control-regex
-  assert.ok(/^[\x20-\x7e]*$/.test(metadata));
+  assert.equal(testDisabled.status, 503);
+  assert.equal(captured.length, 0);
+
+  // Valid Gateway config: alias is required for manual probe, and probes use non-streaming "only reply 1." max 8 tokens.
+  await postSettings(env, [noAliasProv, oaAliasProv, gemAliasProv, anAliasProv]);
+  const fpNoAlias = await fingerprintOf(env, noAliasProv);
+  await postTestModel(env, fpNoAlias, "m1");
+  const [noAliasRow] = await getKeyRows(env, fpNoAlias);
+  const needAlias = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp: fpNoAlias, id: noAliasRow.id }),
+    }),
+  );
+  assert.equal(needAlias.status, 400);
+  assert.match(needAlias.data.error, /alias/);
+
+  for (const [entry, model, checkBody] of [
+    [
+      oaAliasProv,
+      "m-oa",
+      (b) => {
+        assert.equal(b.messages[0].content, "only reply 1.");
+        assert.equal(b.max_tokens, 8);
+        assert.equal(b.stream, false);
+        assert.equal(b.temperature, 0.1);
+        assert.equal(b.seed, 7);
+      },
+    ],
+    [
+      gemAliasProv,
+      "gemini-2.5-pro",
+      (b, url) => {
+        assert.equal(url, "/v1beta/models/gemini-2.5-pro:generateContent");
+        assert.equal(b.contents[0].parts[0].text, "only reply 1.");
+        assert.equal(b.generationConfig.maxOutputTokens, 8);
+      },
+    ],
+    [
+      anAliasProv,
+      "claude-test",
+      (b) => {
+        assert.equal(b.messages[0].content, "only reply 1.");
+        assert.equal(b.max_tokens, 8);
+        assert.equal(b.stream, false);
+      },
+    ],
+  ]) {
+    captured.length = 0;
+    const fp = await fingerprintOf(env, entry);
+    await postTestModel(env, fp, model);
+    const [row] = await getKeyRows(env, fp);
+    const res = await asJson(
+      await request(env, "/api/proxy/test", {
+        method: "POST",
+        headers: { ...adminHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ fp, id: row.id }),
+      }),
+    );
+    assert.equal(res.status, 200);
+    assert.equal(res.data.ok, true);
+    checkBody(JSON.parse(captured[0].body), captured[0].url);
+  }
 });
 
 test("POST and PUT /api/dead-keys are removed while GET/DELETE remain active", async () => {

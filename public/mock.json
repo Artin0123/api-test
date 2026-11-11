@@ -21,7 +21,13 @@
       }
     ],
     "github_url": "https://github.com/owner/repo/actions/workflows/main.yml",
-    "discord_webhook_url": "https://discord.com/api/webhooks/000000000000000000/mock-token"
+    "discord_webhook_url": "https://discord.com/api/webhooks/000000000000000000/mock-token",
+    "proxy_password": "mock-proxy-password",
+    "ai_gateway_logs_url": "https://dash.cloudflare.com/0000000000000000/ai/ai-gateway/gateways/mock-gw/logs",
+    "ai_gateway_token": "mock-gw-token",
+    "proxy_fail_threshold": 3,
+    "proxy_max_retries": 3,
+    "proxy_upstream_timeout_ms": 120000
   },
   "results": {
     "dashscope.aliyuncs.com": {

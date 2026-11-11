@@ -490,8 +490,87 @@ const DEFAULT_SETTINGS = {
   providers: [],
   github_url: "",
   discord_webhook_url: "",
+  proxy_password: "",
+  ai_gateway_logs_url: "",
+  ai_gateway_token: "",
+  proxy_fail_threshold: 3,
+  proxy_max_retries: 3,
+  proxy_upstream_timeout_ms: 120000,
   version: 0,
 };
+
+const PROXY_INT_LIMITS = {
+  proxy_fail_threshold: { min: 1, max: null, fallback: 3 },
+  proxy_max_retries: { min: 0, max: 3, fallback: 3 },
+  proxy_upstream_timeout_ms: { min: 1000, max: 600000, fallback: 120000 },
+};
+
+const GATEWAY_LOGS_URL_RE =
+  /^https:\/\/dash\.cloudflare\.com\/([^/?#]+)\/ai\/ai-gateway\/gateways\/([^/?#]+)\/logs(?:[/?#].*)?$/i;
+
+function parseGatewayLogsUrl(rawUrl) {
+  const trimmed = typeof rawUrl === "string" ? rawUrl.trim() : "";
+  if (!trimmed) return null;
+  const match = GATEWAY_LOGS_URL_RE.exec(trimmed);
+  if (!match) return null;
+  try {
+    const accountId = decodeURIComponent(match[1]).trim();
+    const gatewayId = decodeURIComponent(match[2]).trim();
+    if (!accountId || !gatewayId) return null;
+    return { accountId, gatewayId, logsUrl: trimmed };
+  } catch {
+    return null;
+  }
+}
+
+function clampOrDefaultInt(value, spec) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < spec.min) return spec.fallback;
+  if (spec.max !== null && n > spec.max) return spec.max;
+  return n;
+}
+
+function parseIntSetting(rawVal, existingVal, field) {
+  const spec = PROXY_INT_LIMITS[field];
+  if (rawVal === undefined) {
+    return { value: clampOrDefaultInt(existingVal, spec), error: null };
+  }
+  if (rawVal === "" || rawVal === null) {
+    return { value: spec.fallback, error: null };
+  }
+  const n = typeof rawVal === "string" ? Number(rawVal.trim()) : Number(rawVal);
+  if (!Number.isInteger(n) || n < spec.min || (spec.max !== null && n > spec.max)) {
+    const range =
+      spec.max === null ? `>= ${spec.min}` : `${spec.min} ~ ${spec.max}`;
+    return { value: null, error: `${field} 必须是 ${range} 的整数` };
+  }
+  return { value: n, error: null };
+}
+
+function withSettingsDefaults(raw) {
+  const s = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return {
+    ...DEFAULT_SETTINGS,
+    ...s,
+    proxy_password: typeof s.proxy_password === "string" ? s.proxy_password : "",
+    ai_gateway_logs_url:
+      typeof s.ai_gateway_logs_url === "string" ? s.ai_gateway_logs_url : "",
+    ai_gateway_token:
+      typeof s.ai_gateway_token === "string" ? s.ai_gateway_token : "",
+    proxy_fail_threshold: clampOrDefaultInt(
+      s.proxy_fail_threshold,
+      PROXY_INT_LIMITS.proxy_fail_threshold,
+    ),
+    proxy_max_retries: clampOrDefaultInt(
+      s.proxy_max_retries,
+      PROXY_INT_LIMITS.proxy_max_retries,
+    ),
+    proxy_upstream_timeout_ms: clampOrDefaultInt(
+      s.proxy_upstream_timeout_ms,
+      PROXY_INT_LIMITS.proxy_upstream_timeout_ms,
+    ),
+  };
+}
 
 function settingsVersion(settings) {
   return typeof settings.version === "number" ? settings.version : 0;
@@ -626,7 +705,7 @@ async function handleGetSettings(request, env) {
     return json({ error: "Unauthorized" }, 401);
   const kv = store(env);
   const raw = await kv.get(SETTINGS_KEY);
-  const settings = parseJsonOrNull(raw) || { ...DEFAULT_SETTINGS };
+  const settings = withSettingsDefaults(parseJsonOrNull(raw));
   settings.version = settingsVersion(settings);
   return json({ ok: true, settings });
 }
@@ -680,6 +759,24 @@ async function handlePostSettings(request, env) {
       typeof body.discord_webhook_url === "string"
         ? body.discord_webhook_url
         : existing.discord_webhook_url,
+    proxy_password:
+      typeof body.proxy_password === "string"
+        ? body.proxy_password.trim()
+        : typeof existing.proxy_password === "string"
+          ? existing.proxy_password
+          : "",
+    ai_gateway_logs_url:
+      typeof body.ai_gateway_logs_url === "string"
+        ? body.ai_gateway_logs_url.trim()
+        : typeof existing.ai_gateway_logs_url === "string"
+          ? existing.ai_gateway_logs_url
+          : "",
+    ai_gateway_token:
+      typeof body.ai_gateway_token === "string"
+        ? body.ai_gateway_token.trim()
+        : typeof existing.ai_gateway_token === "string"
+          ? existing.ai_gateway_token
+          : "",
     proxy_test_models: normalizeProxyTestModels(
       body.proxy_test_models !== undefined
         ? body.proxy_test_models
@@ -687,6 +784,30 @@ async function handlePostSettings(request, env) {
     ),
     version: currentVersion + 1,
   };
+
+  for (const intField of Object.keys(PROXY_INT_LIMITS)) {
+    const parsedInt = parseIntSetting(body[intField], existing[intField], intField);
+    if (parsedInt.error) return json({ error: parsedInt.error }, 400);
+    next[intField] = parsedInt.value;
+  }
+
+  const adminPassword = (env.ADMIN_PASSWORD || "").trim();
+  if (
+    next.proxy_password &&
+    adminPassword &&
+    timingSafeEqual(next.proxy_password, adminPassword)
+  ) {
+    return json({ error: "代理密码不能与 ADMIN_PASSWORD 相同" }, 400);
+  }
+  if (next.ai_gateway_logs_url && !parseGatewayLogsUrl(next.ai_gateway_logs_url)) {
+    return json(
+      {
+        error:
+          "AI Gateway Logs URL 格式无效，请填写 https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs",
+      },
+      400,
+    );
+  }
 
   const aliasError = validateProviderAliases(next.providers || []);
   if (aliasError) return json({ error: aliasError }, 400);
@@ -1406,18 +1527,13 @@ function maskKey(key) {
   return `${s.slice(0, 6)}${stars}${s.slice(-3)}`;
 }
 
-/** cf-aig-metadata travels as an HTTP header, so its value must be ASCII only.
- *  A non-ASCII byte (the document's example was "…") makes fetch throw before
- *  the request leaves the worker. */
-function metadataKeyTag(apiKey) {
-  const ascii = String(apiKey || "").replace(/[^\x21-\x7e]/g, "");
-  if (!ascii) return "key";
-  // Never reveal more than the UI mask. Short keys are rare, but a 4+4 tag on a
-  // 5-character key would spell out the whole secret in the Gateway logs.
-  if (ascii.length < 16) {
-    return `${ascii.slice(0, 1)}***${ascii.slice(-1)}`;
-  }
-  return `${ascii.slice(0, 4)}-${ascii.slice(-4)}`;
+/** HTTP header values cannot contain CRLF or non-ASCII characters: strip
+ *  unsafe bytes so cf-aig-metadata never makes fetch() throw TypeError while
+ *  preserving the full plaintext ASCII key for Cloudflare AI Gateway logs. */
+function sanitizeHeaderAscii(value) {
+  return String(value ?? "")
+    .replace(/[\r\n]/g, "")
+    .replace(/[^\x20-\x7e]/g, "");
 }
 
 function providerKeys(provider) {
@@ -1462,26 +1578,21 @@ function applyProviderAuth(headers, providerType, apiKey) {
   }
 }
 
-/** Direct upstream or AI Gateway custom-provider. The custom provider's slug
- *  matches `alias`, so `custom-{alias}` + caller path routes through Gateway. */
-function upstreamFor(env, provider) {
+/** Always route proxy and manual probe requests through Cloudflare AI Gateway.
+ *  The Custom Provider's slug matches `provider.alias`, so `custom-{alias}` +
+ *  caller path reaches upstream while keeping all traffic in Gateway logs. */
+function upstreamFor(settings, provider) {
   const slug =
-    typeof provider.alias === "string" ? provider.alias.trim() : "";
-  const account = (env.AI_GATEWAY_ACCOUNT_ID || "").trim();
-  const gateway = (env.AI_GATEWAY_ID || "").trim();
-  const token = (env.AI_GATEWAY_TOKEN || "").trim();
-  if (slug && account && gateway && token) {
-    return {
-      kind: "gateway",
-      token,
-      base:
-        `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(account)}` +
-        `/${encodeURIComponent(gateway)}/custom-${encodeURIComponent(slug)}`,
-    };
-  }
+    typeof provider?.alias === "string" ? provider.alias.trim() : "";
+  const gw = parseGatewayLogsUrl(settings?.ai_gateway_logs_url);
+  const token = String(settings?.ai_gateway_token || "").trim();
+  if (!slug || !gw || !token) return null;
   return {
-    kind: "direct",
-    base: String(provider.api_base || "").trim().replace(/\/+$/, ""),
+    kind: "gateway",
+    token,
+    base:
+      `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(gw.accountId)}` +
+      `/${encodeURIComponent(gw.gatewayId)}/custom-${encodeURIComponent(slug)}`,
   };
 }
 
@@ -1506,7 +1617,14 @@ function copyUpstreamHeaders(response) {
   return headers;
 }
 
-function buildForwardHeaders(env, provider, alias, apiKey, incoming, upstream) {
+function buildForwardHeaders(
+  settings,
+  provider,
+  alias,
+  apiKey,
+  incoming,
+  upstream,
+) {
   const headers = new Headers();
   for (const [name, value] of incoming) {
     const lower = name.toLowerCase();
@@ -1535,41 +1653,40 @@ function buildForwardHeaders(env, provider, alias, apiKey, incoming, upstream) {
     }
   }
 
-  if (upstream.kind === "gateway") {
-    headers.set("cf-aig-authorization", `Bearer ${upstream.token}`);
-    headers.set("cf-aig-skip-cache", "true");
-    headers.set("cf-aig-max-attempts", "1");
-    headers.set(
-      "cf-aig-request-timeout",
-      String(proxyTimeoutMs(env)),
-    );
-    headers.set(
-      "cf-aig-metadata",
-      JSON.stringify({ key: metadataKeyTag(apiKey), provider: alias }),
-    );
-  }
+  headers.set("cf-aig-authorization", `Bearer ${upstream.token}`);
+  headers.set("cf-aig-skip-cache", "true");
+  // 关闭 Cloudflare AI Gateway 对同一把坏金钥的重复重试，把「立即切换下一把不同金钥」的控制权完全留在 Worker 迴圈。
+  headers.set("cf-aig-max-attempts", "1");
+  headers.set(
+    "cf-aig-request-timeout",
+    String(proxyTimeoutMs(settings)),
+  );
+  headers.set(
+    "cf-aig-metadata",
+    JSON.stringify({ key: sanitizeHeaderAscii(apiKey), provider: alias }),
+  );
 
   return headers;
 }
 
-function proxyTimeoutMs(env) {
-  const n = parseInt(env.PROXY_UPSTREAM_TIMEOUT_MS, 10);
+function proxyTimeoutMs(settings) {
+  const n = Number(settings?.proxy_upstream_timeout_ms);
   if (!Number.isFinite(n)) return 120000;
-  return Math.min(Math.max(n, 1000), 600000);
+  return Math.min(Math.max(Math.trunc(n), 1000), 600000);
 }
 
-function proxyFailThreshold(env) {
-  const n = parseInt(env.PROXY_FAIL_THRESHOLD, 10);
+function proxyFailThreshold(settings) {
+  const n = Number(settings?.proxy_fail_threshold);
   if (!Number.isFinite(n) || n < 1) return 3;
-  return n;
+  return Math.trunc(n);
 }
 
 // The document caps retries at 3 (4 keys per request), well under the free
-// plan's 50-subrequest ceiling. Clamp rather than trust the deployment setting.
-function proxyMaxRetries(env) {
-  const n = parseInt(env.PROXY_MAX_RETRIES, 10);
+// plan's 50-subrequest ceiling. Clamp rather than trust stored settings.
+function proxyMaxRetries(settings) {
+  const n = Number(settings?.proxy_max_retries);
   if (!Number.isFinite(n) || n < 0) return 3;
-  return Math.min(n, 3);
+  return Math.min(Math.trunc(n), 3);
 }
 
 function proxyCredential(request) {
@@ -1582,18 +1699,24 @@ function proxyCredential(request) {
   ).trim();
 }
 
-/** null when the proxy can serve requests, otherwise a human-readable reason. */
-function proxyConfigError(env) {
+/** null when the proxy can serve requests via Gateway, otherwise an explicit reason. */
+function proxyConfigError(env, settings) {
   if (storageBackendName(env) !== "d1") {
     return "转发需要 STORAGE_BACKEND=d1（KV 模式无法即时维护密钥状态）";
   }
-  const proxyPassword = (env.PROXY_PASSWORD || "").trim();
+  const proxyPassword = String(settings?.proxy_password || "").trim();
   if (!proxyPassword) {
-    return "PROXY_PASSWORD 未设定，转发功能已停用";
+    return "代理密码未设定，请到右上角「设定」填写后再启用转发";
   }
   const adminPassword = (env.ADMIN_PASSWORD || "").trim();
   if (adminPassword && timingSafeEqual(proxyPassword, adminPassword)) {
-    return "PROXY_PASSWORD 不能与 ADMIN_PASSWORD 相同";
+    return "代理密码不能与 ADMIN_PASSWORD 相同";
+  }
+  if (!parseGatewayLogsUrl(settings?.ai_gateway_logs_url)) {
+    return "AI Gateway Logs URL 未设定或格式无效，请到右上角「设定」填写";
+  }
+  if (!String(settings?.ai_gateway_token || "").trim()) {
+    return "AI Gateway Token 未设定，请到右上角「设定」填写";
   }
   return null;
 }
@@ -1742,10 +1865,19 @@ async function resetKeyFailure(db, id) {
 // ─── /proxy/{alias}/… ───────────────────────────────────────────────────────
 
 async function handleProxy(request, env, url) {
-  const configError = proxyConfigError(env);
+  if (storageBackendName(env) !== "d1") {
+    return json(
+      { error: proxyConfigError(env, null), code: "PROXY_DISABLED" },
+      503,
+    );
+  }
+
+  const kv = store(env);
+  const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
+  const configError = proxyConfigError(env, settings);
   if (configError) return json({ error: configError, code: "PROXY_DISABLED" }, 503);
 
-  const proxyPassword = (env.PROXY_PASSWORD || "").trim();
+  const proxyPassword = String(settings?.proxy_password || "").trim();
   const credential = proxyCredential(request);
   if (!credential || !timingSafeEqual(credential, proxyPassword)) {
     return json({ error: "Unauthorized" }, 401);
@@ -1763,8 +1895,6 @@ async function handleProxy(request, env, url) {
   const subPath = slash === -1 ? "" : rest.slice(slash);
   const pathAndQuery = `${subPath}${url.search}`;
 
-  const kv = store(env);
-  const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
   const providers = Array.isArray(settings?.providers) ? settings.providers : [];
   const provider = providers.find(
     (p) => p && typeof p.alias === "string" && p.alias === alias,
@@ -1774,17 +1904,24 @@ async function handleProxy(request, env, url) {
     return json({ error: "Provider is disabled" }, 503);
   }
 
+  const upstream = upstreamFor(settings, provider);
+  if (!upstream) {
+    return json(
+      { error: "AI Gateway 设定不完整，无法转发", code: "PROXY_DISABLED" },
+      503,
+    );
+  }
+
   const db = env.DB;
   await ensureSchemaFor(db);
   const fp = await providerFingerprint(
     String(provider.provider_type || "").trim(),
     String(provider.api_base || "").trim(),
   );
-  const upstream = upstreamFor(env, provider);
   const target = targetUrl(upstream, pathAndQuery);
-  const timeoutMs = proxyTimeoutMs(env);
-  const threshold = proxyFailThreshold(env);
-  const maxRetries = proxyMaxRetries(env);
+  const timeoutMs = proxyTimeoutMs(settings);
+  const threshold = proxyFailThreshold(settings);
+  const maxRetries = proxyMaxRetries(settings);
 
   const rawBody =
     request.method === "GET" || request.method === "HEAD"
@@ -1825,7 +1962,7 @@ async function handleProxy(request, env, url) {
     tried.add(keyRow.id);
 
     const headers = buildForwardHeaders(
-      env,
+      settings,
       provider,
       alias,
       keyRow.api_key,
@@ -1917,9 +2054,9 @@ async function handleGetProxyState(request, env) {
   }
 
   const backend = storageBackendName(env);
-  const configError = proxyConfigError(env);
   const kv = store(env);
   const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
+  const configError = proxyConfigError(env, settings);
   const providers = Array.isArray(settings?.providers) ? settings.providers : [];
 
   // Resolve fingerprint per provider first, so the key_state read can be scoped to
@@ -1958,13 +2095,12 @@ async function handleGetProxyState(request, env) {
   const list = [];
   for (const { provider: p, providerType, apiBase, fp } of entries) {
     const fpRows = rowsByFp.get(fp) || new Map();
-    const upstream = upstreamFor(env, p);
+    const upstream = upstreamFor(settings, p);
     const keys = providerKeys(p).map((apiKey) => {
       const row = fpRows.get(apiKey);
       return {
         id: row ? row.id : null,
         masked: maskKey(apiKey),
-        tag: metadataKeyTag(apiKey),
         disabled: row ? !!row.disabled : false,
         fail_count: row ? row.fail_count : 0,
         last_used_at: row ? row.last_used_at : null,
@@ -1982,12 +2118,12 @@ async function handleGetProxyState(request, env) {
       host,
       provider_type: providerType,
       enabled: p.enabled !== false,
-      via_gateway: upstream.kind === "gateway",
+      via_gateway: !!upstream,
       proxy_url: alias ? `/proxy/${alias}` : "",
       sample_path: SAMPLE_PATHS[providerType] || "/chat/completions",
       test_model:
         typeof testModels[fp] === "string" ? testModels[fp] : "",
-      logs_url: gatewayLogsUrl(env, alias),
+      logs_url: gatewayLogsUrl(settings, alias),
       // The proxy toolbar offers these as the probe-model menu. Keeping the
       // whole list (not just the first entry) is what lets 来源设定 stay the one
       // place where a provider's models are typed.
@@ -2003,78 +2139,85 @@ async function handleGetProxyState(request, env) {
     backend,
     proxy_enabled: !configError,
     proxy_message: configError || "",
-    gateway_ready: upstreamReady(env),
-    logs_url_template: (env.AI_GATEWAY_LOGS_URL || "").trim(),
+    gateway_ready: upstreamReady(settings),
+    logs_url_template: String(settings?.ai_gateway_logs_url || "").trim(),
     providers: list,
   });
 }
 
-function upstreamReady(env) {
+function upstreamReady(settings) {
   return !!(
-    (env.AI_GATEWAY_ACCOUNT_ID || "").trim() &&
-    (env.AI_GATEWAY_ID || "").trim() &&
-    (env.AI_GATEWAY_TOKEN || "").trim()
+    parseGatewayLogsUrl(settings?.ai_gateway_logs_url) &&
+    String(settings?.ai_gateway_token || "").trim()
   );
 }
 
-/** AI_GATEWAY_LOGS_URL is an operator-provided template; {provider} and {key} are
- *  URL-encoded before substitution. No template = no link (button disabled). */
-function gatewayLogsUrl(env, alias, keyTag = "") {
-  const template = String(env.AI_GATEWAY_LOGS_URL ?? "").trim();
-  if (!template) return "";
-  return template
-    .replace(/\{provider\}/g, encodeURIComponent(alias || ""))
-    .replace(/\{key\}/g, encodeURIComponent(keyTag || ""));
+/** Build Gateway Logs shortcut URL from the configured AI Gateway Logs URL. */
+function gatewayLogsUrl(settings, alias = "") {
+  const raw = String(settings?.ai_gateway_logs_url ?? "").trim();
+  if (!parseGatewayLogsUrl(raw)) return "";
+  return raw.replace(/\{provider\}/g, encodeURIComponent(alias || ""));
 }
 
 // ─── /api/proxy/test ───────────────────────────────────────────────────────
 
-/** Minimal single-key probe. Diagnostic for the ledger *only* in the failure
- *  direction: a failed probe counts toward the blacklist, a successful one does
- *  not clear it (the daily result is what recovers a key). */
+/** Minimal single-key non-streaming probe ("only reply 1.", max 8 tokens).
+ *  Failed probes increment fail_count (possibly disabling the key); a
+ *  successful probe resets fail_count = 0 and clears disabled = 0 immediately. */
 function testRequestFor(provider, model) {
   if (!model) return null;
+  let req;
   switch (provider.provider_type) {
     case "gemini":
-      return {
+      req = {
         model,
         path: `/models/${encodeURIComponent(model)}:generateContent`,
         body: {
-          contents: [{ parts: [{ text: "ping" }] }],
-          generationConfig: { maxOutputTokens: 1 },
+          contents: [{ parts: [{ text: "only reply 1." }] }],
+          generationConfig: { maxOutputTokens: 8 },
         },
       };
+      break;
     case "anthropic":
-      return {
+      req = {
         model,
         path: "/messages",
         body: {
           model,
-          max_tokens: 1,
-          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 8,
+          stream: false,
+          messages: [{ role: "user", content: "only reply 1." }],
         },
       };
+      break;
     case "openai":
     default:
-      return {
+      req = {
         model,
         path: "/chat/completions",
         body: {
           model,
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1,
+          messages: [{ role: "user", content: "only reply 1." }],
+          max_tokens: 8,
           stream: false,
         },
       };
+      break;
   }
+  const extra = parseExtraBody(provider);
+  if (extra) {
+    req.body = { ...req.body, ...extra };
+  }
+  return req;
 }
 
 async function handleProxyTest(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
   }
-  const configError = proxyConfigError(env);
-  if (configError) return json({ error: configError }, 503);
+  if (storageBackendName(env) !== "d1") {
+    return json({ error: proxyConfigError(env, null) }, 503);
+  }
 
   let body;
   try {
@@ -2088,6 +2231,11 @@ async function handleProxyTest(request, env) {
     return json({ error: "id and fp required" }, 400);
   }
 
+  const kv = store(env);
+  const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
+  const configError = proxyConfigError(env, settings);
+  if (configError) return json({ error: configError }, 503);
+
   await ensureSchemaFor(env.DB);
   const row = await env.DB.prepare(
     "SELECT id, fp, api_key FROM key_state WHERE id = ? AND fp = ?",
@@ -2096,7 +2244,6 @@ async function handleProxyTest(request, env) {
     .first();
   if (!row) return json({ error: "Not Found" }, 404);
 
-  const settings = parseJsonObject(await store(env).get(SETTINGS_KEY));
   const providers = Array.isArray(settings?.providers) ? settings.providers : [];
   const provider = (
     await Promise.all(
@@ -2111,6 +2258,17 @@ async function handleProxyTest(request, env) {
     )
   ).find(Boolean);
   if (!provider) return json({ error: "Not Found" }, 404);
+
+  const alias = typeof provider.alias === "string" ? provider.alias.trim() : "";
+  if (!alias) {
+    return json(
+      {
+        error:
+          "请先在「来源设定」填写转发别名 (alias)，才能经由 AI Gateway 测试密钥",
+      },
+      400,
+    );
+  }
 
   // The probe model is its own setting (proxy_test_models), never the provider's
   // daily-test list: changing it here must not touch what the morning run uses.
@@ -2131,11 +2289,12 @@ async function handleProxyTest(request, env) {
   const probe = testRequestFor(provider, testModel);
   if (!probe) return json({ error: "该服务商没有设定 Models" }, 400);
 
-  const upstream = upstreamFor(env, provider);
-  const alias =
-    typeof provider.alias === "string" ? provider.alias : provider.provider_type;
+  const upstream = upstreamFor(settings, provider);
+  if (!upstream) {
+    return json({ error: "AI Gateway 设定不完整，无法测试" }, 503);
+  }
   const headers = buildForwardHeaders(
-    env,
+    settings,
     provider,
     alias,
     row.api_key,
@@ -2147,7 +2306,10 @@ async function handleProxyTest(request, env) {
   const started = Date.now();
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), proxyTimeoutMs(env));
+    const timer = setTimeout(
+      () => controller.abort(),
+      proxyTimeoutMs(settings),
+    );
     let response;
     try {
       response = await fetch(targetUrl(upstream, probe.path), {
@@ -2165,18 +2327,23 @@ async function handleProxyTest(request, env) {
     let ledger = null;
     if (!response.ok) {
       detail = (await response.text()).slice(0, 300);
-      // A failed manual probe counts: the agreed rule is that a key becomes
-      // disabled from a failed test or from proxy traffic, never from the daily
-      // result. A *successful* probe does not clear the ledger — recovery is the
-      // daily result's job (recoverKeysFromResults), otherwise the button would
-      // be a way around the threshold.
       try {
-        ledger = await recordKeyFailure(env.DB, row.id, proxyFailThreshold(env));
+        ledger = await recordKeyFailure(
+          env.DB,
+          row.id,
+          proxyFailThreshold(settings),
+        );
       } catch (dbErr) {
         console.error("key_state failure write failed", dbErr);
       }
-    } else if (response.body) {
-      await response.body.cancel();
+    } else {
+      if (response.body) await response.body.cancel();
+      await env.DB.prepare(
+        "UPDATE key_state SET fail_count = 0, disabled = 0, updated_at = ? WHERE id = ?",
+      )
+        .bind(Date.now(), row.id)
+        .run();
+      ledger = { fail_count: 0, disabled: false };
     }
     return json({
       ok: response.ok,

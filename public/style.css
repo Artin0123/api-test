@@ -1479,6 +1479,12 @@ a:focus-visible,
     gap: 0.5rem;
 }
 
+.settings-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
 .no-shrink {
     flex-shrink: 0;
 }
@@ -2593,6 +2599,9 @@ code {
 @media (max-width: 640px) {
     .keys-search-wrap {
         flex: 1 1 100%;
+    }
+    .settings-grid-3 {
+        grid-template-columns: 1fr;
     }
 }
 /* Occurrence marks for the keys textarea. A <textarea> cannot colour part of
