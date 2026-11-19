@@ -30,38 +30,37 @@
     white-space: nowrap;
 }
 
-/* Segmented two-cell readout matching --control-h beside the model controls:
-   each count sits in its own bordered compartment and expands with digits. */
+/* Two separate translucent-tinted capsules matching --control-h beside the model
+   controls, spaced identically to the label-to-capsule gap (0.75rem). */
 .proxy-summary-group {
     display: inline-flex;
-    align-items: stretch;
-    height: var(--control-h);
-    background: var(--bg-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
+    align-items: center;
+    gap: 0.75rem;
 }
 
 .proxy-summary-cell {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     flex: none;
-    /* Fixed width sized for up to 5 glyphs (e.g. "9999+"); never widens past that. */
-    width: calc(5ch + 1.5rem);
+    height: var(--control-h);
+    /* Fixed width sized for up to 3 digits (max 999 keys total) + padding + 2px border. */
+    width: calc(3ch + 1.5rem + 2px);
     padding: 0 0.75rem;
-}
-
-.proxy-summary-cell + .proxy-summary-cell {
-    border-left: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    text-align: left;
 }
 
 .proxy-summary-ok {
-    color: var(--ok-soft);
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--ok);
+    border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .proxy-summary-fail {
-    color: var(--fail-soft);
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--fail);
+    border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .proxy-summary-num {
@@ -244,22 +243,92 @@
     margin-left: auto;
 }
 
-/* No reserved height: an untested key should not look like it is hiding text,
-   and :empty keeps the card's flex gap from adding a phantom row. */
-.proxy-test-result {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    overflow-wrap: anywhere;
+/* ── Proxy top-right toast stack ────────────────────────────────────────── */
+.proxy-toast-stack {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 400;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.6rem;
+    width: min(24rem, calc(100vw - 2rem));
+    pointer-events: none;
 }
 
-.proxy-test-result:empty {
-    display: none;
+.proxy-toast {
+    pointer-events: auto;
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.65rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
-.proxy-test-result.ok {
+.proxy-toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.proxy-toast.is-leaving {
+    position: absolute;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+}
+
+.proxy-toast--ok {
+    border-color: rgba(34, 197, 94, 0.35);
     color: var(--ok);
 }
 
-.proxy-test-result.fail {
+.proxy-toast--fail {
+    border-color: rgba(239, 68, 68, 0.35);
     color: var(--fail);
+}
+
+.proxy-toast--info {
+    border-color: rgba(99, 102, 241, 0.35);
+    color: var(--text);
+}
+
+.proxy-toast-msg {
+    flex: 1;
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+}
+
+.proxy-toast-close {
+    flex: none;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.1rem 0.2rem;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+
+.proxy-toast-close:hover {
+    color: var(--text);
 }

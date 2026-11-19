@@ -21,7 +21,7 @@ const state = {
   proxyPlainKeys: new Map(), // fp -> plaintext keys for copy buttons
   proxyTestingKeys: new Set(), // `${fp}:${id}` keys currently testing individually
   proxyRecoveringKeys: new Set(), // `${fp}:${id}` keys currently recovering
-  proxyLastResults: new Map(), // fp -> Map<String(id), result> across post-test reloads
+  proxyDisablingKeys: new Set(), // `${fp}:${id}` keys currently disabling
   mockProxyOverrides: new Map(), // fp -> { test_model, keys: Map }
   reqSeq: { config: 0, results: 0, deadkeys: 0, proxy: 0 },
   modalStack: [], // active overlay stack for closing only the topmost modal on Esc
@@ -149,6 +149,7 @@ const dom = {
 
   // proxy tab
   proxyNotice: $("proxy-notice"),
+  proxyToastRoot: $("proxy-toast-root"),
   proxyLoading: $("proxy-loading"),
   proxyError: $("proxy-error"),
   proxyEmpty: $("proxy-empty"),
@@ -171,7 +172,7 @@ const dom = {
 // nothing here reads the password back. `auth: true` marks the calls that need a
 // session: a 401 on those means the cookie expired, and the login overlay comes
 // back instead of the caller rendering an empty page.
-async function api(path, { method = "GET", auth = false, body } = {}) {
+async function api(path, { method = "GET", auth = false, body, signal } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const resp = await fetch(path, {
@@ -179,6 +180,7 @@ async function api(path, { method = "GET", auth = false, body } = {}) {
     headers,
     credentials: "same-origin",
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
   const data = await resp.json().catch(() => ({}));
   if (resp.status === 401 && auth) {

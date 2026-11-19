@@ -229,7 +229,7 @@ function syncKeysHighlight() {
     const hay = value.toLowerCase();
     const needle = query.toLowerCase();
     let from = 0;
-    for (;;) {
+    for (; ;) {
       const at = hay.indexOf(needle, from);
       if (at < 0) break;
       if (at > from) frag.appendChild(document.createTextNode(value.slice(from, at)));
@@ -419,9 +419,9 @@ function canonicalProvider(p) {
     extra_body: typeof item.extra_body === "string" ? item.extra_body : "",
     custom_headers: Array.isArray(item.custom_headers)
       ? item.custom_headers.map((h) => ({
-          key: String(h?.key ?? ""),
-          value: String(h?.value ?? ""),
-        }))
+        key: String(h?.key ?? ""),
+        value: String(h?.value ?? ""),
+      }))
       : [],
     max_concurrency:
       item.max_concurrency != null ? Number(item.max_concurrency) : null,
@@ -451,6 +451,8 @@ function providersEqual(a, b) {
       h.value === cb.custom_headers[i].value,
   );
 }
+
+const MAX_PROVIDER_KEYS = 999;
 
 async function saveEditor() {
   const confirmed = Boolean(state.editorPendingRemoved);
@@ -483,6 +485,12 @@ async function saveEditor() {
     return failValidation(`已存在相同的 ${pType} 与 API Base 服务商`);
   }
   if (!keys.trim()) return failValidation("请填写至少一个 API Key");
+  const keyCount = splitKeyLines(keys).length;
+  if (keyCount > MAX_PROVIDER_KEYS) {
+    return failValidation(
+      `最多只能保存 ${MAX_PROVIDER_KEYS} 个 API Key（当前 ${keyCount} 个）`,
+    );
+  }
   if (!models.trim()) return failValidation("请填写至少一个模型名");
   if (extraBodyRaw) {
     try {

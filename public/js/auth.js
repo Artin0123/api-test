@@ -56,7 +56,7 @@ async function logout() {
   state.deadKeys = [];
   state.proxy = null;
   state.proxyPlainKeys.clear();
-  state.proxyLastResults.clear();
+  state.proxyDisablingKeys.clear();
   state.proxyTestingKeys.clear();
   state.proxyRecoveringKeys.clear();
   sessionEnded();

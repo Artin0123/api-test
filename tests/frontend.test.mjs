@@ -73,7 +73,10 @@ test("proxy assets referenced by the page exist in style.css", () => {
     "proxy-summary",
     "proxy-key-grid",
     "proxy-key-card",
-    "proxy-test-result",
+    "proxy-toast-stack",
+    "proxy-toast",
+    "proxy-toast-msg",
+    "proxy-toast-close",
     "keys-toolbar",
     "keys-search",
     "keys-search-wrap",
@@ -429,13 +432,41 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   assert.match(app, /settingsPatchUnchanged\(state\.settings,\s*patch\)/);
   const summaryGroupCss = css.match(/\.proxy-summary-group\s*\{([^}]+)\}/);
   assert.ok(summaryGroupCss, ".proxy-summary-group rule not found");
-  assert.match(summaryGroupCss[1], /\bheight:\s*var\(--control-h\);/);
-  assert.match(summaryGroupCss[1], /\bbackground:\s*var\(--bg-3\);/);
-  assert.match(summaryGroupCss[1], /\bborder:\s*1px solid var\(--border\);/);
-  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bwidth:\s*calc\(5ch \+ 1\.5rem\);/s);
+  assert.match(summaryGroupCss[1], /\bgap:\s*0\.75rem;/);
+  assert.doesNotMatch(summaryGroupCss[1], /\bbackground\s*:/);
+  assert.doesNotMatch(summaryGroupCss[1], /\bborder\s*:/);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bheight:\s*var\(--control-h\);/s);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bjustify-content:\s*flex-start;/s);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bwidth:\s*calc\(3ch \+ 1\.5rem \+ 2px\);/s);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\btext-align:\s*left;/s);
   assert.doesNotMatch(css, /\.proxy-summary-cell\s*\{[^}]*\bmin-width\s*:/s);
-  assert.match(css, /\.proxy-summary-cell\s*\+\s*\.proxy-summary-cell\s*\{[^}]*border-left:\s*1px solid var\(--border\);/s);
-  assert.match(app, /count > 9999 \? "9999\+" : String\(count\)/);
+  assert.match(css, /\.proxy-summary-ok\s*\{[^}]*background:\s*rgba\(34,\s*197,\s*94,\s*0\.15\);[^}]*border:\s*1px solid rgba\(34,\s*197,\s*94,\s*0\.3\);/s);
+  assert.match(css, /\.proxy-summary-fail\s*\{[^}]*background:\s*rgba\(239,\s*68,\s*68,\s*0\.15\);[^}]*border:\s*1px solid rgba\(239,\s*68,\s*68,\s*0\.3\);/s);
+  assert.doesNotMatch(app, /9999\+/);
+  assert.match(app, /MAX_PROVIDER_KEYS\s*=\s*999/);
+  assert.doesNotMatch(app, /proxy-test-result|proxyLastResults|renderProxyTestResult/);
+  assert.match(app, /MAX_PROXY_TOASTS\s*=\s*3/);
+  assert.match(app, /PROXY_TOAST_OK_MS\s*=\s*5000/);
+  assert.match(app, /PROXY_TOAST_FAIL_MS\s*=\s*20000/);
+  assert.match(css, /\.proxy-toast-msg\s*\{[^}]*-webkit-line-clamp:\s*2;/s);
+  assert.match(app, /data-proxy-disable=/);
+  const proxyActionsSrc = read("js/proxy-actions.js");
+  assert.doesNotMatch(proxyActionsSrc, /setProxyNotice\s*\(/);
+  assert.match(proxyActionsSrc, /正在测试密钥/);
+  assert.match(proxyActionsSrc, /正在测试有效密钥/);
+  assert.match(proxyActionsSrc, /正在测试无效密钥/);
+  assert.match(proxyActionsSrc, /PROXY_TEST_TIMEOUT_MS\s*=\s*20000/);
+  assert.match(proxyActionsSrc, /请求超时（20 秒）/);
+  assert.match(proxyActionsSrc, /pending:\s*true/);
+  assert.match(proxyActionsSrc, /测试完成，\$\{ok\} 个成功，\$\{fail\} 个失败。/);
+  assert.doesNotMatch(proxyActionsSrc, /`HTTP \$\{status\}/);
+  const recoverAllFn = proxyActionsSrc.slice(proxyActionsSrc.indexOf("async function recoverAllProxyKeys("));
+  assert.match(recoverAllFn, /confirm\(/, "recoverAllProxyKeys must ask confirm before bulk recovery");
+  const disableFn = proxyActionsSrc.slice(
+    proxyActionsSrc.indexOf("async function disableProxyKey("),
+    proxyActionsSrc.indexOf("async function recoverProxyKey("),
+  );
+  assert.match(disableFn, /confirm\(/, "disableProxyKey must ask confirm before writing");
 
   const urlCopyBtn = html.match(/<button[^>]*id="proxy-url-copy"[^>]*>/);
   assert.ok(urlCopyBtn, "#proxy-url-copy button not found");

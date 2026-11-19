@@ -257,6 +257,7 @@ flowchart TD
 | `POST /api/proxy/test-model` | 「`轮询转发`」選好測試模型按「`保存模型`」 | 管理認證 | 獨立寫入 `app_settings.proxy_test_models[fp]`（不影響每日巡檢模型清單），並遞增設定 `version`。 |
 | `POST /api/proxy/test` | 「`轮询转发`」單張金鑰點「`测试`」或工具列批量測試依序呼叫 | 管理認證 | 依 `{ id, fp }` 強制經 AI Gateway 發一筆非串流探測請求（`"only reply 1."` / 上限 `8` token ＋ `extra_body`）；失敗呼叫 `recordKeyFailure()` 計數並可禁用；**成功立即將 `fail_count = 0, disabled = 0` 並解禁**。 |
 | `POST /api/proxy/recover` | 「`轮询转发`」單把點「`恢复`」（傳 `{ fp, id }`）或工具列點「`恢复所有密钥`」（傳 `{ fp, all: true }`） | 管理認證（限 D1 模式） | 將指定列（或該服務商所有 `disabled = 1` 列）清為 `disabled = 0, fail_count = 0`。 |
+| `POST /api/proxy/disable` | 「`轮询转发`」單把點「`禁用`」（傳 `{ fp, id }`） | 管理認證（限 D1 模式） | 將指定列設為 `disabled = 1`（保留既有 `fail_count`）。 |
 | `GET /api/storage/export` | `migrate-kv-to-d1.mjs` 搬移前或還原前快照（`?source=kv\|d1\|current`） | 管理認證 | 逐頁拉出所有鍵值（上限 `20000` 筆）與 D1 `key_state` 全部列（附 `Cache-Control: no-store`）。 |
 | `POST /api/storage/migrate` | `migrate-kv-to-d1.mjs` 執行搬移（傳 `{ confirm: "migrate", dryRun? }`） | 管理認證（需同時綁定 KV 與 D1） | 遍歷 `KV_STORE` 逐頁寫入 D1 `store`（`ON CONFLICT DO NOTHING` 冪等不覆蓋），並依 `providers` 補建 `key_state` 列。 |
 | `POST /api/storage/restore` | `migrate-kv-to-d1.mjs --restore` 還原備份（傳 `{ confirm: "restore", entries, key_state }`） | 管理認證（需綁定 D1） | 先 upsert 備份裡的 `store` 與 `key_state`，再刪除 D1 內多餘不在備份中的鍵與列，達成精準快照回復。 |

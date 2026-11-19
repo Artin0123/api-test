@@ -222,11 +222,17 @@ function normalizeProxyTestModels(raw) {
   return out;
 }
 
+const MAX_PROVIDER_KEYS = 999;
+
 function validateProviderKeys(providers) {
   for (let i = 0; i < providers.length; i++) {
     const p = providers[i];
     if (!p || typeof p !== "object") continue;
-    if (!providerKeys(p).length) {
+    const keys = providerKeys(p);
+    if (keys.length > MAX_PROVIDER_KEYS) {
+      return `providers[${i}] 最多只能保存 ${MAX_PROVIDER_KEYS} 个 API Key（当前 ${keys.length} 个）`;
+    }
+    if (!keys.length) {
       return `providers[${i}] 没有任何 API Key；至少要保留一把，要停用请把 enabled 设为 false`;
     }
   }

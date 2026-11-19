@@ -23,16 +23,6 @@ function clearProxyNotice({ keepGlobal = true } = {}) {
   dom.proxyNotice.classList.add("hidden");
 }
 
-function proxyResultStore(fp) {
-  if (!fp) return null;
-  let store = state.proxyLastResults.get(fp);
-  if (!store) {
-    store = new Map();
-    state.proxyLastResults.set(fp, store);
-  }
-  return store;
-}
-
 async function syncProxyPlainKeys(proxyProviders) {
   if (MOCK) return;
 
@@ -72,18 +62,12 @@ async function syncProxyPlainKeys(proxyProviders) {
   state.proxyPlainKeys = map;
 }
 
-async function loadProxyState({ preserveResults = false } = {}) {
+async function loadProxyState() {
   const reqId = ++state.reqSeq.proxy;
   if (isKvStorageMode()) {
     dom.proxyLoading.classList.add("hidden");
     return false;
   }
-  if (!preserveResults) {
-    state.proxyLastResults.clear();
-  }
-  dom.proxyLoading.classList.remove("hidden");
-  dom.proxyError.classList.add("hidden");
-  dom.proxyEmpty.classList.add("hidden");
   dom.proxyKeyEmpty.classList.add("hidden");
   dom.proxyToolbar.classList.add("hidden");
   dom.proxyKeyGrid.classList.add("hidden");
@@ -327,8 +311,8 @@ function renderProxyToolbar() {
   const makeCount = (cls, count, title) => {
     const span = document.createElement("span");
     span.className = `proxy-summary-cell ${cls} proxy-summary-num`;
-    span.textContent = count > 9999 ? "9999+" : String(count);
-    span.title = count > 9999 ? `${title}：${count}` : title;
+    span.textContent = String(count);
+    span.title = title;
     return span;
   };
   const countsGroup = document.createElement("span");
@@ -409,16 +393,30 @@ function updateProxyCardButtonsDisabled() {
     proxyModelOptions(p).length > 0;
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-test]")) {
     const id = btn.dataset.proxyTest;
+    const token = `${btn.dataset.fp}:${id}`;
     const busy =
       state.proxyBusy ||
-      state.proxyTestingKeys.has(`${btn.dataset.fp}:${id}`);
+      state.proxyTestingKeys.has(token) ||
+      state.proxyRecoveringKeys.has(token) ||
+      state.proxyDisablingKeys.has(token);
     btn.disabled = !canAct || !id || busy;
   }
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-recover]")) {
     const id = btn.dataset.proxyRecover;
+    const token = `${btn.dataset.fp}:${id}`;
     const busy =
       state.proxyBusy ||
-      state.proxyRecoveringKeys.has(`${btn.dataset.fp}:${id}`);
+      state.proxyRecoveringKeys.has(token) ||
+      state.proxyTestingKeys.has(token);
+    btn.disabled = !enabled || !id || busy;
+  }
+  for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-disable]")) {
+    const id = btn.dataset.proxyDisable;
+    const token = `${btn.dataset.fp}:${id}`;
+    const busy =
+      state.proxyBusy ||
+      state.proxyDisablingKeys.has(token) ||
+      state.proxyTestingKeys.has(token);
     btn.disabled = !enabled || !id || busy;
   }
 }
@@ -452,19 +450,18 @@ function renderProxyKeyCards() {
       const copyBtn = rawKey
         ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rawKey)}">${COPY_ICON_SVG}</button>`
         : "";
-      const recoverDisabled =
-        !enabled ||
-        !id ||
+      const token = `${p.fp}:${id}`;
+      const keyBusy =
         state.proxyBusy ||
-        state.proxyRecoveringKeys.has(`${p.fp}:${id}`);
-      const recover = k.disabled
+        state.proxyTestingKeys.has(token) ||
+        state.proxyRecoveringKeys.has(token) ||
+        state.proxyDisablingKeys.has(token);
+      const recoverDisabled = !enabled || !id || keyBusy;
+      const disableDisabled = !enabled || !id || keyBusy;
+      const actionBtn = k.disabled
         ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${recoverDisabled ? " disabled" : ""}>恢复</button>`
-        : "";
-      const testDisabled =
-        !canAct ||
-        !id ||
-        state.proxyBusy ||
-        state.proxyTestingKeys.has(`${p.fp}:${id}`);
+        : `<button class="btn btn-danger btn-sm" type="button" data-proxy-disable="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${disableDisabled ? " disabled" : ""}>禁用</button>`;
+      const testDisabled = !canAct || !id || keyBusy;
       const stateTag = k.disabled
         ? `<span class="proxy-key-state-tag">已失效</span>`
         : "";
@@ -484,18 +481,11 @@ function renderProxyKeyCards() {
             ${stateTag}
             <div class="proxy-key-card-btns">
               <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${testDisabled ? " disabled" : ""}>测试</button>
-              ${recover}
+              ${actionBtn}
             </div>
           </div>
-          <div class="proxy-test-result" data-proxy-result="${escAttr(id)}"></div>
         </article>`;
     })
     .join("");
-  const savedResults = state.proxyLastResults.get(p.fp);
-  if (savedResults) {
-    for (const [id, result] of savedResults.entries()) {
-      renderProxyTestResult(id, result);
-    }
-  }
   dom.proxyKeyGrid.classList.remove("hidden");
 }

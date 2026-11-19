@@ -1894,3 +1894,57 @@ test("settings deduplicate keys/models preserving first occurrence and reject mi
     assert.match(res.data.error, /模型/);
   }
 });
+
+test("settings enforce at most 999 unique keys per provider", async () => {
+  const env = makeEnv();
+  const makeKeys = (n) =>
+    Array.from({ length: n }, (_, i) => `sk-limit-${i + 1}`).join("\n");
+
+  const okRes = await postSettings(env, [
+    provider({ alias: "limit-ok", keys: makeKeys(999) }),
+  ]);
+  assert.equal(okRes.status, 200);
+
+  const tooManyRes = await postSettings(env, [
+    provider({ alias: "limit-too-many", keys: makeKeys(1000) }),
+  ]);
+  assert.equal(tooManyRes.status, 400);
+  assert.match(tooManyRes.data.error, /999/);
+});
+
+test("POST /api/proxy/disable disables a single key without touching fail_count", async () => {
+  const env = makeEnv();
+  const p = provider({ alias: "disable-test", keys: "sk-one\nsk-two" });
+  await postSettings(env, [p]);
+  const fp = await fingerprintOf(env, p);
+
+  const before = await getKeyRows(env, fp);
+  const target = before[0];
+  const other = before[1];
+  assert.equal(target.disabled, false);
+
+  const res = await asJson(
+    await request(env, "/api/proxy/disable", {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ fp, id: target.id }),
+    }),
+  );
+  assert.equal(res.status, 200);
+  assert.equal(res.data.ok, true);
+  assert.equal(res.data.key.disabled, true);
+  assert.equal(res.data.key.fail_count, 0);
+
+  const after = await getKeyRows(env, fp);
+  assert.equal(after.find((r) => r.id === target.id).disabled, true);
+  assert.equal(after.find((r) => r.id === other.id).disabled, false);
+
+  const missing = await asJson(
+    await request(env, "/api/proxy/disable", {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ fp, id: 999999 }),
+    }),
+  );
+  assert.equal(missing.status, 404);
+});

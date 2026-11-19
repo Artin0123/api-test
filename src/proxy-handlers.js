@@ -405,6 +405,46 @@ async function handleProxyRecover(request, env) {
   });
 }
 
+// ─── /api/proxy/disable ────────────────────────────────────────────────────
+
+async function handleProxyDisable(request, env) {
+  if (!(await requireAuth(request, env))) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const blocked = rejectIfProxyDisabled(env);
+  if (blocked) return blocked;
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON" }, 400);
+  }
+  const fp = typeof body.fp === "string" ? body.fp.trim() : "";
+  const id = Number(body.id);
+  if (!Number.isInteger(id) || !fp) {
+    return json({ error: "id and fp required" }, 400);
+  }
+
+  await ensureSchemaFor(env.DB);
+  const result = await env.DB.prepare(
+    "UPDATE key_state SET disabled = 1, updated_at = ? " +
+      "WHERE id = ? AND fp = ? RETURNING id, fail_count, disabled, last_used_at",
+  )
+    .bind(Date.now(), id, fp)
+    .all();
+  const row = (result.results || [])[0];
+  if (!row) return json({ error: "Not Found" }, 404);
+  return json({
+    ok: true,
+    key: {
+      id: row.id,
+      fail_count: row.fail_count,
+      disabled: !!row.disabled,
+      last_used_at: row.last_used_at,
+    },
+  });
+}
+
 // ─── /api/proxy/test-model ─────────────────────────────────────────────────
 // Stores which model each provider should probe with, keyed by fingerprint. The
 // *options* come from providers[].models (the Models field in 来源设定), but the

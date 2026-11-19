@@ -1,32 +1,117 @@
 // Split from the original app.js; loaded in original order (see index.html).
-function renderProxyTestResult(id, result) {
-  if (id == null) return;
-  const targetId = String(id);
-  const els = Array.from(
-    dom.proxyKeyGrid.querySelectorAll("[data-proxy-result]"),
-  ).filter((el) => el.dataset.proxyResult === targetId);
-  if (!els.length) return;
-  let text;
-  let className;
-  if (result && result.ok) {
-    text = `可用 · ${result.ms} ms · ${result.model || ""}`;
-    className = "proxy-test-result ok";
+const MAX_PROXY_TOASTS = 3;
+const PROXY_TOAST_OK_MS = 5000;
+const PROXY_TOAST_FAIL_MS = 20000;
+const PROXY_TOAST_FADE_MS = 300;
+const PROXY_TEST_TIMEOUT_MS = 20000;
+
+function dismissProxyToast(toast) {
+  if (!toast || toast.dataset.leaving === "1") return;
+  toast.dataset.leaving = "1";
+  if (toast._timer) {
+    clearTimeout(toast._timer);
+    toast._timer = null;
+  }
+  const root = toast.parentElement;
+  const siblings = root
+    ? Array.from(root.querySelectorAll(".proxy-toast")).filter(
+        (el) => el !== toast && el.dataset.leaving !== "1",
+      )
+    : [];
+  const oldTops = new Map(
+    siblings.map((el) => [el, el.getBoundingClientRect().top]),
+  );
+
+  toast.style.top = `${toast.offsetTop}px`;
+  toast.classList.remove("is-visible");
+  toast.classList.add("is-leaving");
+
+  if (siblings.length) {
+    for (const el of siblings) {
+      const dy = oldTops.get(el) - el.getBoundingClientRect().top;
+      if (dy) {
+        el.style.transition = "none";
+        el.style.transform = `translateY(${dy}px)`;
+      }
+    }
+    void root.offsetHeight;
+    for (const el of siblings) {
+      el.style.transition = "";
+      el.style.transform = "";
+    }
+  }
+
+  setTimeout(() => {
+    toast.remove();
+  }, PROXY_TOAST_FADE_MS);
+}
+
+function showProxyToast(
+  message,
+  { type = "info", duration = 0, pending = false } = {},
+) {
+  const root = dom.proxyToastRoot;
+  if (!root) return null;
+
+  if (!pending) {
+    const active = Array.from(root.querySelectorAll(".proxy-toast")).filter(
+      (el) => el.dataset.leaving !== "1" && el.dataset.pending !== "1",
+    );
+    while (active.length >= MAX_PROXY_TOASTS) {
+      dismissProxyToast(active.shift());
+    }
+  }
+  // Only prune excess leaving nodes on rapid burst clicks so normal transitions
+  // let the oldest toast fade upward smoothly instead of snapping.
+  const leaving = Array.from(root.querySelectorAll(".proxy-toast.is-leaving"));
+  while (leaving.length > 1) {
+    leaving.shift().remove();
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `proxy-toast proxy-toast--${type}`;
+  if (pending) toast.dataset.pending = "1";
+  toast.setAttribute("role", "status");
+
+  const msgSpan = document.createElement("span");
+  msgSpan.className = "proxy-toast-msg";
+  msgSpan.textContent = message;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "proxy-toast-close";
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "关闭通知");
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", () => dismissProxyToast(toast));
+
+  toast.append(msgSpan, closeBtn);
+  root.appendChild(toast);
+
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => toast.classList.add("is-visible"));
   } else {
-    const detail =
-      result && result.error ? ` · ${truncate(result.error, 90)}` : "";
-    const charged =
-      result && result.disabled
-        ? " · 已达门槛，已禁用"
-        : result && typeof result.fail_count === "number"
-          ? ` · 连续失败 ${result.fail_count} 次`
-          : "";
-    text = `不可用 · HTTP ${result && result.status ? result.status : "—"}${detail}${charged}`;
-    className = "proxy-test-result fail";
+    toast.classList.add("is-visible");
   }
-  for (const el of els) {
-    el.textContent = text;
-    el.className = className;
+
+  if (duration > 0) {
+    toast._timer = setTimeout(() => dismissProxyToast(toast), duration);
   }
+  return toast;
+}
+
+function formatProxyTestDuration(ms) {
+  const n = Math.max(0, Number(ms) || 0);
+  if (n < 1000) return `${Math.round(n)} ms`;
+  return `${(n / 1000).toFixed(2).replace(/\.?0+$/, "")} s`;
+}
+
+function formatProxyTestError(result) {
+  const err = result && result.error ? String(result.error).trim() : "";
+  const status = result && result.status ? Number(result.status) : 0;
+  if (status && err) return `${status} ${err}`;
+  if (err) return err;
+  if (status) return String(status);
+  return "请求失败";
 }
 
 /** Returns the result object so the batch loop can count it. */
@@ -43,7 +128,12 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
   );
   const selectedModel = String(model ?? dom.proxyTestModel.value ?? "").trim();
   if (!selectedModel) {
-    setProxyNotice("请先在「来源设定」填写 Models。", "info");
+    if (!fromBatch) {
+      showProxyToast("请先在「来源设定」填写 Models。", {
+        type: "fail",
+        duration: PROXY_TOAST_FAIL_MS,
+      });
+    }
     return null;
   }
   const beforeKey = (beforeProvider?.keys || []).find(
@@ -54,57 +144,109 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
     (beforeKey.disabled || Number(beforeKey.fail_count || 0) > 0)
   );
   state.proxyTestingKeys.add(token);
+  if (!fromBatch) {
+    state.proxyBusy = true;
+    proxyActionButtons().forEach((b) => {
+      b.disabled = true;
+    });
+  }
   updateProxyCardButtonsDisabled();
 
-  for (const el of Array.from(
-    dom.proxyKeyGrid.querySelectorAll("[data-proxy-result]"),
-  ).filter((node) => node.dataset.proxyResult === targetId)) {
-    el.textContent = "测试中...";
-    el.className = "proxy-test-result";
-  }
+  const pendingToast = fromBatch
+    ? null
+    : showProxyToast("正在测试密钥", {
+        type: "info",
+        duration: 0,
+        pending: true,
+      });
 
+  const controller = new AbortController();
+  const timeoutTimer = setTimeout(
+    () => controller.abort(),
+    PROXY_TEST_TIMEOUT_MS,
+  );
   let result;
   try {
     if (MOCK) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
       const provider = (state.proxy?.providers || []).find(
         (item) => item.fp === targetFp,
       );
-      if (provider) {
-        provider.test_model = selectedModel;
-        mockOverrideForProvider(provider.fp).test_model = selectedModel;
-        const ki = (provider.keys || []).findIndex(
-          (k) => String(k.id ?? "") === targetId,
-        );
-        const rawKey = ki >= 0 ? (provider._mockPlainKeys || [])[ki] : "";
-        if (rawKey) {
-          const override = mockOverrideForProvider(provider.fp);
-          const prev = override.keys.get(rawKey) || {};
-          override.keys.set(rawKey, {
-            ...prev,
-            disabled: false,
-            fail_count: 0,
-          });
+      const ki = provider
+        ? (provider.keys || []).findIndex((k) => String(k.id ?? "") === targetId)
+        : -1;
+      const rawKey = ki >= 0 ? (provider._mockPlainKeys || [])[ki] : "";
+      if (rawKey.includes("bbbb")) {
+        const override = mockOverrideForProvider(provider.fp);
+        const prev = override.keys.get(rawKey) || {};
+        const nextFail = Number(prev.fail_count || 0) + 1;
+        const threshold = Number(state.settings?.proxy_fail_threshold || 3);
+        const disabled = nextFail >= threshold;
+        override.keys.set(rawKey, {
+          ...prev,
+          disabled,
+          fail_count: nextFail,
+        });
+        result = {
+          ok: false,
+          status: 401,
+          ms: 210,
+          model: selectedModel,
+          error:
+            "Incorrect API key provided: sk-bb**bbbb. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-mock-fail-long-message)",
+          fail_count: nextFail,
+          disabled,
+        };
+      } else {
+        if (provider) {
+          provider.test_model = selectedModel;
+          mockOverrideForProvider(provider.fp).test_model = selectedModel;
+          if (rawKey) {
+            const override = mockOverrideForProvider(provider.fp);
+            const prev = override.keys.get(rawKey) || {};
+            override.keys.set(rawKey, {
+              ...prev,
+              disabled: false,
+              fail_count: 0,
+            });
+          }
         }
+        result = {
+          ok: true,
+          status: 200,
+          ms: rawKey.includes("cccc") ? 1450 : 123,
+          model: selectedModel,
+          fail_count: 0,
+          disabled: false,
+        };
       }
-      result = {
-        ok: true,
-        status: 200,
-        ms: 123,
-        model: selectedModel,
-        fail_count: 0,
-        disabled: false,
-      };
     } else {
       result = await api("/api/proxy/test", {
         method: "POST",
         auth: true,
         body: { fp, id: Number(targetId), model: selectedModel },
+        signal: controller.signal,
       });
     }
   } catch (err) {
-    result = { ok: false, status: err.status || 0, error: err.message };
+    if (err && err.name === "AbortError") {
+      result = {
+        ok: false,
+        status: 0,
+        error: "请求超时（20 秒）",
+        timedOut: true,
+      };
+    } else {
+      result = { ok: false, status: err.status || 0, error: err.message };
+    }
   } finally {
+    clearTimeout(timeoutTimer);
     state.proxyTestingKeys.delete(token);
+    if (!fromBatch) {
+      state.proxyBusy = false;
+      dom.proxyProvider.disabled = false;
+      renderProxyToolbar();
+    }
     updateProxyCardButtonsDisabled();
   }
 
@@ -115,9 +257,22 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
     state.settings.version = result.settings_version;
   }
 
-  const store = proxyResultStore(targetFp);
-  if (store) store.set(targetId, result);
-  renderProxyTestResult(targetId, result);
+  if (!fromBatch) {
+    if (result && result.ok) {
+      showProxyToast(`测试成功 ${formatProxyTestDuration(result.ms)}`, {
+        type: "ok",
+        duration: PROXY_TOAST_OK_MS,
+      });
+    } else {
+      showProxyToast(`测试失败 ${formatProxyTestError(result)}`, {
+        type: "fail",
+        duration: PROXY_TOAST_FAIL_MS,
+      });
+    }
+    if (pendingToast) {
+      setTimeout(() => dismissProxyToast(pendingToast), PROXY_TOAST_FADE_MS);
+    }
+  }
 
   if (
     result &&
@@ -139,15 +294,8 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
     }
   }
 
-  if (!fromBatch && result && result.disabled) {
-    await loadProxyState({ preserveResults: true });
-    setProxyNotice(
-      `这把密钥已达门槛并被禁用（连续失败 ${result.fail_count} 次）。`,
-      "error",
-    );
-  } else if (!fromBatch && result && result.ok && wasDirty) {
-    await loadProxyState({ preserveResults: true });
-    clearProxyNotice({ keepGlobal: true });
+  if (!fromBatch && ((result && result.disabled) || (result && result.ok && wasDirty))) {
+    await loadProxyState();
   }
   return result;
 }
@@ -168,7 +316,10 @@ async function runProxyBatch(mode) {
   if (!p) return;
   const selectedModel = dom.proxyTestModel.value.trim();
   if (!selectedModel) {
-    setProxyNotice("请先在「来源设定」填写 Models。", "info");
+    showProxyToast("请先在「来源设定」填写 Models。", {
+      type: "fail",
+      duration: PROXY_TOAST_FAIL_MS,
+    });
     return;
   }
   const keys = (p.keys || []).filter((k) => {
@@ -177,7 +328,10 @@ async function runProxyBatch(mode) {
     return mode === "disabled" ? k.disabled : !k.disabled;
   });
   if (!keys.length) {
-    setProxyNotice("没有符合这个条件的密钥。", "info");
+    showProxyToast("没有符合这个条件的密钥。", {
+      type: "info",
+      duration: PROXY_TOAST_OK_MS,
+    });
     return;
   }
 
@@ -186,19 +340,16 @@ async function runProxyBatch(mode) {
     b.disabled = true;
   });
   updateProxyCardButtonsDisabled();
-  const store = proxyResultStore(p.fp);
-  if (store) {
-    for (const k of keys) store.delete(String(k.id));
-  }
+
+  const pendingToast = showProxyToast(
+    mode === "disabled" ? "正在测试无效密钥" : "正在测试有效密钥",
+    { type: "info", duration: 0, pending: true },
+  );
 
   let ok = 0;
   let fail = 0;
   try {
     for (let i = 0; i < keys.length; i++) {
-      setProxyNotice(
-        `批量测试中：${i + 1} / ${keys.length}（可用 ${ok}，不可用 ${fail}）`,
-        "info",
-      );
       const result = await testProxyKey(p.fp, keys[i].id, {
         fromBatch: true,
         model: selectedModel,
@@ -214,11 +365,52 @@ async function runProxyBatch(mode) {
     updateProxyCardButtonsDisabled();
   }
 
-  await loadProxyState({ preserveResults: true });
-  setProxyNotice(
-    `批量测试完成：共 ${keys.length} 把，可用 ${ok}，不可用 ${fail}。`,
-    "info",
-  );
+  await loadProxyState();
+  showProxyToast(`测试完成，${ok} 个成功，${fail} 个失败。`, {
+    type: fail > 0 ? "fail" : "ok",
+    duration: fail > 0 ? PROXY_TOAST_FAIL_MS : PROXY_TOAST_OK_MS,
+  });
+  if (pendingToast) {
+    setTimeout(() => dismissProxyToast(pendingToast), PROXY_TOAST_FADE_MS);
+  }
+}
+
+async function disableProxyKey(fp, id) {
+  if (state.proxyBusy || id == null || id === "") return;
+  const targetId = String(id);
+  const token = `${fp}:${targetId}`;
+  if (state.proxyDisablingKeys.has(token)) return;
+  if (!confirm("确定禁用这把密钥？禁用后将不再参与轮用。")) return;
+
+  const currentProvider = selectedProxyProvider();
+  state.proxyDisablingKeys.add(token);
+  updateProxyCardButtonsDisabled();
+  try {
+    if (!MOCK) {
+      await api("/api/proxy/disable", {
+        method: "POST",
+        auth: true,
+        body: { fp, id: Number(targetId) },
+      });
+    } else if (currentProvider) {
+      const ki = (currentProvider.keys || []).findIndex(
+        (k) => String(k.id ?? "") === targetId,
+      );
+      const rawKey = ki >= 0 ? (currentProvider._mockPlainKeys || [])[ki] : "";
+      if (rawKey) {
+        const override = mockOverrideForProvider(currentProvider.fp);
+        const prev = override.keys.get(rawKey) || {};
+        override.keys.set(rawKey, { ...prev, disabled: true });
+      }
+    }
+    await loadProxyState();
+  } catch (err) {
+    dom.proxyError.textContent = `禁用失败：${err.message}`;
+    dom.proxyError.classList.remove("hidden");
+  } finally {
+    state.proxyDisablingKeys.delete(token);
+    updateProxyCardButtonsDisabled();
+  }
 }
 
 async function recoverProxyKey(fp, id) {
@@ -228,7 +420,6 @@ async function recoverProxyKey(fp, id) {
   if (state.proxyRecoveringKeys.has(token)) return;
 
   const currentProvider = selectedProxyProvider();
-  const targetFp = (currentProvider || {}).fp;
   state.proxyRecoveringKeys.add(token);
   updateProxyCardButtonsDisabled();
   try {
@@ -249,9 +440,7 @@ async function recoverProxyKey(fp, id) {
         override.keys.set(rawKey, { ...prev, disabled: false, fail_count: 0 });
       }
     }
-    const store = state.proxyLastResults.get(targetFp);
-    if (store) store.delete(targetId);
-    await loadProxyState({ preserveResults: true });
+    await loadProxyState();
   } catch (err) {
     dom.proxyError.textContent = `恢复失败：${err.message}`;
     dom.proxyError.classList.remove("hidden");
@@ -273,10 +462,7 @@ async function recoverAllProxyKeys() {
   const disabledKeys = (currentProvider.keys || []).filter(
     (k) => k.disabled && k.id != null,
   );
-  if (!disabledKeys.length) {
-    setProxyNotice("当前供应商没有已失效的密钥。", "info");
-    return;
-  }
+  if (!disabledKeys.length) return;
   if (
     !confirm(
       `确定恢复当前供应商下的全部 ${disabledKeys.length} 把失效密钥？恢复后会重新参与轮用。`,
@@ -285,22 +471,19 @@ async function recoverAllProxyKeys() {
     return;
   }
 
-  const targetFp = currentProvider.fp;
   state.proxyBusy = true;
   proxyActionButtons().forEach((b) => {
     b.disabled = true;
   });
   updateProxyCardButtonsDisabled();
 
-  let recoveredCount = 0;
   try {
     if (!MOCK) {
-      const res = await api("/api/proxy/recover", {
+      await api("/api/proxy/recover", {
         method: "POST",
         auth: true,
         body: { fp: currentProvider.fp, all: true },
       });
-      recoveredCount = Number(res.recovered ?? disabledKeys.length);
     } else {
       const override = mockOverrideForProvider(currentProvider.fp);
       (currentProvider.keys || []).forEach((k, ki) => {
@@ -309,15 +492,11 @@ async function recoverAllProxyKeys() {
         if (!rawKey) return;
         const prev = override.keys.get(rawKey) || {};
         override.keys.set(rawKey, { ...prev, disabled: false, fail_count: 0 });
-        recoveredCount++;
       });
     }
-    const store = state.proxyLastResults.get(targetFp);
-    if (store) {
-      for (const k of disabledKeys) store.delete(String(k.id));
-    }
   } catch (err) {
-    setProxyNotice(`恢复失败：${err.message}`, "error");
+    dom.proxyError.textContent = `恢复失败：${err.message}`;
+    dom.proxyError.classList.remove("hidden");
     return;
   } finally {
     state.proxyBusy = false;
@@ -326,13 +505,5 @@ async function recoverAllProxyKeys() {
     updateProxyCardButtonsDisabled();
   }
 
-  const loaded = await loadProxyState({ preserveResults: true });
-  if (loaded) {
-    setProxyNotice(
-      recoveredCount > 0
-        ? `已恢复当前供应商的 ${recoveredCount} 把失效密钥。`
-        : "当前供应商没有需要恢复的失效密钥。",
-      "info",
-    );
-  }
+  await loadProxyState();
 }

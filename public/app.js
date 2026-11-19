@@ -141,6 +141,13 @@ function bindEvents() {
     if (testBtn) {
       return testProxyKey(testBtn.dataset.fp, testBtn.dataset.proxyTest);
     }
+    const disableBtn = e.target.closest("[data-proxy-disable]");
+    if (disableBtn) {
+      return disableProxyKey(
+        disableBtn.dataset.fp,
+        disableBtn.dataset.proxyDisable,
+      );
+    }
     const recoverBtn = e.target.closest("[data-proxy-recover]");
     if (recoverBtn) {
       return recoverProxyKey(
