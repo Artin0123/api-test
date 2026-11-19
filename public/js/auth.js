@@ -55,6 +55,7 @@ async function logout() {
   state.storageBackend = "d1";
   state.deadKeys = [];
   state.proxy = null;
+  state.proxyPage = 1;
   state.proxyPlainKeys.clear();
   state.proxyDisablingKeys.clear();
   state.proxyTestingKeys.clear();

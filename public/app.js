@@ -119,6 +119,7 @@ function bindEvents() {
   // Proxy tab
   dom.proxyProvider.addEventListener("change", () => {
     state.proxySelected = dom.proxyProvider.value;
+    state.proxyPage = 1;
     clearProxyNotice({ keepGlobal: true });
     renderProxyToolbar();
     renderProxyKeyCards();

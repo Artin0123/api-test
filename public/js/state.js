@@ -17,6 +17,7 @@ const state = {
   editorSortOrigin: "",
   proxy: null,
   proxySelected: null, // currently selected provider fp
+  proxyPage: 1,
   proxyBusy: false,
   proxyPlainKeys: new Map(), // fp -> plaintext keys for copy buttons
   proxyTestingKeys: new Set(), // `${fp}:${id}` keys currently testing individually
@@ -163,6 +164,7 @@ const dom = {
   proxyTestActive: $("proxy-test-active"),
   proxyTestDisabled: $("proxy-test-disabled"),
   proxyRecoverAll: $("proxy-recover-all"),
+  proxyPagination: $("proxy-pagination"),
   proxyLogs: $("proxy-logs"),
   proxyKeyGrid: $("proxy-key-grid"),
 };

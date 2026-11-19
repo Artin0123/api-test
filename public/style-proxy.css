@@ -41,25 +41,25 @@
 .proxy-summary-cell {
     display: inline-flex;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     flex: none;
     height: var(--control-h);
     /* Fixed width sized for up to 3 digits (max 999 keys total) + padding + 2px border. */
     width: calc(3ch + 1.5rem + 2px);
     padding: 0 0.75rem;
     border-radius: var(--radius-sm);
-    text-align: left;
+    text-align: center;
 }
 
 .proxy-summary-ok {
     background: rgba(34, 197, 94, 0.15);
-    color: var(--ok);
+    color: var(--ok-soft);
     border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .proxy-summary-fail {
     background: rgba(239, 68, 68, 0.15);
-    color: var(--fail);
+    color: var(--fail-soft);
     border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
@@ -331,4 +331,69 @@
 
 .proxy-toast-close:hover {
     color: var(--text);
+}
+
+/* ── Proxy key grid pagination ──────────────────────────────────────────── */
+.proxy-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.proxy-page-btn {
+    width: var(--control-h);
+    height: var(--control-h);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.proxy-page-box {
+    display: inline-flex;
+    align-items: center;
+    height: var(--control-h);
+    padding: 0 0.7rem;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-variant-numeric: tabular-nums;
+    transition: border-color 0.15s;
+}
+
+.proxy-page-box:focus-within {
+    border-color: var(--accent);
+}
+
+.proxy-page-input {
+    width: 3ch;
+    height: 100%;
+    padding: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.proxy-page-sep {
+    margin: 0 0.35rem;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.proxy-page-total {
+    width: 3ch;
+    text-align: left;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }

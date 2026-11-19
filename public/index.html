@@ -301,6 +301,7 @@
                     </div>
 
                     <div id="proxy-key-grid" class="proxy-key-grid hidden"></div>
+                    <div id="proxy-pagination" class="proxy-pagination hidden"></div>
                 </section>
             </main>
         </div>
@@ -568,6 +569,21 @@
                                 placeholder="https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs" />
                         </label>
                         <div class="field">
+                            <label class="field-label" for="set-gateway-token">AI Gateway Token</label>
+                            <div class="field-row">
+                                <div class="input-secret-wrap">
+                                    <input type="password" id="set-gateway-token" class="input-text input-secret"
+                                        placeholder="cf-aig-authorization Bearer Token" autocomplete="new-password"
+                                        spellcheck="false" />
+                                    <button id="set-gateway-token-toggle" class="input-secret-toggle" type="button"
+                                        aria-label="显示 Token" aria-pressed="false" title="显示 Token"></button>
+                                </div>
+                                <button id="set-gateway-token-copy"
+                                    class="btn btn-ghost btn-icon copy-btn proxy-url-copy no-shrink" type="button"
+                                    aria-label="复制 AI Gateway Token" title="复制 AI Gateway Token"></button>
+                            </div>
+                        </div>
+                        <div class="field">
                             <label class="field-label" for="set-proxy-password">
                                 代理转发密码
                                 <span class="info-icon" tabindex="0">
@@ -591,21 +607,6 @@
                                 <button id="set-proxy-password-copy"
                                     class="btn btn-ghost btn-icon copy-btn proxy-url-copy no-shrink" type="button"
                                     aria-label="复制代理转发密码" title="复制代理转发密码"></button>
-                            </div>
-                        </div>
-                        <div class="field">
-                            <label class="field-label" for="set-gateway-token">AI Gateway Token</label>
-                            <div class="field-row">
-                                <div class="input-secret-wrap">
-                                    <input type="password" id="set-gateway-token" class="input-text input-secret"
-                                        placeholder="cf-aig-authorization Bearer Token" autocomplete="new-password"
-                                        spellcheck="false" />
-                                    <button id="set-gateway-token-toggle" class="input-secret-toggle" type="button"
-                                        aria-label="显示 Token" aria-pressed="false" title="显示 Token"></button>
-                                </div>
-                                <button id="set-gateway-token-copy"
-                                    class="btn btn-ghost btn-icon copy-btn proxy-url-copy no-shrink" type="button"
-                                    aria-label="复制 AI Gateway Token" title="复制 AI Gateway Token"></button>
                             </div>
                         </div>
                         <div class="settings-grid-3">

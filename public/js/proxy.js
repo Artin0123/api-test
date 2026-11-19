@@ -71,6 +71,7 @@ async function loadProxyState() {
   dom.proxyKeyEmpty.classList.add("hidden");
   dom.proxyToolbar.classList.add("hidden");
   dom.proxyKeyGrid.classList.add("hidden");
+  dom.proxyPagination.classList.add("hidden");
   clearProxyNotice({ keepGlobal: false });
 
   try {
@@ -231,6 +232,7 @@ function renderProxyState(data) {
     dom.proxyToolbar.classList.add("hidden");
     dom.proxyKeyGrid.classList.add("hidden");
     dom.proxyKeyEmpty.classList.add("hidden");
+    dom.proxyPagination.classList.add("hidden");
     renderProxyLogsLink();
     return;
   }
@@ -421,6 +423,153 @@ function updateProxyCardButtonsDisabled() {
   }
 }
 
+const PROXY_PAGE_SIZE = 9;
+const PAGE_PREV_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>`;
+const PAGE_NEXT_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+const PAGE_CANCEL_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+const PAGE_GO_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
+
+function goToProxyPage(page, totalPages) {
+  const next = Math.min(totalPages, Math.max(1, Number(page) || 1));
+  if (next === state.proxyPage) return;
+  state.proxyPage = next;
+  renderProxyKeyCards();
+}
+
+function renderProxyPagination(totalPages) {
+  if (!dom.proxyPagination) return;
+  if (totalPages <= 1) {
+    dom.proxyPagination.replaceChildren();
+    dom.proxyPagination.classList.add("hidden");
+    return;
+  }
+
+  const prevBtn = document.createElement("button");
+  prevBtn.type = "button";
+  prevBtn.className = "btn btn-secondary btn-sm proxy-page-btn";
+  prevBtn.setAttribute("aria-label", "上一页");
+
+  const pageBox = document.createElement("div");
+  pageBox.className = "proxy-page-box";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.inputMode = "numeric";
+  input.maxLength = 3;
+  input.className = "proxy-page-input";
+  input.value = String(state.proxyPage);
+  input.setAttribute("aria-label", "页码");
+
+  const sepSpan = document.createElement("span");
+  sepSpan.className = "proxy-page-sep";
+  sepSpan.textContent = "/";
+
+  const totalSpan = document.createElement("span");
+  totalSpan.className = "proxy-page-total";
+  totalSpan.textContent = String(totalPages);
+  pageBox.append(input, sepSpan, totalSpan);
+
+  const nextBtn = document.createElement("button");
+  nextBtn.type = "button";
+  nextBtn.className = "btn btn-secondary btn-sm proxy-page-btn";
+  nextBtn.setAttribute("aria-label", "下一页");
+
+  let isDirty = false;
+  const syncPaginationControls = () => {
+    const raw = input.value.trim();
+    const parsed = Number(raw);
+    isDirty = raw !== String(state.proxyPage);
+    if (isDirty) {
+      prevBtn.innerHTML = PAGE_CANCEL_SVG;
+      prevBtn.title = "取消";
+      prevBtn.setAttribute("aria-label", "取消");
+      prevBtn.disabled = false;
+      nextBtn.innerHTML = PAGE_GO_SVG;
+      nextBtn.title = "前往";
+      nextBtn.setAttribute("aria-label", "前往");
+      nextBtn.disabled = !raw || !Number.isInteger(parsed);
+    } else {
+      prevBtn.innerHTML = PAGE_PREV_SVG;
+      prevBtn.title = "上一页";
+      prevBtn.setAttribute("aria-label", "上一页");
+      prevBtn.disabled = state.proxyPage <= 1;
+      nextBtn.innerHTML = PAGE_NEXT_SVG;
+      nextBtn.title = "下一页";
+      nextBtn.setAttribute("aria-label", "下一页");
+      nextBtn.disabled = state.proxyPage >= totalPages;
+    }
+  };
+
+  const submitPage = () => {
+    const raw = input.value.trim();
+    const parsed = Number(raw);
+    if (!raw || !Number.isInteger(parsed)) return;
+    const clamped = Math.min(totalPages, Math.max(1, parsed));
+    if (clamped === state.proxyPage) {
+      input.value = String(state.proxyPage);
+      syncPaginationControls();
+    } else {
+      goToProxyPage(clamped, totalPages);
+    }
+  };
+
+  input.addEventListener("input", () => {
+    const cleaned = input.value.replace(/\D+/g, "").slice(0, 3);
+    if (input.value !== cleaned) input.value = cleaned;
+    syncPaginationControls();
+  });
+  pageBox.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const cur = Number.parseInt(input.value, 10) || state.proxyPage;
+      const next = Math.min(
+        totalPages,
+        Math.max(1, cur + (e.deltaY < 0 ? 1 : -1)),
+      );
+      input.value = String(next);
+      syncPaginationControls();
+    },
+    { passive: false },
+  );
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitPage();
+    } else if (e.key === "Escape") {
+      input.value = String(state.proxyPage);
+      syncPaginationControls();
+    } else if (
+      e.key.length === 1 &&
+      !/^\d$/.test(e.key) &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
+      e.preventDefault();
+    }
+  });
+  prevBtn.addEventListener("click", () => {
+    if (isDirty) {
+      input.value = String(state.proxyPage);
+      syncPaginationControls();
+    } else {
+      goToProxyPage(state.proxyPage - 1, totalPages);
+    }
+  });
+  nextBtn.addEventListener("click", () => {
+    if (isDirty) {
+      submitPage();
+    } else {
+      goToProxyPage(state.proxyPage + 1, totalPages);
+    }
+  });
+
+  syncPaginationControls();
+  dom.proxyPagination.replaceChildren(prevBtn, pageBox, nextBtn);
+  dom.proxyPagination.classList.remove("hidden");
+}
+
 function renderProxyKeyCards() {
   const p = selectedProxyProvider();
   if (!p) return;
@@ -433,6 +582,7 @@ function renderProxyKeyCards() {
     dom.proxyKeyGrid.replaceChildren();
     dom.proxyKeyGrid.classList.add("hidden");
     dom.proxyKeyEmpty.classList.remove("hidden");
+    renderProxyPagination(0);
     return;
   }
   dom.proxyKeyEmpty.classList.add("hidden");
@@ -440,12 +590,19 @@ function renderProxyKeyCards() {
     enabled &&
     !!String(p.alias || "").trim() &&
     proxyModelOptions(p).length > 0;
+  const totalPages = Math.max(1, Math.ceil(keys.length / PROXY_PAGE_SIZE));
+  state.proxyPage = Math.min(
+    totalPages,
+    Math.max(1, Number(state.proxyPage) || 1),
+  );
+  const startIdx = (state.proxyPage - 1) * PROXY_PAGE_SIZE;
+  const pageKeys = keys.slice(startIdx, startIdx + PROXY_PAGE_SIZE);
   const plainList = state.proxyPlainKeys.get(p.fp) || [];
-  dom.proxyKeyGrid.innerHTML = keys
+  dom.proxyKeyGrid.innerHTML = pageKeys
     .map((k, ki) => {
       const id = k.id == null ? "" : String(k.id);
       const mask = esc(k.masked || "");
-      const candidate = plainList[ki] || "";
+      const candidate = plainList[startIdx + ki] || "";
       const rawKey = candidate && maskKey(candidate) === k.masked ? candidate : "";
       const copyBtn = rawKey
         ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rawKey)}">${COPY_ICON_SVG}</button>`
@@ -488,4 +645,5 @@ function renderProxyKeyCards() {
     })
     .join("");
   dom.proxyKeyGrid.classList.remove("hidden");
+  renderProxyPagination(totalPages);
 }

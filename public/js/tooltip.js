@@ -11,27 +11,31 @@ function positionInfoTooltip(icon, tip) {
   const tipW = tipRect.width || tip.offsetWidth || 210;
   const tipH = tipRect.height || tip.offsetHeight || 120;
 
-  // Keep tooltips inside the modal body frame (between header bottom border,
-  // footer top border, and left/right modal edges) with at least `margin` px.
+  // Keep modal tooltips inside the modal body/panel frame; for .proxy-toolbar,
+  // constrain horizontally to the toolbar frame while letting vertical placement
+  // use the viewport so tooltips are not squeezed above/below row 2.
   const body = icon.closest(".modal-body");
-  const panel = icon.closest(".modal-panel");
-  const bounds = body
+  const modalPanel = icon.closest(".modal-panel");
+  const toolbar = !body && !modalPanel ? icon.closest(".proxy-toolbar") : null;
+  const hBounds = body
     ? body.getBoundingClientRect()
-    : panel
-      ? panel.getBoundingClientRect()
-      : {
-          left: 0,
-          right: window.innerWidth,
-          top: 0,
-          bottom: window.innerHeight,
-        };
-  const minX = Math.max(bounds.left, 0) + margin;
+    : modalPanel
+      ? modalPanel.getBoundingClientRect()
+      : toolbar
+        ? toolbar.getBoundingClientRect()
+        : { left: 0, right: window.innerWidth };
+  const vBounds = body
+    ? body.getBoundingClientRect()
+    : modalPanel
+      ? modalPanel.getBoundingClientRect()
+      : { top: 0, bottom: window.innerHeight };
+  const minX = Math.max(hBounds.left, 0) + margin;
   const contentRight = body
-    ? Math.min(bounds.right, bounds.left + body.clientLeft + body.clientWidth)
-    : bounds.right;
+    ? Math.min(hBounds.right, hBounds.left + body.clientLeft + body.clientWidth)
+    : hBounds.right;
   const maxX = Math.min(contentRight, window.innerWidth) - margin;
-  const minY = Math.max(bounds.top, 0) + margin;
-  const maxY = Math.min(bounds.bottom, window.innerHeight) - margin;
+  const minY = Math.max(vBounds.top, 0) + margin;
+  const maxY = Math.min(vBounds.bottom, window.innerHeight) - margin;
 
   let left = rect.left + rect.width / 2 - tipW / 2;
   if (left + tipW > maxX) left = maxX - tipW;

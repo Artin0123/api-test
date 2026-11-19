@@ -77,6 +77,12 @@ test("proxy assets referenced by the page exist in style.css", () => {
     "proxy-toast",
     "proxy-toast-msg",
     "proxy-toast-close",
+    "proxy-pagination",
+    "proxy-page-btn",
+    "proxy-page-box",
+    "proxy-page-input",
+    "proxy-page-sep",
+    "proxy-page-total",
     "keys-toolbar",
     "keys-search",
     "keys-search-wrap",
@@ -436,9 +442,9 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   assert.doesNotMatch(summaryGroupCss[1], /\bbackground\s*:/);
   assert.doesNotMatch(summaryGroupCss[1], /\bborder\s*:/);
   assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bheight:\s*var\(--control-h\);/s);
-  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bjustify-content:\s*flex-start;/s);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bjustify-content:\s*center;/s);
   assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\bwidth:\s*calc\(3ch \+ 1\.5rem \+ 2px\);/s);
-  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\btext-align:\s*left;/s);
+  assert.match(css, /\.proxy-summary-cell\s*\{[^}]*\btext-align:\s*center;/s);
   assert.doesNotMatch(css, /\.proxy-summary-cell\s*\{[^}]*\bmin-width\s*:/s);
   assert.match(css, /\.proxy-summary-ok\s*\{[^}]*background:\s*rgba\(34,\s*197,\s*94,\s*0\.15\);[^}]*border:\s*1px solid rgba\(34,\s*197,\s*94,\s*0\.3\);/s);
   assert.match(css, /\.proxy-summary-fail\s*\{[^}]*background:\s*rgba\(239,\s*68,\s*68,\s*0\.15\);[^}]*border:\s*1px solid rgba\(239,\s*68,\s*68,\s*0\.3\);/s);
@@ -532,8 +538,13 @@ test("editor deduplicates keys/models keeping first occurrence, results CTA upda
   const gridIdx = body.indexOf('class="settings-grid-3"');
   assert.ok(discordIdx >= 0 && githubIdx > discordIdx, "Discord Webhook URL must sit before GitHub Actions URL");
   assert.ok(proxyWrapIdx > githubIdx, "#settings-proxy-fields must sit after GitHub Actions URL");
-  assert.ok(logsIdx > proxyWrapIdx && passIdx > logsIdx && tokenIdx > passIdx && gridIdx > tokenIdx,
-    "Proxy settings order inside #settings-proxy-fields must be Logs URL -> Proxy Password -> Gateway Token -> grid-3");
+  assert.ok(logsIdx > proxyWrapIdx && tokenIdx > logsIdx && passIdx > tokenIdx && gridIdx > passIdx,
+    "Proxy settings order inside #settings-proxy-fields must be Logs URL -> Gateway Token -> Proxy Password -> grid-3");
+  assert.match(app, /icon\.closest\("\.proxy-toolbar"\)/);
+  assert.match(app, /PROXY_PAGE_SIZE\s*=\s*9/);
+  assert.match(css, /\.proxy-page-btn\s*\{[^}]*width:\s*var\(--control-h\);[^}]*height:\s*var\(--control-h\);[^}]*justify-content:\s*center;/s);
+  assert.match(css, /\.proxy-page-input\s*\{[^}]*width:\s*3ch;[^}]*text-align:\s*right;/s);
+  assert.match(css, /\.proxy-page-total\s*\{[^}]*width:\s*3ch;[^}]*text-align:\s*left;/s);
 
   for (const secretId of ["set-proxy-password", "set-gateway-token"]) {
     assert.ok(body.includes(`id="${secretId}-toggle"`), `missing #${secretId}-toggle`);
