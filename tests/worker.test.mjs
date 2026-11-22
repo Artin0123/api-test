@@ -920,6 +920,25 @@ test("a failed manual test charges the key and can disable it", async () => {
 
   const [after] = await getKeyRows(env, fp);
   assert.equal(after.fail_count, 2);
+
+  // Network / timeout error in catch() must also charge fail_count.
+  const envNet = makeEnv();
+  await postSettings(envNet, [p], { proxy_fail_threshold: 1 });
+  const fpNet = await fingerprintOf(envNet, p);
+  await postTestModel(envNet, fpNet, "probe-model");
+  const [kNet] = await getKeyRows(envNet, fpNet);
+  useUpstream((req, res) => { req.socket.destroy(); });
+  const netErr = await asJson(
+    await request(envNet, "/api/proxy/test", {
+      method: "POST",
+      headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fp: fpNet, id: kNet.id }),
+    }),
+  );
+  assert.equal(netErr.status, 200);
+  assert.equal(netErr.data.ok, false);
+  assert.equal(netErr.data.fail_count, 1);
+  assert.equal(netErr.data.disabled, true);
   assert.equal(after.disabled, true);
   assert.equal(after.last_used_at, null, "手動測試不參與輪用，不該蓋最近使用時間");
 });

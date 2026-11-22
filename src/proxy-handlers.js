@@ -312,13 +312,32 @@ async function handleProxyTest(request, env) {
   );
   headers.set("Content-Type", "application/json");
 
+  const probeTimeoutMs = Math.min(proxyTimeoutMs(settings), 19000);
+  const recordProbeFailure = async () => {
+    const threshold = proxyFailThreshold(settings);
+    if (row.disabled || Number(row.fail_count || 0) >= threshold) {
+      return {
+        fail_count: Number(row.fail_count || 0),
+        disabled: !!row.disabled,
+      };
+    }
+    try {
+      return (
+        (await recordKeyFailure(env.DB, row.id, threshold)) || {
+          fail_count: Number(row.fail_count || 0),
+          disabled: !!row.disabled,
+        }
+      );
+    } catch (dbErr) {
+      console.error("key_state failure write failed", dbErr);
+      return null;
+    }
+  };
+
   const started = Date.now();
   try {
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      proxyTimeoutMs(settings),
-    );
+    const timer = setTimeout(() => controller.abort(), probeTimeoutMs);
     let response;
     try {
       response = await fetch(targetUrl(upstream, probe.path), {
@@ -336,23 +355,7 @@ async function handleProxyTest(request, env) {
     let ledger = null;
     if (!response.ok) {
       detail = (await response.text()).slice(0, 300);
-      const threshold = proxyFailThreshold(settings);
-      if (row.disabled || Number(row.fail_count || 0) >= threshold) {
-        ledger = {
-          fail_count: Number(row.fail_count || 0),
-          disabled: !!row.disabled,
-        };
-      } else {
-        try {
-          ledger =
-            (await recordKeyFailure(env.DB, row.id, threshold)) || {
-              fail_count: Number(row.fail_count || 0),
-              disabled: !!row.disabled,
-            };
-        } catch (dbErr) {
-          console.error("key_state failure write failed", dbErr);
-        }
-      }
+      ledger = await recordProbeFailure();
     } else {
       if (response.body) await response.body.cancel();
       if (row.disabled || Number(row.fail_count || 0) !== 0) {
@@ -377,12 +380,21 @@ async function handleProxyTest(request, env) {
       disabled: ledger ? !!ledger.disabled : undefined,
     });
   } catch (err) {
+    const ledger = await recordProbeFailure();
+    const timedOut = err && err.name === "AbortError";
     return json({
       ok: false,
       status: 0,
       ms: Date.now() - started,
       model: probe.model,
-      error: String((err && err.message) || err),
+      ...(savedSettingsVersion !== undefined
+        ? { settings_version: savedSettingsVersion }
+        : {}),
+      error: timedOut
+        ? `请求超时（${Math.round(probeTimeoutMs / 1000)} 秒）`
+        : String((err && err.message) || err),
+      fail_count: ledger ? ledger.fail_count : undefined,
+      disabled: ledger ? !!ledger.disabled : undefined,
     });
   }
 }
