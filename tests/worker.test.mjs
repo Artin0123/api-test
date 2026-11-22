@@ -1512,9 +1512,14 @@ test("settings validate Gateway Logs URL and proxy/test require Gateway & alias 
 
   // Valid Gateway config: alias is required for manual probe, and probes use non-streaming "only reply 1." max 8 tokens.
   await postSettings(env, [noAliasProv, oaAliasProv, gemAliasProv, anAliasProv]);
-  const fpNoAlias = await fingerprintOf(env, noAliasProv);
+  const fpNoAlias = await fingerprintOfEntry(noAliasProv);
   await postTestModel(env, fpNoAlias, "m1");
-  const [noAliasRow] = await getKeyRows(env, fpNoAlias);
+  assert.equal(await getKeyRows(env, fpNoAlias), null);
+  const noAliasRow = await env.DB.prepare(
+    "SELECT id FROM key_state WHERE fp = ?",
+  )
+    .bind(fpNoAlias)
+    .first();
   const needAlias = await asJson(
     await request(env, "/api/proxy/test", {
       method: "POST",
@@ -1947,4 +1952,41 @@ test("POST /api/proxy/disable disables a single key without touching fail_count"
     }),
   );
   assert.equal(missing.status, 404);
+});
+
+
+test("GET /api/proxy/state omits providers without alias and proxy endpoints reject disabled providers", async () => {
+  const env = makeEnv();
+  const noAlias = provider({ alias: "", api_base: "https://no-alias.example/v1", keys: "sk-no" });
+  const offProv = provider({ alias: "off-prov", enabled: false, api_base: "https://off.example/v1", keys: "sk-off-1\nsk-off-2" });
+  await postSettings(env, [noAlias, offProv]);
+
+  const fpNoAlias = await fingerprintOfEntry(noAlias);
+  const fpOff = await fingerprintOf(env, offProv);
+  const stateRes = await asJson(
+    await request(env, "/api/proxy/state", { headers: adminHeaders() }),
+  );
+  assert.equal(stateRes.status, 200);
+  assert.equal(stateRes.data.providers.some((p) => p.fp === fpNoAlias), false);
+  const offEntry = stateRes.data.providers.find((p) => p.fp === fpOff);
+  assert.ok(offEntry);
+  assert.equal(offEntry.enabled, false);
+
+  const keyId = offEntry.keys[0].id;
+  for (const [path, body] of [
+    ["/api/proxy/test", { fp: fpOff, id: keyId, model: "m1" }],
+    ["/api/proxy/disable", { fp: fpOff, id: keyId }],
+    ["/api/proxy/recover", { fp: fpOff, id: keyId }],
+    ["/api/proxy/recover", { fp: fpOff, all: true }],
+  ]) {
+    const res = await asJson(
+      await request(env, path, {
+        method: "POST",
+        headers: adminHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      }),
+    );
+    assert.equal(res.status, 400, `${path} should reject disabled provider`);
+    assert.match(res.data.error, /停用/);
+  }
 });

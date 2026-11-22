@@ -245,6 +245,7 @@
 .input-text,
 .input-select {
     height: var(--control-h);
+    padding: 0 0.9rem;
 }
 
 .input-text:focus,
@@ -260,6 +261,11 @@
     line-height: 1.7;
     font-family: var(--mono);
     font-size: var(--text-xs);
+}
+
+.input-mono,
+.custom-header-row .input-text {
+    font-family: var(--mono);
 }
 
 .input-select {
@@ -401,6 +407,7 @@
         opacity: 0.45;
         cursor: not-allowed;
     }
+
 }
 
 [data-theme="light"] .custom-select-menu {
@@ -542,6 +549,7 @@
     font-size: var(--text-xs);
     line-height: 1.6;
     white-space: normal;
+    overflow-wrap: anywhere;
     width: max-content;
     max-width: 210px;
     word-break: break-word;

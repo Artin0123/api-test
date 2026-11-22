@@ -27,7 +27,7 @@
                     <p class="muted">输入管理密码以继续。</p>
                 </div>
                 <div class="auth-row">
-                    <input type="password" id="auth-input" class="input-text" placeholder="ADMIN_PASSWORD"
+                    <input type="password" id="auth-input" class="input-text input-mono" placeholder="ADMIN_PASSWORD"
                         autocomplete="current-password" />
                     <button id="auth-btn" class="btn btn-primary" type="button">
                         登入
@@ -168,7 +168,7 @@
                         </label>
                         <label class="field dk-filter-field--key">
                             <span class="field-label">Key 搜寻</span>
-                            <input type="text" id="dk-f-key" class="input-text" placeholder="模糊匹配" autocomplete="off" />
+                            <input type="text" id="dk-f-key" class="input-text input-mono" autocomplete="off" />
                         </label>
                         <label class="field dk-filter-field--code">
                             <span class="field-label">错误代码</span>
@@ -246,7 +246,7 @@
                     <div id="proxy-loading" class="state-card">读取中...</div>
                     <div id="proxy-error" class="alert alert-error hidden"></div>
                     <div id="proxy-empty" class="state-card hidden">
-                        尚未添加任何服务商。
+                        尚未添加已设定转发别名的服务商，请先到「来源设定」配置转发别名。
                     </div>
                     <div id="proxy-key-empty" class="state-card hidden">
                         这个服务商没有密钥，请到「来源设定」补上。
@@ -364,7 +364,7 @@
                                 <span class="info-tooltip">小写英文、数字与连字号；留空表示不转发</span>
                             </span>
                         </span>
-                        <input type="text" id="ed-alias" class="input-text" placeholder="例如 openai-main"
+                        <input type="text" id="ed-alias" class="input-text" placeholder="openai"
                             spellcheck="false" autocomplete="off" />
                     </label>
 
@@ -384,8 +384,8 @@
                         </label>
                         <div class="keys-toolbar">
                             <div class="keys-search-wrap">
-                                <input type="search" id="ed-keys-search" class="input-text keys-search"
-                                    placeholder="搜索密钥，标橘色" aria-label="搜索密钥" spellcheck="false" autocomplete="off" />
+                                <input type="search" id="ed-keys-search" class="input-text input-mono keys-search"
+                                    aria-label="搜索密钥" spellcheck="false" autocomplete="off" />
                                 <!-- Clear button, drawn as the backspace key it does
                                      the work of: a pentagon pointing left with an
                                      × in it. Sits inside the box's right end, so
@@ -562,7 +562,7 @@
                                         <line x1="12" y1="16" x2="12" y2="12"></line>
                                         <line x1="12" y1="8" x2="12.01" y2="8"></line>
                                     </svg>
-                                    <span class="info-tooltip">也用于提取 Account ID / Gateway ID</span>
+                                    <span class="info-tooltip">格式：https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs<br>也用于提取 Account ID / Gateway ID</span>
                                 </span>
                             </span>
                             <input type="url" id="set-gateway-logs-url" class="input-text"
@@ -573,7 +573,7 @@
                             <div class="field-row">
                                 <div class="input-secret-wrap">
                                     <input type="password" id="set-gateway-token" class="input-text input-secret"
-                                        placeholder="cf-aig-authorization Bearer Token" autocomplete="new-password"
+                                        placeholder="cfut_..." autocomplete="new-password"
                                         spellcheck="false" />
                                     <button id="set-gateway-token-toggle" class="input-secret-toggle" type="button"
                                         aria-label="显示 Token" aria-pressed="false" title="显示 Token"></button>
@@ -599,8 +599,7 @@
                             <div class="field-row">
                                 <div class="input-secret-wrap">
                                     <input type="password" id="set-proxy-password" class="input-text input-secret"
-                                        placeholder="设定 PROXY_PASSWORD" autocomplete="new-password"
-                                        spellcheck="false" />
+                                        autocomplete="new-password" spellcheck="false" />
                                     <button id="set-proxy-password-toggle" class="input-secret-toggle" type="button"
                                         aria-label="显示密码" aria-pressed="false" title="显示密码"></button>
                                 </div>

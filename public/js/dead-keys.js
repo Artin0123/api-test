@@ -122,7 +122,7 @@ function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
   }
 
   const opts = [];
-  if (includeAll) opts.push(`<option value="">全部供应商</option>`);
+  if (includeAll) opts.push(`<option value="">全部</option>`);
   else if (!options.length) opts.push(`<option value="">（尚无服务商）</option>`);
   for (const o of options) {
     opts.push(
@@ -153,7 +153,7 @@ function fillCodeSelect() {
   }
   codes.sort((a, b) => a - b);
 
-  const opts = [`<option value="">全部 Code</option>`];
+  const opts = [`<option value="">全部</option>`];
   for (const c of codes) {
     opts.push(`<option value="${escAttr(String(c))}">${esc(String(c))}</option>`);
   }

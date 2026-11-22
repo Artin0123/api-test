@@ -1,7 +1,13 @@
 // Split from the original app.js; loaded in original order (see index.html).
 // ── Proxy tab (rotation / forwarding) ──────────────────────────────────────
+function proxyProviders() {
+  return ((state.proxy && state.proxy.providers) || []).filter(
+    (p) => p && String(p.alias || "").trim(),
+  );
+}
+
 function selectedProxyProvider() {
-  const providers = (state.proxy && state.proxy.providers) || [];
+  const providers = proxyProviders();
   return (
     providers.find((p) => p.fp === state.proxySelected) ||
     providers[0] ||
@@ -102,9 +108,10 @@ async function loadProxyState() {
       }
     }
     state.proxy = data;
+    const visibleProviders = proxyProviders();
     const active =
-      providers.find((p) => p.fp === state.proxySelected) ||
-      providers[0] ||
+      visibleProviders.find((p) => p.fp === state.proxySelected) ||
+      visibleProviders[0] ||
       null;
     state.proxySelected = active ? active.fp : null;
     renderProxyState(data);
@@ -141,7 +148,9 @@ function mockProxyState(settings) {
     proxyMessage = "AI Gateway Logs URL 未设定或格式无效，请到右上角「设定」填写";
   else if (!gwToken) proxyMessage = "AI Gateway Token 未设定，请到右上角「设定」填写";
 
-  const providers = (settings.providers || []).map((p, i) => {
+  const providers = (settings.providers || [])
+    .filter((p) => p && String(p.alias || "").trim())
+    .map((p, i) => {
     const fp = cachedProviderFp(p) || `mock-${i}`;
     const override = mockOverrideForProvider(fp);
     const keys = splitKeyLines(p.keys);
@@ -223,7 +232,7 @@ function proxyTimeTitle(ms) {
 }
 
 function renderProxyState(data) {
-  const providers = data.providers || [];
+  const providers = proxyProviders();
   if (!data.proxy_enabled) {
     setProxyNotice(data.proxy_message || "转发功能目前停用", "error");
   }
@@ -294,12 +303,31 @@ function renderProxyModelSelect(p) {
   syncCustomSelect(dom.proxyTestModel);
 }
 
+function proxyDisabledReason(p) {
+  if (!state.proxy || !state.proxy.proxy_enabled) {
+    return (state.proxy && state.proxy.proxy_message) || "转发功能目前停用";
+  }
+  if (p && p.enabled === false) {
+    return "此服务商已停用，请先在「来源设定」启用";
+  }
+  return "";
+}
+
+function proxyCardTitles(p) {
+  const blockReason = proxyDisabledReason(p);
+  const hasModels = proxyModelOptions(p).length > 0;
+  return {
+    testTitle: blockReason || (!hasModels ? "请先在「来源设定」填写 Models" : ""),
+    manageTitle: blockReason,
+  };
+}
+
 function renderProxyToolbar() {
   const p = selectedProxyProvider();
   if (!p) return;
-  const enabled =
-    !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
-  const url = p.alias ? `${location.origin}${p.proxy_url}` : "";
+  const blockReason = proxyDisabledReason(p);
+  const enabled = !blockReason;
+  const url = `${location.origin}${p.proxy_url}`;
 
   const available = Number(p.keys_available || 0);
   const total = Number(p.keys_total || 0);
@@ -328,37 +356,34 @@ function renderProxyToolbar() {
     `有效 ${available}，无效 ${disabled}`,
   );
   dom.proxySummary.replaceChildren(labelSpan, countsGroup);
-  dom.proxyUrl.textContent = url || "（尚未设定转发别名）";
-  dom.proxyUrl.classList.toggle("is-disabled", !url);
+  dom.proxyUrl.textContent = url;
+  dom.proxyUrl.classList.remove("is-disabled");
   dom.proxyUrlCopy.dataset.copyVal = url;
-  dom.proxyUrlCopy.disabled = !url;
-  renderProxyModelSelect(p);
+  dom.proxyUrlCopy.disabled = false;
   const hasModels = proxyModelOptions(p).length > 0;
   dom.proxyTestModel.disabled = !enabled || !hasModels;
+  renderProxyModelSelect(p);
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
   const hasDisabledKeys = (p.keys || []).some((k) => k.disabled && k.id != null);
-  const hasAlias = !!String(p.alias || "").trim();
-  const canTest = enabled && hasAlias && hasKeys && hasModels;
+  const canTest = enabled && hasKeys && hasModels;
+  const testTitle =
+    blockReason ||
+    (!hasModels
+      ? "请先在「来源设定」填写 Models"
+      : !hasKeys
+        ? "当前供应商没有密钥"
+        : "");
   for (const btn of [dom.proxyTestActive, dom.proxyTestDisabled]) {
     btn.disabled = !canTest || state.proxyBusy;
-    btn.title = !hasAlias
-      ? "请先在「来源设定」填写转发别名（alias）"
-      : !hasModels
-        ? "请先在「来源设定」填写 Models"
-        : "";
+    btn.title = testTitle;
   }
   dom.proxyRecoverAll.disabled = !enabled || !hasDisabledKeys || state.proxyBusy;
-  if (!state.proxy || !state.proxy.proxy_enabled) {
-    dom.proxyRecoverAll.title =
-      (state.proxy && state.proxy.proxy_message) || "转发功能目前停用";
-  } else if (p.enabled === false) {
-    dom.proxyRecoverAll.title = "此服务商已停用";
-  } else if (!hasDisabledKeys) {
-    dom.proxyRecoverAll.title = "当前供应商没有已失效的密钥";
-  } else {
-    dom.proxyRecoverAll.title = "恢复当前供应商下的所有失效密钥";
-  }
+  dom.proxyRecoverAll.title =
+    blockReason ||
+    (!hasDisabledKeys
+      ? "当前供应商没有已失效的密钥"
+      : "恢复当前供应商下的所有失效密钥");
   renderProxyLogsLink();
 }
 
@@ -387,12 +412,9 @@ function renderProxyLogsLink() {
 function updateProxyCardButtonsDisabled() {
   const p = selectedProxyProvider();
   if (!p) return;
-  const enabled =
-    !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
-  const canAct =
-    enabled &&
-    !!String(p.alias || "").trim() &&
-    proxyModelOptions(p).length > 0;
+  const enabled = !proxyDisabledReason(p);
+  const canAct = enabled && proxyModelOptions(p).length > 0;
+  const { testTitle, manageTitle } = proxyCardTitles(p);
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-test]")) {
     const id = btn.dataset.proxyTest;
     const token = `${btn.dataset.fp}:${id}`;
@@ -402,6 +424,7 @@ function updateProxyCardButtonsDisabled() {
       state.proxyRecoveringKeys.has(token) ||
       state.proxyDisablingKeys.has(token);
     btn.disabled = !canAct || !id || busy;
+    btn.title = testTitle || (!id ? "密钥尚未同步" : "");
   }
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-recover]")) {
     const id = btn.dataset.proxyRecover;
@@ -411,6 +434,7 @@ function updateProxyCardButtonsDisabled() {
       state.proxyRecoveringKeys.has(token) ||
       state.proxyTestingKeys.has(token);
     btn.disabled = !enabled || !id || busy;
+    btn.title = manageTitle || (!id ? "密钥尚未同步" : "");
   }
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-disable]")) {
     const id = btn.dataset.proxyDisable;
@@ -420,6 +444,7 @@ function updateProxyCardButtonsDisabled() {
       state.proxyDisablingKeys.has(token) ||
       state.proxyTestingKeys.has(token);
     btn.disabled = !enabled || !id || busy;
+    btn.title = manageTitle || (!id ? "密钥尚未同步" : "");
   }
 }
 
@@ -574,8 +599,7 @@ function renderProxyKeyCards() {
   const p = selectedProxyProvider();
   if (!p) return;
   const keys = p.keys || [];
-  const enabled =
-    !!(state.proxy && state.proxy.proxy_enabled) && p.enabled !== false;
+  const enabled = !proxyDisabledReason(p);
   if (!keys.length) {
     // Sibling of the grid, not a grid item: a .state-card dropped inside the
     // grid used to render as one 280px column instead of a full-width notice.
@@ -586,10 +610,8 @@ function renderProxyKeyCards() {
     return;
   }
   dom.proxyKeyEmpty.classList.add("hidden");
-  const canAct =
-    enabled &&
-    !!String(p.alias || "").trim() &&
-    proxyModelOptions(p).length > 0;
+  const canAct = enabled && proxyModelOptions(p).length > 0;
+  const { testTitle, manageTitle } = proxyCardTitles(p);
   const totalPages = Math.max(1, Math.ceil(keys.length / PROXY_PAGE_SIZE));
   state.proxyPage = Math.min(
     totalPages,
@@ -615,9 +637,13 @@ function renderProxyKeyCards() {
         state.proxyDisablingKeys.has(token);
       const recoverDisabled = !enabled || !id || keyBusy;
       const disableDisabled = !enabled || !id || keyBusy;
+      const cardTestTitle = testTitle || (!id ? "密钥尚未同步" : "");
+      const cardManageTitle = manageTitle || (!id ? "密钥尚未同步" : "");
+      const cardTestTitleAttr = cardTestTitle ? ` title="${escAttr(cardTestTitle)}"` : "";
+      const cardManageTitleAttr = cardManageTitle ? ` title="${escAttr(cardManageTitle)}"` : "";
       const actionBtn = k.disabled
-        ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${recoverDisabled ? " disabled" : ""}>恢复</button>`
-        : `<button class="btn btn-danger btn-sm" type="button" data-proxy-disable="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${disableDisabled ? " disabled" : ""}>禁用</button>`;
+        ? `<button class="btn btn-secondary btn-sm" type="button" data-proxy-recover="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${cardManageTitleAttr}${recoverDisabled ? " disabled" : ""}>恢复</button>`
+        : `<button class="btn btn-danger btn-sm" type="button" data-proxy-disable="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${cardManageTitleAttr}${disableDisabled ? " disabled" : ""}>禁用</button>`;
       const testDisabled = !canAct || !id || keyBusy;
       const stateTag = k.disabled
         ? `<span class="proxy-key-state-tag">已失效</span>`
@@ -637,7 +663,7 @@ function renderProxyKeyCards() {
           <div class="proxy-key-card-actions">
             ${stateTag}
             <div class="proxy-key-card-btns">
-              <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${testDisabled ? " disabled" : ""}>测试</button>
+              <button class="btn btn-secondary btn-sm" type="button" data-proxy-test="${escAttr(id)}" data-fp="${escAttr(p.fp)}"${cardTestTitleAttr}${testDisabled ? " disabled" : ""}>测试</button>
               ${actionBtn}
             </div>
           </div>

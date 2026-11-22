@@ -71,7 +71,7 @@ function createHeaderRow(key = "", value = "") {
   keyInput.className = "input-text";
   keyInput.autocomplete = "off";
   keyInput.spellcheck = false;
-  keyInput.placeholder = "名称，如 X-Custom-Auth";
+  keyInput.placeholder = "X-Custom-Auth";
   keyInput.setAttribute("aria-label", "请求头名称");
   keyInput.dataset.headerKey = "";
   keyInput.value = key;
@@ -81,7 +81,6 @@ function createHeaderRow(key = "", value = "") {
   valueInput.className = "input-text";
   valueInput.autocomplete = "off";
   valueInput.spellcheck = false;
-  valueInput.placeholder = "值";
   valueInput.setAttribute("aria-label", "请求头值");
   valueInput.dataset.headerValue = "";
   valueInput.value = value;

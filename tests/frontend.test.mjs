@@ -558,3 +558,34 @@ test("editor deduplicates keys/models keeping first occurrence, results CTA upda
   assert.match(css, /\.input-secret-toggle\s*\{/);
   assert.match(app, /openModal\(dom\.settingsOverlay,\s*dom\.setDiscordUrl\)/);
 });
+
+test("proxy hides providers without alias, prioritizes disabled reasons, fixes input underscore clipping, and styles select scrollbar", () => {
+  const html = read("index.html");
+  const css = read("style-forms.css");
+  const baseCss = read("style.css");
+  const proxyJs = read("js/proxy.js");
+
+  assert.match(proxyJs, /function proxyProviders\(\)/);
+  assert.match(proxyJs, /String\(p\.alias \|\| ""\)\.trim\(\)/);
+  assert.doesNotMatch(proxyJs, /尚未设定转发别名|填写转发别名（alias）/);
+  assert.match(proxyJs, /dom\.proxyTestModel\.disabled\s*=\s*!enabled\s*\|\|\s*!hasModels;\s*renderProxyModelSelect\(p\);/);
+  assert.match(proxyJs, /此服务商已停用，请先在「来源设定」启用/);
+  assert.match(proxyJs, /data-proxy-test="\$\{escAttr\(id\)\}"[^>]*\$\{cardTestTitleAttr\}/);
+  assert.match(proxyJs, /data-proxy-disable="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);
+  assert.match(proxyJs, /data-proxy-recover="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);
+
+  assert.match(html, /格式：https:\/\/dash\.cloudflare\.com\/\{account_id\}\/ai\/ai-gateway\/gateways\/\{gateway_id\}\/logs<br>/);
+  assert.match(html, /id="set-gateway-token"[^>]*placeholder="cfut_\.\.\."/);
+
+  assert.match(css, /\.input-text,\s*\.input-select\s*\{[^}]*height:\s*var\(--control-h\);[^}]*padding:\s*0 0\.9rem;/);
+  assert.match(css, /\.input-mono,\s*\.custom-header-row \.input-text\s*\{[^}]*font-family:\s*var\(--mono\);/);
+  assert.match(baseCss, /\*::after\s*\{[^}]*scrollbar-width:\s*thin;/s);
+  assert.match(baseCss, /\*::-webkit-scrollbar\s*\{/);
+
+  const dkJs = read("js/dead-keys.js");
+  assert.doesNotMatch(dkJs, /全部供应商|全部 Code/);
+  assert.doesNotMatch(html, /模糊匹配|搜索密钥，标橘色/);
+  assert.doesNotMatch(read("js/providers.js"), /placeholder\s*=\s*"值"/);
+  assert.match(read("js/results.js"), /esc\(failedModels\.join\(", "\)\) : "\(none\)"/);
+  assert.match(read("style-modals.css"), /code\s*\{[^}]*font-size:\s*1em;/);
+});

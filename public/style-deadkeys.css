@@ -96,6 +96,8 @@
 
 .input-secret-wrap .input-secret {
     padding-right: 2.4rem;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
 }
 
 /* Edge/IE draw their own reveal eye inside type="password" inputs; hide it so our

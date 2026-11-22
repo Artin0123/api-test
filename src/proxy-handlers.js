@@ -21,7 +21,9 @@ async function handleGetProxyState(request, env) {
   // Resolve fingerprint per provider first, so the key_state read can be scoped to
   // this site's providers. A full table scan would bill every row on every tab
   // switch once the table grows.
-  const entries = await providerFpEntries(providers);
+  const entries = (await providerFpEntries(providers)).filter(
+    ({ provider: p }) => typeof p.alias === "string" && p.alias.trim(),
+  );
 
   const testModels =
     settings &&
@@ -170,6 +172,38 @@ function testRequestFor(provider, model) {
   return req;
 }
 
+async function findProxyProviderByFp(kv, fp) {
+  const settings = parseJsonObject(await kv.get(SETTINGS_KEY));
+  const providers = Array.isArray(settings?.providers) ? settings.providers : [];
+  for (const p of providers) {
+    if (!p || typeof p.api_base !== "string") continue;
+    const candidate = await providerFingerprint(
+      String(p.provider_type || "").trim(),
+      p.api_base.trim(),
+    );
+    if (candidate === fp) return { settings, providers, provider: p };
+  }
+  return { settings, providers, provider: null };
+}
+
+function proxyProviderActionError(provider) {
+  if (!provider) return json({ error: "Not Found" }, 404);
+  if (provider.enabled === false) {
+    return json({ error: "此服务商已停用，请先在「来源设定」启用" }, 400);
+  }
+  const alias = typeof provider.alias === "string" ? provider.alias.trim() : "";
+  if (!alias) {
+    return json(
+      {
+        error:
+          "请先在「来源设定」填写转发别名 (alias)，才能经由 AI Gateway 操作",
+      },
+      400,
+    );
+  }
+  return null;
+}
+
 async function handleProxyTest(request, env) {
   if (!(await requireAuth(request, env))) {
     return json({ error: "Unauthorized" }, 401);
@@ -217,16 +251,9 @@ async function handleProxyTest(request, env) {
   ).find(Boolean);
   if (!provider) return json({ error: "Not Found" }, 404);
 
-  const alias = typeof provider.alias === "string" ? provider.alias.trim() : "";
-  if (!alias) {
-    return json(
-      {
-        error:
-          "请先在「来源设定」填写转发别名 (alias)，才能经由 AI Gateway 测试密钥",
-      },
-      400,
-    );
-  }
+  const providerErr = proxyProviderActionError(provider);
+  if (providerErr) return providerErr;
+  const alias = provider.alias.trim();
 
   // The probe model is its own setting (proxy_test_models), never auto-borrowed
   // from daily-test lists unless a model is explicitly selected when testing.
@@ -360,11 +387,15 @@ async function handleProxyRecover(request, env) {
     return json({ error: "Invalid JSON" }, 400);
   }
   const fp = typeof body.fp === "string" ? body.fp.trim() : "";
+  const kv = store(env);
 
   if (body.all === true) {
     if (!fp) {
       return json({ error: "fp required" }, 400);
     }
+    const { provider } = await findProxyProviderByFp(kv, fp);
+    const providerErr = proxyProviderActionError(provider);
+    if (providerErr) return providerErr;
     await ensureSchemaFor(env.DB);
     const result = await env.DB.prepare(
       "UPDATE key_state SET disabled = 0, fail_count = 0, updated_at = ? " +
@@ -384,6 +415,9 @@ async function handleProxyRecover(request, env) {
   if (!Number.isInteger(id) || !fp) {
     return json({ error: "id and fp required" }, 400);
   }
+  const { provider } = await findProxyProviderByFp(kv, fp);
+  const providerErr = proxyProviderActionError(provider);
+  if (providerErr) return providerErr;
 
   await ensureSchemaFor(env.DB);
   const result = await env.DB.prepare(
@@ -424,6 +458,9 @@ async function handleProxyDisable(request, env) {
   if (!Number.isInteger(id) || !fp) {
     return json({ error: "id and fp required" }, 400);
   }
+  const { provider } = await findProxyProviderByFp(store(env), fp);
+  const providerErr = proxyProviderActionError(provider);
+  if (providerErr) return providerErr;
 
   await ensureSchemaFor(env.DB);
   const result = await env.DB.prepare(

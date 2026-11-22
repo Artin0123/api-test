@@ -14,6 +14,14 @@
       },
       {
         "enabled": false,
+        "provider_type": "anthropic",
+        "alias": "claude-off",
+        "api_base": "https://api.anthropic.com/v1",
+        "keys": "sk-ant-mockkey-1111111111111111\nsk-ant-mockkey-2222222222222222",
+        "models": "claude-sonnet-4-20250514"
+      },
+      {
+        "enabled": false,
         "provider_type": "gemini",
         "api_base": "https://generativelanguage.googleapis.com/v1beta",
         "keys": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",

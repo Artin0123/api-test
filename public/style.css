@@ -7,6 +7,26 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
 }
 
 :root {
@@ -35,11 +55,11 @@
     --shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
 
     /* typography */
-    --font: "Inter", system-ui, -apple-system, sans-serif;
-    --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    --font: "Microsoft YaHei", "Arial", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --text-base: 16px;
     --text-sm: 14px;
-    --text-xs: 13px;
+    --text-xs: 14px;
 
     --line-num: #4a5270;
     /* line number gutter text */

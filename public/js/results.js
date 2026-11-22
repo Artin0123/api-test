@@ -182,7 +182,7 @@ function renderResultBody(r) {
         失效模型
         <span class="badge badge-fail">${failedModels.length}</span>
       </div>
-      <p class="mono-list muted">${failedModels.length ? esc(failedModels.join(", ")) : "（无）"}</p>
+      <p class="mono-list muted">${failedModels.length ? esc(failedModels.join(", ")) : "(none)"}</p>
     </div>
 
     <div class="result-section">
