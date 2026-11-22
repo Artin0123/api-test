@@ -575,6 +575,7 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
 
   const proxyActionsJs = read("js/proxy-actions.js");
   assert.match(proxyActionsJs, /await runOne\(keys\[0\]\);[\s\S]*Promise\.all\(/);
+  assert.match(proxyActionsJs, /beforeProvider\.test_model\s*=\s*result\.model;[\s\S]*renderProxyToolbar\(\);/);
   assert.doesNotMatch(proxyActionsJs, /请先在「来源设定」填写 Models/);
   assert.match(proxyJs, /data-proxy-test="\$\{escAttr\(id\)\}"[^>]*\$\{cardTestTitleAttr\}/);
   assert.match(proxyJs, /data-proxy-disable="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);

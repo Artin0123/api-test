@@ -176,6 +176,10 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
         ? (provider.keys || []).findIndex((k) => String(k.id ?? "") === targetId)
         : -1;
       const rawKey = ki >= 0 ? (provider._mockPlainKeys || [])[ki] : "";
+      if (provider) {
+        provider.test_model = selectedModel;
+        mockOverrideForProvider(provider.fp).test_model = selectedModel;
+      }
       if (rawKey.includes("bbbb")) {
         const override = mockOverrideForProvider(provider.fp);
         const prev = override.keys.get(rawKey) || {};
@@ -199,8 +203,6 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
         };
       } else {
         if (provider) {
-          provider.test_model = selectedModel;
-          mockOverrideForProvider(provider.fp).test_model = selectedModel;
           if (rawKey) {
             const override = mockOverrideForProvider(provider.fp);
             const prev = override.keys.get(rawKey) || {};
@@ -242,19 +244,27 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
   } finally {
     clearTimeout(timeoutTimer);
     state.proxyTestingKeys.delete(token);
+    if (beforeProvider && result && result.model) {
+      beforeProvider.test_model = result.model;
+    }
+    if (state.settings && result && result.model) {
+      if (
+        !state.settings.proxy_test_models ||
+        typeof state.settings.proxy_test_models !== "object"
+      ) {
+        state.settings.proxy_test_models = {};
+      }
+      state.settings.proxy_test_models[targetFp] = result.model;
+    }
+    if (state.settings && typeof result?.settings_version === "number") {
+      state.settings.version = result.settings_version;
+    }
     if (!fromBatch) {
       state.proxyBusy = false;
       dom.proxyProvider.disabled = false;
       renderProxyToolbar();
     }
     updateProxyCardButtonsDisabled();
-  }
-
-  if (beforeProvider && result && result.model) {
-    beforeProvider.test_model = result.model;
-  }
-  if (state.settings && typeof result?.settings_version === "number") {
-    state.settings.version = result.settings_version;
   }
 
   if (!fromBatch) {
