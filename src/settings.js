@@ -277,13 +277,24 @@ function validateProviderAliases(providers) {
   return null;
 }
 
-function validateProviderTestPaths(providers) {
+function validateProviderTestPaths(providers, existingProviders = []) {
+  const existingWithoutPath = new Set();
+  for (const ep of existingProviders || []) {
+    if (!ep || typeof ep !== "object") continue;
+    if (typeof ep.test_path === "string" && ep.test_path.trim()) continue;
+    const type = typeof ep.provider_type === "string" ? ep.provider_type.trim() : "";
+    const base = typeof ep.api_base === "string" ? ep.api_base.trim().replace(/\/+$/, "") : "";
+    if (type && base) existingWithoutPath.add(`${type}\u0000${base}`);
+  }
   for (let i = 0; i < providers.length; i++) {
     const p = providers[i];
     if (!p || typeof p !== "object") continue;
     if (p.provider_type === "google") continue;
     const tp = p.test_path;
     if (typeof tp !== "string" || !tp.trim()) {
+      const type = typeof p.provider_type === "string" ? p.provider_type.trim() : "";
+      const base = typeof p.api_base === "string" ? p.api_base.trim().replace(/\/+$/, "") : "";
+      if (existingWithoutPath.has(`${type}\u0000${base}`)) continue;
       return "providers[" + i + "].test_path 不能为空";
     }
     if (/\s/.test(tp) || tp.includes("://")) {

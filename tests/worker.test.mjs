@@ -1852,7 +1852,36 @@ test("custom test_path is required for openai/anthropic and google defaults to v
     keys: "g1",
     test_path: "/ignored/path",
   });
-  const ok = await postSettings(env, [pOpenai, pGoogle]);
+  // Existing provider saved before test_path was required must not block editing another card.
+  await env.DB.prepare("INSERT OR REPLACE INTO store (k, v) VALUES (?, ?)")
+    .bind("app_settings", JSON.stringify({
+      providers: [{
+        enabled: true,
+        provider_type: "openai",
+        api_base: "https://legacy-other.example/v1",
+        keys: "k-legacy",
+        models: "m-legacy",
+        extra_body: "",
+        custom_headers: [],
+      }],
+      github_url: "",
+      discord_webhook_url: "",
+      ai_gateway_logs_url: DEFAULT_GW_LOGS_URL,
+      ai_gateway_token: "cfut_test_token",
+      proxy_password: PROXY,
+      version: 1,
+    }))
+    .run();
+  const pLegacy = {
+    enabled: true,
+    provider_type: "openai",
+    api_base: "https://legacy-other.example/v1",
+    keys: "k-legacy",
+    models: "m-legacy",
+    extra_body: "",
+    custom_headers: [],
+  };
+  const ok = await postSettings(env, [pOpenai, pGoogle, pLegacy]);
   assert.equal(ok.status, 200);
 
   const saved = await asJson(
