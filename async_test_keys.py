@@ -24,6 +24,7 @@ API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 PROVIDER_TYPE = "openai"  # 支援: 'openai', 'gemini', 'anthropic'
 EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例：'{"temperature": 0.7}'
 CUSTOM_HEADERS = []  # 选填，例：[{"key": "HTTP-Referer", "value": "https://example.com"}]
+TEST_PATH = ""  # 选填，覆盖测试请求路径，例："/v1/chat/completions" 或 "/v1beta/models/{model}:generateContent"
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
@@ -173,8 +174,13 @@ def extract_think_xml(text):
     return text, think
 
 
-def get_full_endpoint(api_base, provider_type, model):
+def get_full_endpoint(api_base, provider_type, model, test_path=""):
     base = api_base.rstrip("/")
+    custom = (test_path or "").strip()
+    if custom:
+        if not custom.startswith("/"):
+            custom = f"/{custom}"
+        return f"{base}{custom.replace('{model}', model)}"
     if provider_type == "openai":
         return f"{base}/chat/completions"
     elif provider_type == "gemini":
@@ -252,6 +258,7 @@ async def test_single_request(
     api_base,
     extra_body=None,
     custom_headers=None,
+    test_path="",
 ):
     headers = {"Content-Type": "application/json", "User-Agent": "claude-code/2.1.152"}
     if provider_type == "gemini":
@@ -274,7 +281,7 @@ async def test_single_request(
     sample_content = ""
     sample_thinking = ""
 
-    endpoint = get_full_endpoint(api_base, provider_type, model)
+    endpoint = get_full_endpoint(api_base, provider_type, model, test_path=test_path)
 
     try:
         async with session.post(
@@ -361,6 +368,7 @@ async def benchmark_model(
     dead_keys=None,
     extra_body=None,
     custom_headers=None,
+    test_path="",
 ):
     # 在发起请求前，再次检查当前 Key 是否已断状态
     # 应对并发情况：可能有 worker 已处理断点，此协程才刚被调度执行
@@ -384,6 +392,7 @@ async def benchmark_model(
         api_base=api_base,
         extra_body=extra_body,
         custom_headers=custom_headers,
+        test_path=test_path,
     )
 
     if success:
@@ -408,6 +417,7 @@ async def run_provider(
     extra_body=None,
     max_concurrency=None,
     custom_headers=None,
+    test_path="",
 ):
     concurrency = max_concurrency if max_concurrency is not None else MAX_CONCURRENCY
     global_start_time = time.perf_counter()
@@ -518,6 +528,7 @@ async def run_provider(
                     dead_keys=dead_keys,
                     extra_body=extra_body,
                     custom_headers=custom_headers,
+                    test_path=test_path,
                 )
 
                 # 熔断二次拦截：benchmark_model 入口检测到已死 Key，直接跳过，不写 results
@@ -817,8 +828,9 @@ async def main():
                 custom_headers = sanitize_custom_headers(
                     p.get("custom_headers"), origin=f"服务商 {pt} | {ab}"
                 )
+                tp = (p.get("test_path") or "").strip()
                 providers_to_run.append(
-                    (ab, pt, k_list, m_list, extra_body, mc, custom_headers)
+                    (ab, pt, k_list, m_list, extra_body, mc, custom_headers, tp)
                 )
 
         except Exception as e:
@@ -850,6 +862,7 @@ async def main():
                 local_extra,
                 None,
                 sanitize_custom_headers(CUSTOM_HEADERS),
+                TEST_PATH.strip(),
             )
         )
 
@@ -866,7 +879,7 @@ async def main():
             print(f"[Pages] 标记执行状态失败（不中断测试）: {e}")
 
     try:
-        for ab, pt, k_list, m_list, extra_body, mc, custom_headers in providers_to_run:
+        for ab, pt, k_list, m_list, extra_body, mc, custom_headers, tp in providers_to_run:
             await run_provider(
                 ab,
                 pt,
@@ -875,6 +888,7 @@ async def main():
                 extra_body,
                 max_concurrency=mc,
                 custom_headers=custom_headers,
+                test_path=tp,
             )
 
         print(f"\n{'=' * 50}\n全部服务商测试执行完毕！\n{'=' * 50}")

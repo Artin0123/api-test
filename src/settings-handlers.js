@@ -130,6 +130,8 @@ async function handlePostSettings(request, env) {
 
   const aliasError = validateProviderAliases(next.providers || []);
   if (aliasError) return json({ error: aliasError }, 400);
+  const testPathError = validateProviderTestPaths(next.providers || []);
+  if (testPathError) return json({ error: testPathError }, 400);
 
   const typeError = validateProviderTypes(next.providers || []);
   if (typeError) return json({ error: typeError }, 400);

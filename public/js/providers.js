@@ -368,6 +368,7 @@ function openEditor(index = -1) {
     dom.edModels.value = p.models || "";
     dom.edExtraBody.value = p.extra_body || "";
     dom.edAlias.value = p.alias || "";
+    dom.edTestPath.value = p.test_path || "";
     renderEditorHeaders(p.custom_headers);
     dom.edMaxConcurrency.value =
       p.max_concurrency != null ? String(p.max_concurrency) : "";
@@ -380,6 +381,7 @@ function openEditor(index = -1) {
     dom.edModels.value = "";
     dom.edExtraBody.value = "";
     dom.edAlias.value = "";
+    dom.edTestPath.value = "";
     renderEditorHeaders([]);
     dom.edMaxConcurrency.value = "";
   }
@@ -425,6 +427,7 @@ function canonicalProvider(p) {
     max_concurrency:
       item.max_concurrency != null ? Number(item.max_concurrency) : null,
     alias: typeof item.alias === "string" ? item.alias : "",
+    test_path: typeof item.test_path === "string" ? item.test_path : "",
   };
 }
 
@@ -440,6 +443,7 @@ function providersEqual(a, b) {
     ca.extra_body !== cb.extra_body ||
     ca.max_concurrency !== cb.max_concurrency ||
     ca.alias !== cb.alias ||
+    ca.test_path !== cb.test_path ||
     ca.custom_headers.length !== cb.custom_headers.length
   ) {
     return false;
@@ -524,6 +528,13 @@ async function saveEditor() {
   const alias = dom.edAlias.value.trim();
   // Omit empty alias so a provider without forwarding keeps its minimal shape.
   if (alias) entry.alias = alias;
+  const rawTestPath = dom.edTestPath.value.trim();
+  if (rawTestPath) {
+    if (/\s/.test(rawTestPath) || rawTestPath.includes("://")) {
+      return failValidation("测试路径只能填写相对路径（如 /v1/chat/completions），不能含空白或完整网址");
+    }
+    entry.test_path = rawTestPath.startsWith("/") ? rawTestPath : "/" + rawTestPath;
+  }
 
   if (
     index >= 0 &&

@@ -86,6 +86,7 @@ const dom = {
   edHeadersContainer: $("ed-headers-container"),
   edMaxConcurrency: $("ed-max-concurrency"),
   edAlias: $("ed-alias"),
+  edTestPath: $("ed-test-path"),
   edKeysHighlight: $("ed-keys-highlight"),
   edKeysSearch: $("ed-keys-search"),
   edKeysSearchClear: $("ed-keys-search-clear"),

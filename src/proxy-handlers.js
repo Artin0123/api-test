@@ -165,6 +165,12 @@ function testRequestFor(provider, model) {
       };
       break;
   }
+  const customPath =
+    typeof provider.test_path === "string" ? provider.test_path.trim() : "";
+  if (customPath) {
+    const normalized = customPath.startsWith("/") ? customPath : "/" + customPath;
+    req.path = normalized.replace(/\{model\}/g, encodeURIComponent(model));
+  }
   const extra = parseExtraBody(provider);
   if (extra) {
     req.body = { ...req.body, ...extra };

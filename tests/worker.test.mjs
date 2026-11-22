@@ -1825,3 +1825,52 @@ test("GET /api/proxy/state omits providers without alias and allows disabled pro
     assert.equal(res.status, 200, `${path} should allow disabled provider with alias`);
   }
 });
+
+test("custom test_path overrides proxy probe path and validates relative path format", async () => {
+  const env = makeEnv();
+  const bad = await postSettings(env, [
+    provider({ alias: "bad", keys: "k1", test_path: "https://evil.example/v1" }),
+  ]);
+  assert.equal(bad.status, 400);
+
+  const pOpenai = provider({
+    alias: "vercel",
+    api_base: "https://ai-gateway.vercel.sh",
+    keys: "k1",
+    test_path: "v1/chat/completions",
+  });
+  const pGemini = provider({
+    provider_type: "gemini",
+    alias: "g-root",
+    api_base: "https://generativelanguage.googleapis.com",
+    keys: "g1",
+    test_path: "/v1beta/models/{model}:generateContent",
+  });
+  const ok = await postSettings(env, [pOpenai, pGemini]);
+  assert.equal(ok.status, 200);
+
+  const saved = await asJson(
+    await request(env, "/api/settings", { headers: adminHeaders() }),
+  );
+  assert.equal(saved.data.settings.providers[0].test_path, "/v1/chat/completions");
+
+  const fpO = await fingerprintOf(env, pOpenai);
+  const [kO] = await getKeyRows(env, fpO);
+  gatewayCalls.length = 0;
+  await request(env, "/api/proxy/test", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp: fpO, id: kO.id, model: "gpt-4o" }),
+  });
+  assert.match(gatewayCalls[0].url, /\/custom-vercel\/v1\/chat\/completions$/);
+
+  const fpG = await fingerprintOf(env, pGemini);
+  const [kG] = await getKeyRows(env, fpG);
+  gatewayCalls.length = 0;
+  await request(env, "/api/proxy/test", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp: fpG, id: kG.id, model: "gemini-2.5-flash" }),
+  });
+  assert.match(gatewayCalls[0].url, /\/custom-g-root\/v1beta\/models\/gemini-2\.5-flash:generateContent$/);
+});

@@ -138,6 +138,11 @@ function normalizeProviderForStorage(p) {
     if (alias) out.alias = alias;
     else delete out.alias;
   }
+  if (typeof p.test_path === "string") {
+    const tp = p.test_path.trim();
+    if (tp) out.test_path = tp.startsWith("/") ? tp : "/" + tp;
+    else delete out.test_path;
+  }
   if (typeof p.keys === "string") {
     out.keys = normalizeKeysString(p.keys);
   }
@@ -266,6 +271,22 @@ function validateProviderAliases(providers) {
       return `providers[${i}].alias "${alias}" 与其他服务商重复`;
     }
     seen.add(alias);
+  }
+  return null;
+}
+
+function validateProviderTestPaths(providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    const tp = p.test_path;
+    if (tp === undefined || tp === null || tp === "") continue;
+    if (typeof tp !== "string") {
+      return "providers[" + i + "].test_path 必须是字符串";
+    }
+    if (/\s/.test(tp) || tp.includes("://")) {
+      return "providers[" + i + "].test_path 格式不正确：只能填相对路径";
+    }
   }
   return null;
 }
