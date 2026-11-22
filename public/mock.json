@@ -4,6 +4,7 @@
       {
         "enabled": true,
         "provider_type": "openai",
+        "test_path": "/v1/chat/completions",
         "alias": "dashscope",
         "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "keys": "sk-aaaaaaaaaaaaaaaa\nsk-bbbbbbbbbbbbbbbb\nsk-cccccccccccccccc\nsk-dddddddddddddddd\nsk-eeeeeeeeeeeeeeee\nsk-ffffffffffffffff\nsk-gggggggggggggggg\nsk-hhhhhhhhhhhhhhhh\nsk-iiiiiiiiiiiiiiii\nsk-jjjjjjjjjjjjjjjj\nsk-kkkkkkkkkkkkkkkk",
@@ -15,6 +16,7 @@
       {
         "enabled": false,
         "provider_type": "anthropic",
+        "test_path": "/v1/messages",
         "alias": "claude-off",
         "api_base": "https://api.anthropic.com/v1",
         "keys": "sk-ant-mockkey-1111111111111111\nsk-ant-mockkey-2222222222222222",
@@ -22,7 +24,7 @@
       },
       {
         "enabled": false,
-        "provider_type": "gemini",
+        "provider_type": "google",
         "api_base": "https://generativelanguage.googleapis.com/v1beta",
         "keys": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "models": "gemini-2.5-pro,gemini-2.0-flash"

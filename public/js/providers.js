@@ -354,6 +354,17 @@ function exportEditorKeys() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function syncEditorTestPathVisibility() {
+  if (!dom.edTestPathField) return;
+  dom.edTestPathField.classList.toggle(
+    "hidden",
+    dom.edProviderType.value === "google",
+  );
+}
+if (dom.edProviderType) {
+  dom.edProviderType.addEventListener("change", syncEditorTestPathVisibility);
+}
+
 function openEditor(index = -1) {
   dom.editorIndex.value = String(index);
   dom.editorError.textContent = "";
@@ -399,6 +410,7 @@ function openEditor(index = -1) {
   // Sync line numbers after values are populated
   syncLineNums(dom.edKeys);
   syncLineNums(dom.edModels);
+  syncEditorTestPathVisibility();
   syncLineNums(dom.edExtraBody);
   syncKeysHighlight();
 }
@@ -528,8 +540,9 @@ async function saveEditor() {
   const alias = dom.edAlias.value.trim();
   // Omit empty alias so a provider without forwarding keeps its minimal shape.
   if (alias) entry.alias = alias;
-  const rawTestPath = dom.edTestPath.value.trim();
-  if (rawTestPath) {
+  if (pType !== "google") {
+    const rawTestPath = dom.edTestPath.value.trim();
+    if (!rawTestPath) return failValidation("请填写测试路径");
     if (/\s/.test(rawTestPath) || rawTestPath.includes("://")) {
       return failValidation("测试路径只能填写相对路径（如 /v1/chat/completions），不能含空白或完整网址");
     }

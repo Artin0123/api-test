@@ -1,7 +1,7 @@
 // src/proxy-handlers.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const SAMPLE_PATHS = {
   openai: "/chat/completions",
-  gemini: "/models/{model}:streamGenerateContent?alt=sse",
+  google: "/models/{model}:streamGenerateContent?alt=sse",
   anthropic: "/messages",
 };
 
@@ -128,21 +128,28 @@ function gatewayLogsUrl(settings, alias = "") {
 function testRequestFor(provider, model) {
   if (!model) return null;
   let req;
+  const baseTrimmed = String(provider.api_base || "").trim().replace(/\/+$/, "");
+  const customPath =
+    typeof provider.test_path === "string" ? provider.test_path.trim() : "";
   switch (provider.provider_type) {
-    case "gemini":
+    case "google":
       req = {
         model,
-        path: `/models/${encodeURIComponent(model)}:generateContent`,
+        path: baseTrimmed.endsWith("/v1beta")
+          ? `/models/${encodeURIComponent(model)}:generateContent`
+          : `/v1beta/models/${encodeURIComponent(model)}:generateContent`,
         body: {
           contents: [{ parts: [{ text: "only reply 1." }] }],
           generationConfig: { maxOutputTokens: 8 },
         },
       };
       break;
-    case "anthropic":
+    case "anthropic": {
+      if (!customPath) return null;
+      const normalized = customPath.startsWith("/") ? customPath : "/" + customPath;
       req = {
         model,
-        path: "/messages",
+        path: normalized.replace(/\{model\}/g, encodeURIComponent(model)),
         body: {
           model,
           max_tokens: 8,
@@ -151,11 +158,14 @@ function testRequestFor(provider, model) {
         },
       };
       break;
+    }
     case "openai":
-    default:
+    default: {
+      if (!customPath) return null;
+      const normalized = customPath.startsWith("/") ? customPath : "/" + customPath;
       req = {
         model,
-        path: "/chat/completions",
+        path: normalized.replace(/\{model\}/g, encodeURIComponent(model)),
         body: {
           model,
           messages: [{ role: "user", content: "only reply 1." }],
@@ -164,12 +174,7 @@ function testRequestFor(provider, model) {
         },
       };
       break;
-  }
-  const customPath =
-    typeof provider.test_path === "string" ? provider.test_path.trim() : "";
-  if (customPath) {
-    const normalized = customPath.startsWith("/") ? customPath : "/" + customPath;
-    req.path = normalized.replace(/\{model\}/g, encodeURIComponent(model));
+    }
   }
   const extra = parseExtraBody(provider);
   if (extra) {

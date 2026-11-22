@@ -88,7 +88,7 @@ function parseExtraBody(provider) {
 
 function applyProviderAuth(headers, providerType, apiKey) {
   switch (providerType) {
-    case "gemini":
+    case "google":
       headers.set("x-goog-api-key", apiKey);
       break;
     case "anthropic":

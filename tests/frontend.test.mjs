@@ -310,7 +310,7 @@ test("editor modal marks required fields, places error left of save button, and 
 
   const reqMatches = [...editorMarkup.matchAll(/<span class="field-label-title"[^>]*>([\s\S]*?)<span[^>]*class="field-required"[^>]*>\*<\/span\s*>/g)];
   const reqTitles = reqMatches.map((m) => m[1].trim());
-  assert.deepEqual(reqTitles, ["Provider Type", "API Base URL", "API Keys", "Models"]);
+  assert.deepEqual(reqTitles, ["Provider Type", "API Base URL", "测试路径", "API Keys", "Models"]);
 
   const footerMatch = editorMarkup.match(/<div class="modal-footer modal-footer-stack">([\s\S]*?)<\/div>\s*<\/section>/);
   assert.ok(footerMatch, "editor modal-footer stack not found");
@@ -357,7 +357,7 @@ test("editor and settings modals replace inline hint text with info tooltips and
 
   const editorTips = [...editorMatch[0].matchAll(/class="info-tooltip"/g)];
   const settingsTips = [...settingsMatch[0].matchAll(/class="info-tooltip"/g)];
-  assert.equal(editorTips.length, 8, "editor modal should have 8 info tooltips");
+  assert.equal(editorTips.length, 7, "editor modal should have 7 info tooltips");
   assert.equal(settingsTips.length, 2, "settings modal should have 2 info tooltips");
   assert.match(editorMatch[0], /id="ed-extra-body-status"/, "Extra Body live JSON status must stay intact");
 
@@ -579,8 +579,9 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
   assert.match(proxyActionsJs, /loadProxyState\(\{ preserveOrder: true \}\)/);
   assert.match(proxyActionsJs, /beforeProvider\.test_model\s*=\s*result\.model;[\s\S]*renderProxyToolbar\(\);/);
   assert.doesNotMatch(proxyActionsJs, /请先在「来源设定」填写 Models/);
-  assert.match(html, /id="ed-test-path"[^>]*input-mono/);
-  assert.match(read("js/providers.js"), /dom\.edTestPath\.value/);
+  assert.match(html, /<option value="google">google<\/option>/);
+  assert.match(html, /id="ed-test-path" class="input-text"/);
+  assert.match(read("js/providers.js"), /syncEditorTestPathVisibility/);
   assert.match(proxyJs, /data-proxy-test="\$\{escAttr\(id\)\}"[^>]*\$\{cardTestTitleAttr\}/);
   assert.match(proxyJs, /data-proxy-disable="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);
   assert.match(proxyJs, /data-proxy-recover="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);

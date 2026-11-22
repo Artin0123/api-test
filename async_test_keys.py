@@ -21,10 +21,10 @@ MODELS_FILE_PATH = r"models_list\models.txt"
 OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
 API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-PROVIDER_TYPE = "openai"  # 支援: 'openai', 'gemini', 'anthropic'
+PROVIDER_TYPE = "openai"  # 支援: 'openai', 'google', 'anthropic'
 EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例：'{"temperature": 0.7}'
 CUSTOM_HEADERS = []  # 选填，例：[{"key": "HTTP-Referer", "value": "https://example.com"}]
-TEST_PATH = ""  # 选填，覆盖测试请求路径，例："/v1/chat/completions" 或 "/v1beta/models/{model}:generateContent"
+TEST_PATH = "/v1/chat/completions"  # openai/anthropic 必填，例："/v1/chat/completions" 或 "/v1/messages"
 
 # ─── 2. 全局执行参数 (云端端与本地端皆会套用) ───
 # 这些参数无论在本地运行还是云端运行都会生效，用来控制程式的运作效能与测试基准。
@@ -176,18 +176,16 @@ def extract_think_xml(text):
 
 def get_full_endpoint(api_base, provider_type, model, test_path=""):
     base = api_base.rstrip("/")
+    if provider_type == "google":
+        if base.endswith("/v1beta"):
+            return f"{base}/models/{model}:generateContent"
+        return f"{base}/v1beta/models/{model}:generateContent"
     custom = (test_path or "").strip()
-    if custom:
-        if not custom.startswith("/"):
-            custom = f"/{custom}"
-        return f"{base}{custom.replace('{model}', model)}"
-    if provider_type == "openai":
-        return f"{base}/chat/completions"
-    elif provider_type == "gemini":
-        return f"{base}/models/{model}:generateContent"
-    elif provider_type == "anthropic":
-        return f"{base}/messages"
-    return base
+    if not custom:
+        raise ValueError(f"provider {provider_type} | {base} 缺少 test_path")
+    if not custom.startswith("/"):
+        custom = f"/{custom}"
+    return f"{base}{custom.replace('{model}', model)}"
 
 
 def build_payload(provider_type, model, extra_body=None):
@@ -198,7 +196,7 @@ def build_payload(provider_type, model, extra_body=None):
             "max_tokens": MAX_OUTPUT_TOKENS,
             "stream": False,
         }
-    elif provider_type == "gemini":
+    elif provider_type == "google":
         payload = {
             "contents": [{"role": "user", "parts": [{"text": PROMPT}]}],
             "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS},
@@ -261,7 +259,7 @@ async def test_single_request(
     test_path="",
 ):
     headers = {"Content-Type": "application/json", "User-Agent": "claude-code/2.1.152"}
-    if provider_type == "gemini":
+    if provider_type == "google":
         headers["x-goog-api-key"] = key
     elif provider_type == "anthropic":
         headers["x-api-key"] = key
@@ -306,7 +304,7 @@ async def test_single_request(
                     sample_thinking = (reasoning or xml_think).strip()
                     has_thinking = bool(sample_thinking)
                     has_content = bool(sample_content)
-                elif provider_type == "gemini":
+                elif provider_type == "google":
                     candidates = data.get("candidates", [])
                     for c in candidates:
                         parts = c.get("content", {}).get("parts", [])

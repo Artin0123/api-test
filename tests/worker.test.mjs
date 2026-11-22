@@ -208,6 +208,7 @@ function provider(overrides = {}) {
     models: "m1",
     extra_body: "",
     custom_headers: [],
+    ...(overrides.provider_type === "google" ? {} : { test_path: "/chat/completions" }),
     ...overrides,
   };
 }
@@ -609,12 +610,12 @@ test("extra body, custom headers, cookie and caller cf-aig-* handling", async ()
   assert.equal(parsed.model, "m1");
 });
 
-test("gemini and anthropic use their own auth headers", async () => {
+test("google and anthropic use their own auth headers", async () => {
   const env = makeEnv();
   await postSettings(env, [
     provider({
       alias: "gem",
-      provider_type: "gemini",
+      provider_type: "google",
       api_base: `${upstreamBase()}/v1beta`,
       keys: "g-key",
       models: "gemini-2.5-pro",
@@ -1316,7 +1317,7 @@ test("settings validate Gateway Logs URL and proxy/test require Gateway & alias 
     models: "m-oa",
   });
   const gemAliasProv = provider({
-    provider_type: "gemini",
+    provider_type: "google",
     alias: "gem",
     api_base: `${upstreamBase()}/v1beta`,
     keys: "k-gem",
@@ -1826,8 +1827,13 @@ test("GET /api/proxy/state omits providers without alias and allows disabled pro
   }
 });
 
-test("custom test_path overrides proxy probe path and validates relative path format", async () => {
+test("custom test_path is required for openai/anthropic and google defaults to v1beta", async () => {
   const env = makeEnv();
+  const missing = await postSettings(env, [
+    provider({ alias: "missing", test_path: "" }),
+  ]);
+  assert.equal(missing.status, 400);
+
   const bad = await postSettings(env, [
     provider({ alias: "bad", keys: "k1", test_path: "https://evil.example/v1" }),
   ]);
@@ -1839,20 +1845,21 @@ test("custom test_path overrides proxy probe path and validates relative path fo
     keys: "k1",
     test_path: "v1/chat/completions",
   });
-  const pGemini = provider({
-    provider_type: "gemini",
+  const pGoogle = provider({
+    provider_type: "google",
     alias: "g-root",
     api_base: "https://generativelanguage.googleapis.com",
     keys: "g1",
-    test_path: "/v1beta/models/{model}:generateContent",
+    test_path: "/ignored/path",
   });
-  const ok = await postSettings(env, [pOpenai, pGemini]);
+  const ok = await postSettings(env, [pOpenai, pGoogle]);
   assert.equal(ok.status, 200);
 
   const saved = await asJson(
     await request(env, "/api/settings", { headers: adminHeaders() }),
   );
   assert.equal(saved.data.settings.providers[0].test_path, "/v1/chat/completions");
+  assert.equal("test_path" in saved.data.settings.providers[1], false);
 
   const fpO = await fingerprintOf(env, pOpenai);
   const [kO] = await getKeyRows(env, fpO);
@@ -1864,7 +1871,7 @@ test("custom test_path overrides proxy probe path and validates relative path fo
   });
   assert.match(gatewayCalls[0].url, /\/custom-vercel\/v1\/chat\/completions$/);
 
-  const fpG = await fingerprintOf(env, pGemini);
+  const fpG = await fingerprintOf(env, pGoogle);
   const [kG] = await getKeyRows(env, fpG);
   gatewayCalls.length = 0;
   await request(env, "/api/proxy/test", {

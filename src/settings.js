@@ -138,7 +138,9 @@ function normalizeProviderForStorage(p) {
     if (alias) out.alias = alias;
     else delete out.alias;
   }
-  if (typeof p.test_path === "string") {
+  if (out.provider_type === "google") {
+    delete out.test_path;
+  } else if (typeof p.test_path === "string") {
     const tp = p.test_path.trim();
     if (tp) out.test_path = tp.startsWith("/") ? tp : "/" + tp;
     else delete out.test_path;
@@ -191,7 +193,7 @@ function validateProviderDuplicates(providers) {
   return null;
 }
 
-const PROVIDER_TYPES = new Set(["openai", "gemini", "anthropic"]);
+const PROVIDER_TYPES = new Set(["openai", "google", "anthropic"]);
 
 function validateProviderTypes(providers) {
   for (let i = 0; i < providers.length; i++) {
@@ -279,10 +281,10 @@ function validateProviderTestPaths(providers) {
   for (let i = 0; i < providers.length; i++) {
     const p = providers[i];
     if (!p || typeof p !== "object") continue;
+    if (p.provider_type === "google") continue;
     const tp = p.test_path;
-    if (tp === undefined || tp === null || tp === "") continue;
-    if (typeof tp !== "string") {
-      return "providers[" + i + "].test_path 必须是字符串";
+    if (typeof tp !== "string" || !tp.trim()) {
+      return "providers[" + i + "].test_path 不能为空";
     }
     if (/\s/.test(tp) || tp.includes("://")) {
       return "providers[" + i + "].test_path 格式不正确：只能填相对路径";
