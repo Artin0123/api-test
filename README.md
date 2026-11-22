@@ -116,7 +116,7 @@ npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
 
 使用步骤：
 
-1. **配置 Cloudflare AI Gateway Custom Provider**：在 Cloudflare AI Gateway 仪表板将每个要转发的服务商登记为 **Custom Provider**（无需在 Gateway 填写 Key），`base_url` 填该服务商的 `api_base`，并将 Custom Provider 的 **`slug` 设成与下方「转发别名」相同的名称**。
+1. **配置 Cloudflare AI Gateway Custom Provider**：在 Cloudflare AI Gateway 仪表板的 **Provider Keys**（繁中界面侧栏为「供應商金鑰」、页面标题为「提供者金鑰」，路径 `https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/integrations`）页面下，将每个要转发的服务商登记为 **Custom Provider**（无需在 Gateway 填写 Key），`base_url` 填该服务商的 `api_base`，并将 Custom Provider 的 **`slug` 设成与下方「转发别名」相同的名称**。
 2. **配置转发别名**：在「来源设定」编辑服务商并填写「转发别名」（仅限小写英文字母、数字与连字号，全站不可重复；同一 `provider_type + api_base` 不可重复建卡）。设置后卡片标题显示别名；未设别名的服务商不会显示在「轮询转发」清单中，也无法转发或手动测试。已设别名但在「来源设定」停用的服务商仍会保留在「轮询转发」清单中供查看状态，其操作按钮会停用并提示原因。
 3. **管理与即时测试（「轮询转发」分页）**：
    - 工具列可切换服务商（显示为「别名 - API 格式」）、用网址右侧复制按钮复制转发网址、查看「密钥状态」独立绿/红半透明胶囊（每家服务商上限共 999 支密钥，悬停显示有效/无效数量）、从下拉选单（读取自来源设定的 Models）选择探测模型，以及执行「测试有效密钥」／「测试无效密钥」／「恢复所有密钥」（恢复所有密钥不额外弹出提示）。
