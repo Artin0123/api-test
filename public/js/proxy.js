@@ -68,7 +68,7 @@ async function syncProxyPlainKeys(proxyProviders) {
   state.proxyPlainKeys = map;
 }
 
-async function loadProxyState() {
+async function loadProxyState({ preserveOrder = false } = {}) {
   const reqId = ++state.reqSeq.proxy;
   if (isKvStorageMode()) {
     dom.proxyLoading.classList.add("hidden");
@@ -114,7 +114,7 @@ async function loadProxyState() {
       visibleProviders[0] ||
       null;
     state.proxySelected = active ? active.fp : null;
-    renderProxyState(data);
+    renderProxyState(data, { preserveOrder });
     return true;
   } catch (err) {
     if (reqId !== state.reqSeq.proxy) return false;
@@ -231,7 +231,7 @@ function proxyTimeTitle(ms) {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 }
 
-function renderProxyState(data) {
+function renderProxyState(data, { preserveOrder = false } = {}) {
   const providers = proxyProviders();
   if (!data.proxy_enabled) {
     setProxyNotice(data.proxy_message || "转发功能目前停用", "error");
@@ -262,7 +262,7 @@ function renderProxyState(data) {
   dom.proxyEmpty.classList.add("hidden");
   dom.proxyToolbar.classList.remove("hidden");
   renderProxyToolbar();
-  renderProxyKeyCards();
+  renderProxyKeyCards({ preserveOrder });
 }
 
 /** The probe model options come from the provider's own Models field in 来源设定,
@@ -582,7 +582,7 @@ function renderProxyPagination(totalPages) {
   dom.proxyPagination.classList.remove("hidden");
 }
 
-function renderProxyKeyCards() {
+function renderProxyKeyCards({ preserveOrder = false } = {}) {
   const p = selectedProxyProvider();
   if (!p) return;
   const keys = p.keys || [];
@@ -605,14 +605,28 @@ function renderProxyKeyCards() {
     Math.max(1, Number(state.proxyPage) || 1),
   );
   const plainList = state.proxyPlainKeys.get(p.fp) || [];
-  // Sort active healthy keys first, then active keys with fail_count > 0, then
-  // disabled keys, keeping the original 来源设定 order within each tier.
-  const ordered = keys
-    .map((k, idx) => ({ k, idx, candidate: plainList[idx] || "" }))
-    .sort((a, b) => {
-      const tier = (k) => (k.disabled ? 2 : Number(k.fail_count || 0) > 0 ? 1 : 0);
-      return tier(a.k) - tier(b.k) || a.idx - b.idx;
-    });
+  const keepSnapshot =
+    preserveOrder &&
+    state.proxyCardOrder &&
+    state.proxyCardOrder.fp === p.fp &&
+    state.proxyCardOrder.indices.length === keys.length;
+  // Sort active keys before disabled ones on fresh loads, keeping fail_count > 0
+  // active keys in their original 来源设定 order, and keep card positions fixed
+  // when reloading right after manual/batch tests.
+  const ordered = keepSnapshot
+    ? state.proxyCardOrder.indices.map((idx) => ({
+        k: keys[idx],
+        idx,
+        candidate: plainList[idx] || "",
+      }))
+    : keys
+        .map((k, idx) => ({ k, idx, candidate: plainList[idx] || "" }))
+        .sort((a, b) => {
+          const da = a.k.disabled ? 1 : 0;
+          const db = b.k.disabled ? 1 : 0;
+          return da - db || a.idx - b.idx;
+        });
+  state.proxyCardOrder = { fp: p.fp, indices: ordered.map((item) => item.idx) };
   const startIdx = (state.proxyPage - 1) * PROXY_PAGE_SIZE;
   const pageKeys = ordered.slice(startIdx, startIdx + PROXY_PAGE_SIZE);
   dom.proxyKeyGrid.innerHTML = pageKeys

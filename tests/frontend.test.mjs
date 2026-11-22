@@ -569,12 +569,14 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
   assert.match(proxyJs, /String\(p\.alias \|\| ""\)\.trim\(\)/);
   assert.doesNotMatch(proxyJs, /尚未设定转发别名|填写转发别名（alias）/);
   assert.match(proxyJs, /dom\.proxyTestModel\.disabled\s*=\s*!enabled;\s*renderProxyModelSelect\(p\);/);
-  assert.match(proxyJs, /tier\(a\.k\)\s*-\s*tier\(b\.k\)\s*\|\|\s*a\.idx\s*-\s*b\.idx/);
+  assert.match(proxyJs, /const da = a\.k\.disabled \? 1 : 0;[\s\S]*return da - db \|\| a\.idx - b\.idx;/);
+  assert.match(proxyJs, /preserveOrder &&[\s\S]*state\.proxyCardOrder/);
   assert.doesNotMatch(proxyJs, /此服务商已停用，请先在「来源设定」启用/);
   assert.doesNotMatch(proxyJs, /来源设定未填 Models|请先在「来源设定」填写 Models/);
 
   const proxyActionsJs = read("js/proxy-actions.js");
   assert.match(proxyActionsJs, /await runOne\(keys\[0\]\);[\s\S]*Promise\.all\(/);
+  assert.match(proxyActionsJs, /loadProxyState\(\{ preserveOrder: true \}\)/);
   assert.match(proxyActionsJs, /beforeProvider\.test_model\s*=\s*result\.model;[\s\S]*renderProxyToolbar\(\);/);
   assert.doesNotMatch(proxyActionsJs, /请先在「来源设定」填写 Models/);
   assert.match(proxyJs, /data-proxy-test="\$\{escAttr\(id\)\}"[^>]*\$\{cardTestTitleAttr\}/);

@@ -305,7 +305,7 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
   }
 
   if (!fromBatch && ((result && result.disabled) || (result && result.ok && wasDirty))) {
-    await loadProxyState();
+    await loadProxyState({ preserveOrder: true });
   }
   return result;
 }
@@ -400,7 +400,7 @@ async function runProxyBatch(mode) {
     updateProxyCardButtonsDisabled();
   }
 
-  await loadProxyState();
+  await loadProxyState({ preserveOrder: true });
   showProxyToast(`测试完成，${ok} 个成功，${fail} 个失败。`, {
     type: fail > 0 ? "fail" : "ok",
     duration: fail > 0 ? PROXY_TOAST_FAIL_MS : PROXY_TOAST_OK_MS,

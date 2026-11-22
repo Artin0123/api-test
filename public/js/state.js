@@ -18,6 +18,7 @@ const state = {
   proxy: null,
   proxySelected: null, // currently selected provider fp
   proxyPage: 1,
+  proxyCardOrder: null, // { fp, indices } snapshot kept fixed during test runs
   proxyBusy: false,
   proxyPlainKeys: new Map(), // fp -> plaintext keys for copy buttons
   proxyTestingKeys: new Set(), // `${fp}:${id}` keys currently testing individually
