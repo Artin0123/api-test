@@ -53,13 +53,21 @@ async function logout() {
   } catch {}
   state.settings = null;
   state.storageBackend = "d1";
+  state.selectedProviders.clear();
   state.deadKeys = [];
+  state.dkSelectMode = false;
+  state.dkSelected.clear();
+  state.dkPendingDelete = null;
   state.proxy = null;
   state.proxySelected = null;
   state.proxyPage = 1;
   state.proxyCardOrder = null;
+  state.proxyBusy = false;
   state.proxyPlainKeys.clear();
   if (typeof closeOpenCustomSelect === "function") closeOpenCustomSelect();
+  while (state.modalStack.length) {
+    closeModal(state.modalStack[state.modalStack.length - 1]);
+  }
   state.proxyDisablingKeys.clear();
   state.proxyTestingKeys.clear();
   state.proxyRecoveringKeys.clear();
