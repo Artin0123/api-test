@@ -441,8 +441,15 @@ function bindEvents() {
 async function initApp() {
   // Apply current theme icon
   applyTheme(getTheme());
-  // Load config tab (default)
+  // Always load settings/config first, then refresh the active tab if not config.
   await loadConfig();
+  const activeBtn = Array.from(dom.tabBtns).find((b) =>
+    b.classList.contains("active"),
+  );
+  const activeTab = activeBtn?.dataset.tab || "config";
+  if (activeTab !== "config") {
+    switchTab(activeTab);
+  }
 }
 
 async function bootstrap() {

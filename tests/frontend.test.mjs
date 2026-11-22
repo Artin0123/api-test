@@ -577,6 +577,8 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
   const proxyActionsJs = read("js/proxy-actions.js");
   assert.match(proxyActionsJs, /modelChanged[\s\S]*await runOne\(keys\[0\]\);[\s\S]*Promise\.all\(/);
   assert.match(proxyActionsJs, /loadProxyState\(\{ preserveOrder: true \}\)/);
+  assert.match(read("js/auth.js"), /state\.proxySelected\s*=\s*null;[\s\S]*state\.proxyCardOrder\s*=\s*null;/);
+  assert.match(read("app.js"), /if \(activeTab !== "config"\)\s*\{\s*switchTab\(activeTab\);\s*\}/);
   assert.match(proxyActionsJs, /beforeProvider\.test_model\s*=\s*result\.model;[\s\S]*renderProxyToolbar\(\);/);
   assert.doesNotMatch(proxyActionsJs, /请先在「来源设定」填写 Models/);
   assert.match(html, /<option value="google">google<\/option>/);
