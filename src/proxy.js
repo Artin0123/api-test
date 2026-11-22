@@ -432,9 +432,6 @@ async function handleProxy(request, env, url) {
     (p) => p && typeof p.alias === "string" && p.alias === alias,
   );
   if (!provider) return json({ error: "Unknown proxy alias" }, 404);
-  if (provider.enabled === false) {
-    return json({ error: "Provider is disabled" }, 503);
-  }
 
   const upstream = upstreamFor(settings, provider);
   if (!upstream) {

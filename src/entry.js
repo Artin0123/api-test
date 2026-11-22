@@ -37,9 +37,6 @@ const ROUTES = {
   "POST /api/proxy/recover": handleProxyRecover,
   "POST /api/proxy/disable": handleProxyDisable,
   "POST /api/proxy/test-model": handleProxyTestModel,
-  "GET /api/storage/export": handleStorageExport,
-  "POST /api/storage/migrate": handleStorageMigrate,
-  "POST /api/storage/restore": handleStorageRestore,
 };
 
 /**

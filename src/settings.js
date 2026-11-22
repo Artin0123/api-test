@@ -129,7 +129,7 @@ function normalizeKeysString(raw) {
   return splitUniqueDelimited(raw, "\n").join("\n");
 }
 
-/** Normalize keys, alias, and models formatting and drop removed legacy proxy fields. */
+/** Normalize keys, alias, and models formatting for storage. */
 function normalizeProviderForStorage(p) {
   if (!p || typeof p !== "object") return p;
   const out = { ...p };
@@ -144,7 +144,6 @@ function normalizeProviderForStorage(p) {
   if (typeof p.models === "string") {
     out.models = normalizeModelsString(p.models);
   }
-  delete out.gateway_provider;
   return out;
 }
 
@@ -187,9 +186,6 @@ function validateProviderDuplicates(providers) {
   return null;
 }
 
-// Only these three provider families are supported. `ollama` was removed on
-// purpose: its auth header and payload shape differ enough that keeping it
-// around produced a half-supported format with no data to migrate.
 const PROVIDER_TYPES = new Set(["openai", "gemini", "anthropic"]);
 
 function validateProviderTypes(providers) {

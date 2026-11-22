@@ -188,9 +188,6 @@ async function findProxyProviderByFp(kv, fp) {
 
 function proxyProviderActionError(provider) {
   if (!provider) return json({ error: "Not Found" }, 404);
-  if (provider.enabled === false) {
-    return json({ error: "此服务商已停用，请先在「来源设定」启用" }, 400);
-  }
   const alias = typeof provider.alias === "string" ? provider.alias.trim() : "";
   if (!alias) {
     return json(
@@ -270,10 +267,7 @@ async function handleProxyTest(request, env) {
       : "";
   const testModel = requestedModel || savedModel;
   if (!testModel) {
-    return json(
-      { error: "尚未设定测试模型；请先在「来源设定」填写 Models 或指定测试模型" },
-      400,
-    );
+    return json({ error: "尚未设定测试模型" }, 400);
   }
 
   const probe = testRequestFor(provider, testModel);

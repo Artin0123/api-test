@@ -12,12 +12,9 @@ function normalizeErrorCode(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** error_detail is deduped per fp + error_code (falling back to provider_host
- *  for legacy records without fp) — stored only once per group. */
+/** error_detail is deduped per fp + error_code — stored only once per group. */
 function deadKeyScope(rec) {
-  return typeof rec?.fp === "string" && rec.fp.trim()
-    ? rec.fp.trim()
-    : rec?.provider_host || "";
+  return typeof rec?.fp === "string" ? rec.fp.trim() : "";
 }
 
 function sameDedupGroup(a, b) {
@@ -82,12 +79,10 @@ function areErrorDetailsEqual(a, b) {
   return true;
 }
 
-/** Build lookup sets of configured keys keyed by card fingerprint `fp`, plus a
- *  host fallback for pre-P1 dead_keys records that were created without `fp`. */
+/** Build lookup sets of configured keys keyed by card fingerprint `fp`. */
 async function configuredKeysIndex(providers) {
   const byFp = new Map();
-  const byHost = new Map();
-  for (const { provider: p, apiBase, fp } of await providerFpEntries(providers)) {
+  for (const { provider: p, fp } of await providerFpEntries(providers)) {
     const keys = providerKeys(p);
     let fpSet = byFp.get(fp);
     if (!fpSet) {
@@ -95,19 +90,8 @@ async function configuredKeysIndex(providers) {
       byFp.set(fp, fpSet);
     }
     for (const k of keys) fpSet.add(k);
-    try {
-      const host = new URL(apiBase).hostname;
-      if (host) {
-        let hostSet = byHost.get(host);
-        if (!hostSet) {
-          hostSet = new Set();
-          byHost.set(host, hostSet);
-        }
-        for (const k of keys) hostSet.add(k);
-      }
-    } catch {}
   }
-  return { byFp, byHost };
+  return byFp;
 }
 
 /** Drop dead_keys entries whose card (fp) was deleted or whose key was removed
@@ -115,16 +99,14 @@ async function configuredKeysIndex(providers) {
 async function pruneDeadKeysForSettings(rawDeadKeys, providers) {
   const list = parseJsonOrNull(rawDeadKeys);
   if (!Array.isArray(list) || !list.length) return null;
-  const { byFp, byHost } = await configuredKeysIndex(providers);
+  const byFp = await configuredKeysIndex(providers);
   const kept = [];
   const removed = [];
   for (const r of list) {
     if (!r || typeof r !== "object") continue;
     const key = typeof r.api_key === "string" ? r.api_key.trim() : "";
     const recFp = typeof r.fp === "string" ? r.fp.trim() : "";
-    const configured = recFp
-      ? !!(key && byFp.get(recFp)?.has(key))
-      : !!(key && byHost.get(r.provider_host)?.has(key));
+    const configured = !!(recFp && key && byFp.get(recFp)?.has(key));
     if (configured) kept.push(r);
     else removed.push(r);
   }
@@ -169,11 +151,10 @@ async function syncDeadKeysFromResults(
     !!settingsParsed &&
     typeof settingsParsed === "object" &&
     !Array.isArray(settingsParsed);
-  const { byFp, byHost } = settingsAvailable
+  const byFp = settingsAvailable
     ? await configuredKeysIndex(settingsParsed.providers)
-    : { byFp: new Map(), byHost: new Map() };
+    : new Map();
   const configuredKeysForFp = byFp.get(fp) || new Set();
-  const configuredKeysForHost = byHost.get(provider_host) || new Set();
 
   const recovered = new Set(
     (Array.isArray(validKeys) ? validKeys : [])
@@ -203,51 +184,19 @@ async function syncDeadKeysFromResults(
 
   const keep = [];
   const dropped = [];
-  let fpMigrated = false;
   for (const r of list) {
     if (!r) continue;
     const key = typeof r.api_key === "string" ? r.api_key.trim() : "";
     const recFp = typeof r.fp === "string" ? r.fp.trim() : "";
-    if (recFp) {
-      if (recFp !== fp) {
-        keep.push(r);
-        continue;
-      }
-      const isRecovered = key && recovered.has(key);
-      const isRemovedFromSettings =
-        settingsAvailable && (!key || !configuredKeysForFp.has(key));
-      if (isRecovered || isRemovedFromSettings) dropped.push(r);
-      else keep.push(r);
-      continue;
-    }
-
-    // Legacy record without `fp`: leave it untouched if it belongs to another
-    // live card on the same host; otherwise reconcile under this card and stamp `fp`.
-    if (r.provider_host !== provider_host) {
-      keep.push(r);
-      continue;
-    }
-    const belongsToOtherCard =
-      settingsAvailable &&
-      key &&
-      configuredKeysForHost.has(key) &&
-      !configuredKeysForFp.has(key) &&
-      !recovered.has(key) &&
-      !invMap.has(key);
-    if (belongsToOtherCard) {
+    if (recFp !== fp) {
       keep.push(r);
       continue;
     }
     const isRecovered = key && recovered.has(key);
     const isRemovedFromSettings =
       settingsAvailable && (!key || !configuredKeysForFp.has(key));
-    if (isRecovered || isRemovedFromSettings) {
-      dropped.push(r);
-    } else {
-      r.fp = fp;
-      fpMigrated = true;
-      keep.push(r);
-    }
+    if (isRecovered || isRemovedFromSettings) dropped.push(r);
+    else keep.push(r);
   }
   if (dropped.length) rebalanceErrorDetail(dropped, keep);
 
@@ -348,7 +297,7 @@ async function syncDeadKeysFromResults(
   }
 
   const updated = codeUpdates + detailUpdates;
-  if (added || removed || updated || fpMigrated) {
+  if (added || removed || updated) {
     await kv.put(DEAD_KEYS_KEY, JSON.stringify(listNext));
   }
   return { added, removed, updated };

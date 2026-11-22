@@ -454,9 +454,7 @@ async function recoverAllProxyKeys() {
   if (state.proxyBusy) return;
   const currentProvider = selectedProxyProvider();
   if (!currentProvider) return;
-  const enabled =
-    !!(state.proxy && state.proxy.proxy_enabled) &&
-    currentProvider.enabled !== false;
+  const enabled = !!(state.proxy && state.proxy.proxy_enabled);
   if (!enabled) return;
 
   const disabledKeys = (currentProvider.keys || []).filter(

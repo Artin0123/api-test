@@ -284,10 +284,7 @@ function renderProxyModelSelect(p) {
   const saved = String(p.test_model || "").trim();
   dom.proxyTestModel.replaceChildren();
   if (!models.length) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "（来源设定未填 Models）";
-    dom.proxyTestModel.appendChild(opt);
+    syncCustomSelect(dom.proxyTestModel);
     return;
   }
   for (const model of models) {
@@ -303,21 +300,17 @@ function renderProxyModelSelect(p) {
   syncCustomSelect(dom.proxyTestModel);
 }
 
-function proxyDisabledReason(p) {
+function proxyDisabledReason() {
   if (!state.proxy || !state.proxy.proxy_enabled) {
     return (state.proxy && state.proxy.proxy_message) || "转发功能目前停用";
-  }
-  if (p && p.enabled === false) {
-    return "此服务商已停用，请先在「来源设定」启用";
   }
   return "";
 }
 
-function proxyCardTitles(p) {
-  const blockReason = proxyDisabledReason(p);
-  const hasModels = proxyModelOptions(p).length > 0;
+function proxyCardTitles() {
+  const blockReason = proxyDisabledReason();
   return {
-    testTitle: blockReason || (!hasModels ? "请先在「来源设定」填写 Models" : ""),
+    testTitle: blockReason,
     manageTitle: blockReason,
   };
 }
@@ -325,7 +318,7 @@ function proxyCardTitles(p) {
 function renderProxyToolbar() {
   const p = selectedProxyProvider();
   if (!p) return;
-  const blockReason = proxyDisabledReason(p);
+  const blockReason = proxyDisabledReason();
   const enabled = !blockReason;
   const url = `${location.origin}${p.proxy_url}`;
 
@@ -360,20 +353,14 @@ function renderProxyToolbar() {
   dom.proxyUrl.classList.remove("is-disabled");
   dom.proxyUrlCopy.dataset.copyVal = url;
   dom.proxyUrlCopy.disabled = false;
-  const hasModels = proxyModelOptions(p).length > 0;
-  dom.proxyTestModel.disabled = !enabled || !hasModels;
+  dom.proxyTestModel.disabled = !enabled;
   renderProxyModelSelect(p);
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
   const hasDisabledKeys = (p.keys || []).some((k) => k.disabled && k.id != null);
-  const canTest = enabled && hasKeys && hasModels;
+  const canTest = enabled && hasKeys;
   const testTitle =
-    blockReason ||
-    (!hasModels
-      ? "请先在「来源设定」填写 Models"
-      : !hasKeys
-        ? "当前供应商没有密钥"
-        : "");
+    blockReason || (!hasKeys ? "当前供应商没有密钥" : "");
   for (const btn of [dom.proxyTestActive, dom.proxyTestDisabled]) {
     btn.disabled = !canTest || state.proxyBusy;
     btn.title = testTitle;
@@ -412,9 +399,9 @@ function renderProxyLogsLink() {
 function updateProxyCardButtonsDisabled() {
   const p = selectedProxyProvider();
   if (!p) return;
-  const enabled = !proxyDisabledReason(p);
-  const canAct = enabled && proxyModelOptions(p).length > 0;
-  const { testTitle, manageTitle } = proxyCardTitles(p);
+  const enabled = !proxyDisabledReason();
+  const canAct = enabled;
+  const { testTitle, manageTitle } = proxyCardTitles();
   for (const btn of dom.proxyKeyGrid.querySelectorAll("[data-proxy-test]")) {
     const id = btn.dataset.proxyTest;
     const token = `${btn.dataset.fp}:${id}`;
@@ -599,7 +586,7 @@ function renderProxyKeyCards() {
   const p = selectedProxyProvider();
   if (!p) return;
   const keys = p.keys || [];
-  const enabled = !proxyDisabledReason(p);
+  const enabled = !proxyDisabledReason();
   if (!keys.length) {
     // Sibling of the grid, not a grid item: a .state-card dropped inside the
     // grid used to render as one 280px column instead of a full-width notice.
@@ -610,8 +597,8 @@ function renderProxyKeyCards() {
     return;
   }
   dom.proxyKeyEmpty.classList.add("hidden");
-  const canAct = enabled && proxyModelOptions(p).length > 0;
-  const { testTitle, manageTitle } = proxyCardTitles(p);
+  const canAct = enabled;
+  const { testTitle, manageTitle } = proxyCardTitles();
   const totalPages = Math.max(1, Math.ceil(keys.length / PROXY_PAGE_SIZE));
   state.proxyPage = Math.min(
     totalPages,

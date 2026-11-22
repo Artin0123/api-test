@@ -76,30 +76,31 @@ docs/                   规范快照、扩展计划与决策记录
 
 1. 将仓库连接至 Cloudflare Pages：**Build command 填 `npm run build`**，构建输出目录填 `public`（Pages 会先 `npm install` 再执行 build，把 `src/*.js` 拼接成部署用的 `public/_worker.js`；拼接脚本只依赖 Node 内建模块，任何默认构建环境皆可执行）。
 2. Dashboard → Environment Variables → 添加 `ADMIN_PASSWORD`。
-3. Dashboard → Functions → KV namespace bindings → 绑定名称填 `KV_STORE`。
-4. 启用轮询转发时：Functions → D1 database bindings → 绑定名称填 `DB`，并按下方迁移顺序配置 `STORAGE_BACKEND`。
+3. Dashboard → Functions → 绑定存储后端（二选一）：
+   - **D1 模式（默认，支持轮询转发）**：D1 database bindings → 绑定名称填 `DB`（`STORAGE_BACKEND` 留空或设为 `d1`）。
+   - **KV 模式（仅每日测试，隐藏轮询转发）**：KV namespace bindings → 绑定名称填 `KV_STORE`，并设置环境变量 `STORAGE_BACKEND=kv`。
 
-> **上线顺序**：`STORAGE_BACKEND` 未填写时默认使用 `d1`；仅绑定 KV 的旧站台若直接部署新版，所有 `/api/*` 请求都会返回 500。
-> 安全部署顺序：① 建立 D1 并绑定 `DB`（保留 `KV_STORE`）→ ② 设置 `STORAGE_BACKEND=kv` 后部署新版 → ③ 执行 `npm run migrate` → ④ 将 `STORAGE_BACKEND` 改为 `d1`（或移除该变量）并重新部署。
+### 1.1 存储后端说明（D1 / KV）
 
-### 1.1 存储后端与迁移（KV → D1）
+`STORAGE_BACKEND` 可设为 `d1`（默认）或 `kv`；填写其他值或未绑定对应的 `DB` / `KV_STORE` 时，`/api/*` 请求会直接返回 500 提示错误原因。
 
-`STORAGE_BACKEND` 可设为 `d1`（默认）或 `kv`；填写其他值时所有 API 请求会直接返回 500 提示错误原因。
+若需备份、还原或跨账号／跨平台搬移数据，可直接使用本项目 `devDependencies` 已附带的 `wrangler`（执行 `npm install` 后即可使用，首次需 `npx wrangler login` 或配置 `CLOUDFLARE_API_TOKEN`）：
 
-`npm run migrate` 的执行流程为「先备份 KV → 写入 D1 → 比对验证」：
-
-```bash
-export PAGES_URL=https://<站点域名>.pages.dev
-export ADMIN_PASSWORD=...
-
-npm run migrate                 # 备份 → 迁移 → 验证
-npm run migrate -- --dry-run    # 仅读取并生成备份，不写入 D1
-npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
-```
-
-- 备份文件保存于 `./backups/`（已加入 `.gitignore`，权限 `0600`）；**文件内含明文密钥**，请勿上传或提交。
-- 执行 `--restore` 前会自动备份当前 D1（`d1-pre-restore-*.json`）以供回退。
-- 迁移支持幂等重跑，不会覆盖迁移后已累计的失败计数与禁用状态。
+- **D1 备份与还原／跨平台搬移**：可在 Cloudflare Dashboard 使用 **Time Travel** 回溯时间点，或通过 CLI 导出与还原（导出为标准 SQLite `.sql`，亦可直接 `sqlite3 local.db < backup.sql` 导入其他 SQLite 平台；若包含 `_cf_KV` 等系统表，在外部平台执行前删去相关语句、保留 `store` 与 `key_state` 即可）：
+  ```bash
+  # 导出
+  npx wrangler d1 export <DB名称> --remote --output=backup.sql
+  # 导入／还原
+  npx wrangler d1 execute <目标DB名称> --remote --file=backup.sql
+  ```
+- **KV 查看、单笔导出与批次导入**：Dashboard 支持单笔查看与修改；Wrangler 无单行整库导出指令，导出需先列出键名再逐笔读取，整包导入则使用 `bulk put`：
+  ```bash
+  # 列出键名与单笔导出
+  npx wrangler kv key list --namespace-id=<KV_ID> --remote
+  npx wrangler kv key get "<KEY>" --namespace-id=<KV_ID> --remote --text
+  # 整包批次导入（JSON 数组格式：[{"key":"...","value":"..."}]）
+  npx wrangler kv bulk put kv-backup.json --namespace-id=<KV_ID> --remote
+  ```
 
 ### 1.2 轮询转发与 Cloudflare AI Gateway
 
@@ -117,7 +118,7 @@ npm run migrate -- --restore backups/kv-backup-YYYYMMDD-HHMMSS.json
 使用步骤：
 
 1. **配置 Cloudflare AI Gateway Custom Provider**：在 Cloudflare AI Gateway 仪表板的 **Provider Keys**（繁中界面侧栏为「供應商金鑰」、页面标题为「提供者金鑰」，路径 `https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/integrations`）页面下，将每个要转发的服务商登记为 **Custom Provider**（无需在 Gateway 填写 Key），`base_url` 填该服务商的 `api_base`，并将 Custom Provider 的 **`slug` 设成与下方「转发别名」相同的名称**。
-2. **配置转发别名**：在「来源设定」编辑服务商并填写「转发别名」（仅限小写英文字母、数字与连字号，全站不可重复；同一 `provider_type + api_base` 不可重复建卡）。设置后卡片标题显示别名；未设别名的服务商不会显示在「轮询转发」清单中，也无法转发或手动测试。已设别名但在「来源设定」停用的服务商仍会保留在「轮询转发」清单中供查看状态，其操作按钮会停用并提示原因。
+2. **配置转发别名**：在「来源设定」编辑服务商并填写「转发别名」（仅限小写英文字母、数字与连字号，全站不可重复；同一 `provider_type + api_base` 不可重复建卡）。设置后卡片标题显示别名；未设别名的服务商不会显示在「轮询转发」清单中，也无法转发或手动测试。只要已设别名，即使在「来源设定」停用该服务商（仅跳过每日自动测试），仍可正常使用「轮询转发」与 `/proxy/{别名}`。
 3. **管理与即时测试（「轮询转发」分页）**：
    - 工具列可切换服务商（显示为「别名 - API 格式」）、用网址右侧复制按钮复制转发网址、查看「密钥状态」独立绿/红半透明胶囊（每家服务商上限共 999 支密钥，悬停显示有效/无效数量）、从下拉选单（读取自来源设定的 Models）选择探测模型，以及执行「测试有效密钥」／「测试无效密钥」／「恢复所有密钥」（恢复所有密钥不额外弹出提示）。
    - 仅当按下单卡或批量的测试按钮时，所选测试模型才会实际写入 `proxy_test_models`（仅切换下拉选单不写库，且重复测试同一模型不重复写入）；调整来源设定的 Models 清单时，只要原模型仍在清单中就不会被自动替换。

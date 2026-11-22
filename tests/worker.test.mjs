@@ -503,7 +503,7 @@ test("proxy routes through AI Gateway custom-{alias}, keeps query string and rep
   assert.equal(captured[0].headers.authorization, "Bearer key-aaaa");
 });
 
-test("unknown alias and disabled provider are rejected before any upstream call", async () => {
+test("unknown alias is rejected before upstream; disabled provider with alias still proxies", async () => {
   const env = makeEnv();
   await postSettings(env, [
     provider({ alias: "off", enabled: false, keys: "k1" }),
@@ -511,10 +511,11 @@ test("unknown alias and disabled provider are rejected before any upstream call"
 
   const unknown = await proxy(env, "/proxy/nope/chat/completions");
   assert.equal(unknown.status, 404);
-
-  const disabled = await proxy(env, "/proxy/off/chat/completions");
-  assert.equal(disabled.status, 503);
   assert.equal(captured.length, 0);
+
+  const allowed = await proxy(env, "/proxy/off/chat/completions");
+  assert.equal(allowed.status, 200);
+  assert.equal(captured.length, 1);
 });
 
 test("an empty suffix lands on api_base itself", async () => {
@@ -1102,123 +1103,7 @@ test("re-saving the same keys keeps fail_count and skips redundant writes", asyn
   assert.equal(kvSecond.data.version, kvFirst.data.version);
 });
 
-// ── R0: migration + backup ─────────────────────────────────────────────────
-
-test("migration walks every KV page, seeds key_state, is rerun-safe and verifiable", async () => {
-  const kv = new FakeKV({}, 2); // force many pages
-  const providers = [provider({ alias: "openai", keys: "k1\nk2\nk3" })];
-  kv.map.set(
-    "app_settings",
-    JSON.stringify({ providers, github_url: "", discord_webhook_url: "", version: 4 }),
-  );
-  for (let i = 0; i < 7; i++) {
-    kv.map.set(`results:fp${i}`, JSON.stringify({ i, value: `v${i}` }));
-  }
-  kv.map.set("dead_keys", JSON.stringify([{ id: "x", api_key: "k1" }]));
-
-  const env = makeEnv({ kv, vars: { STORAGE_BACKEND: "kv" } });
-
-  const dry = await asJson(
-    await request(env, "/api/storage/migrate", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "migrate", dryRun: true }),
-    }),
-  );
-  assert.equal(dry.status, 200);
-  assert.equal(dry.data.entries, 9);
-  assert.ok(dry.data.kv_pages > 1);
-
-  const migrated = await asJson(
-    await request(env, "/api/storage/migrate", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "migrate" }),
-    }),
-  );
-  assert.equal(migrated.status, 200);
-  assert.equal(migrated.data.store_inserted, 9);
-  assert.equal(migrated.data.key_state_seeded, 3);
-
-  const again = await asJson(
-    await request(env, "/api/storage/migrate", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "migrate" }),
-    }),
-  );
-  assert.equal(again.data.store_inserted, 0);
-  assert.equal(again.data.store_skipped_existing, 9);
-  assert.equal(again.data.key_state_seeded, 0);
-
-  const rows = await env.DB.prepare("SELECT COUNT(*) AS n FROM key_state").first();
-  assert.equal(Number(rows.n), 3);
-
-  const kvExport = await asJson(
-    await request(env, "/api/storage/export?source=kv", { headers: adminHeaders() }),
-  );
-  const d1Export = await asJson(
-    await request(env, "/api/storage/export?source=d1", { headers: adminHeaders() }),
-  );
-  assert.equal(kvExport.status, 200);
-  assert.equal(d1Export.status, 200);
-  assert.equal(d1Export.headers.get("cache-control"), "no-store");
-  const target = new Map(d1Export.data.entries.map((e) => [e.k, e.v]));
-  for (const entry of kvExport.data.entries) {
-    assert.equal(target.get(entry.k), entry.v, entry.k);
-  }
-});
-
-test("migration requires confirmation and both bindings", async () => {
-  const env = makeEnv({ vars: { STORAGE_BACKEND: "kv" } });
-  const noConfirm = await asJson(
-    await request(env, "/api/storage/migrate", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: "{}",
-    }),
-  );
-  assert.equal(noConfirm.status, 400);
-
-  const noDb = makeEnv({ vars: { STORAGE_BACKEND: "kv", DB: undefined } });
-  const missing = await asJson(
-    await request(noDb, "/api/storage/migrate", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "migrate" }),
-    }),
-  );
-  assert.equal(missing.status, 400);
-  assert.match(missing.data.error, /DB/);
-});
-
-test("export refuses more entries than restore can take", async () => {
-  const env = makeEnv();
-  // FakeKV exposes its map; filling it directly keeps the test fast.
-  for (let i = 0; i < 20001; i++) {
-    env.KV_STORE.map.set(`k${String(i).padStart(5, "0")}`, "v");
-  }
-  const result = await asJson(
-    await request(env, "/api/storage/export?source=kv", { headers: adminHeaders() }),
-  );
-  assert.equal(result.status, 400);
-  assert.equal(result.data.limit, 20000);
-  assert.match(result.data.error, /20000/);
-});
-
-test("export requires auth and a preview can be taken without a working backend", async () => {
-  const kv = new FakeKV({ app_settings: JSON.stringify({ providers: [] }) });
-  const env = { KV_STORE: kv, ASSETS: { fetch: async () => new Response("") }, ADMIN_PASSWORD: ADMIN };
-
-  const unauthorized = await request(env, "/api/storage/export?source=kv");
-  assert.equal(unauthorized.status, 401);
-
-  const ok = await asJson(
-    await request(env, "/api/storage/export?source=kv", { headers: adminHeaders() }),
-  );
-  assert.equal(ok.status, 200);
-  assert.equal(ok.data.entry_count, 1);
-});
+// ── R0: D1 atomic batch & pruning ──────────────────────────────────────────
 
 test("D1 settings save writes store and key_state in one atomic batch and rolls back on failure", async () => {
   const env = makeEnv();
@@ -1353,53 +1238,6 @@ test("dead_keys is scoped by fp so same-host different-format cards stay indepen
   assert.deepEqual(anRec.error_detail, { message: "an err" });
 });
 
-test("restore writes a backup back including key_state", async () => {
-  const env = makeEnv();
-  const p = provider({ alias: "openai", keys: "k1" });
-  await postSettings(env, [p]);
-
-  const backup = await asJson(
-    await request(env, "/api/storage/export?source=d1", { headers: adminHeaders() }),
-  );
-  assert.equal(backup.status, 200);
-
-  await env.DB.prepare("UPDATE store SET v = ? WHERE k = ?")
-    .bind("{}", "app_settings")
-    .run();
-  await env.DB.prepare("UPDATE key_state SET disabled = 1, fail_count = 9").run();
-  // Row created after the backup was taken; precise rollback must drop it.
-  await env.DB.prepare("INSERT INTO store (k, v) VALUES ('results:later', '{}')").run();
-
-  const restored = await asJson(
-    await request(env, "/api/storage/restore", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        confirm: "restore",
-        entries: backup.data.entries,
-        key_state: backup.data.key_state,
-      }),
-    }),
-  );
-  assert.equal(restored.status, 200);
-  assert.equal(restored.data.store_restored, backup.data.entry_count);
-  assert.equal(restored.data.key_state_restored, backup.data.key_state.length);
-
-  // Precise rollback: anything created after the backup is gone again.
-  assert.equal(restored.data.store_removed, 1);
-  assert.equal(restored.data.key_state_removed, 0);
-  const leftovers = await env.DB.prepare("SELECT k FROM store WHERE k = 'results:later'").all();
-  assert.equal((leftovers.results || []).length, 0, "備份裡沒有的列要被刪掉");
-
-  const settings = await asJson(
-    await request(env, "/api/settings", { headers: adminHeaders() }),
-  );
-  assert.equal(settings.data.settings.providers.length, 1);
-  const [key] = await getKeyRows(env, await fingerprintOf(env, p));
-  assert.equal(key.disabled, false);
-  assert.equal(key.fail_count, 0);
-});
-
 // ── AI Gateway (fetch intercepted) ─────────────────────────────────────────
 
 test("gateway mode parses Logs URL, ignores legacy env vars, and writes plaintext ASCII metadata", async () => {
@@ -1416,18 +1254,12 @@ test("gateway mode parses Logs URL, ignores legacy env vars, and writes plaintex
     provider({
       alias: "openai",
       keys: "sk-abcdefghij1234\nsk-short\nsk-caf\u00e9-ok",
-      gateway_provider: "legacy-ignored",
     }),
   ]);
 
-  const saved = await asJson(
-    await request(env, "/api/settings", { headers: adminHeaders() }),
-  );
-  assert.equal("gateway_provider" in saved.data.settings.providers[0], false);
   const proxyState = await asJson(
     await request(env, "/api/proxy/state", { headers: adminHeaders() }),
   );
-  assert.equal("gateway_provider" in proxyState.data.providers[0], false);
   assert.equal("tag" in proxyState.data.providers[0].keys[0], false);
   assert.equal(proxyState.data.providers[0].logs_url, DEFAULT_GW_LOGS_URL);
 
@@ -1955,7 +1787,7 @@ test("POST /api/proxy/disable disables a single key without touching fail_count"
 });
 
 
-test("GET /api/proxy/state omits providers without alias and proxy endpoints reject disabled providers", async () => {
+test("GET /api/proxy/state omits providers without alias and allows disabled providers with alias", async () => {
   const env = makeEnv();
   const noAlias = provider({ alias: "", api_base: "https://no-alias.example/v1", keys: "sk-no" });
   const offProv = provider({ alias: "off-prov", enabled: false, api_base: "https://off.example/v1", keys: "sk-off-1\nsk-off-2" });
@@ -1986,7 +1818,6 @@ test("GET /api/proxy/state omits providers without alias and proxy endpoints rej
         body: JSON.stringify(body),
       }),
     );
-    assert.equal(res.status, 400, `${path} should reject disabled provider`);
-    assert.match(res.data.error, /停用/);
+    assert.equal(res.status, 200, `${path} should allow disabled provider with alias`);
   }
 });

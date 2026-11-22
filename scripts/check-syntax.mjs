@@ -25,7 +25,6 @@ function walk(dir) {
 const files = [
   ...walk(join(root, "src")),
   ...walk(join(root, "public")),
-  join(root, "scripts", "migrate-kv-to-d1.mjs"),
 ];
 
 let failed = false;

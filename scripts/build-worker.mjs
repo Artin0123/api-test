@@ -20,7 +20,6 @@ const order = [
   "dead-keys.js",
   "proxy.js",
   "proxy-handlers.js",
-  "storage-migrate.js",
 ];
 
 const parts = order.map((name) => {
