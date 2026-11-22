@@ -372,8 +372,7 @@ function openEditor(index = -1) {
   if (index >= 0) {
     const p = ((state.settings || {}).providers || [])[index] || {};
     dom.editorTitle.textContent = "编辑服务商";
-    dom.edProviderType.value =
-      p.provider_type === "gemini" ? "google" : p.provider_type || "openai";
+    dom.edProviderType.value = p.provider_type || "openai";
     syncCustomSelect(dom.edProviderType);
     dom.edApiBase.value = p.api_base || "";
     dom.edKeys.value = p.keys || "";

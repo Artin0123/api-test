@@ -25,7 +25,7 @@
       {
         "enabled": false,
         "provider_type": "google",
-        "api_base": "https://generativelanguage.googleapis.com/v1beta",
+        "api_base": "https://generativelanguage.googleapis.com",
         "keys": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "models": "gemini-2.5-pro,gemini-2.0-flash"
       }

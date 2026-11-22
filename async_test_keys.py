@@ -177,8 +177,6 @@ def extract_think_xml(text):
 def get_full_endpoint(api_base, provider_type, model, test_path=""):
     base = api_base.rstrip("/")
     if provider_type == "google":
-        if base.endswith("/v1beta"):
-            return f"{base}/models/{model}:generateContent"
         return f"{base}/v1beta/models/{model}:generateContent"
     custom = (test_path or "").strip()
     if not custom:

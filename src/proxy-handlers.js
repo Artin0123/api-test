@@ -1,7 +1,7 @@
 // src/proxy-handlers.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const SAMPLE_PATHS = {
   openai: "/chat/completions",
-  google: "/models/{model}:streamGenerateContent?alt=sse",
+  google: "/v1beta/models/{model}:streamGenerateContent?alt=sse",
   anthropic: "/messages",
 };
 
@@ -128,16 +128,13 @@ function gatewayLogsUrl(settings, alias = "") {
 function testRequestFor(provider, model) {
   if (!model) return null;
   let req;
-  const baseTrimmed = String(provider.api_base || "").trim().replace(/\/+$/, "");
   const customPath =
     typeof provider.test_path === "string" ? provider.test_path.trim() : "";
   switch (provider.provider_type) {
     case "google":
       req = {
         model,
-        path: baseTrimmed.endsWith("/v1beta")
-          ? `/models/${encodeURIComponent(model)}:generateContent`
-          : `/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        path: `/v1beta/models/${encodeURIComponent(model)}:generateContent`,
         body: {
           contents: [{ parts: [{ text: "only reply 1." }] }],
           generationConfig: { maxOutputTokens: 8 },

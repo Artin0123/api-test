@@ -123,13 +123,13 @@ docs/                   规范快照、扩展计划与决策记录
    - 工具列可切换服务商（显示为「别名 - API 格式」）、用网址右侧复制按钮复制转发网址、查看「密钥状态」独立绿/红半透明胶囊（每家服务商上限共 999 支密钥，悬停显示有效/无效数量）、从下拉选单（读取自来源设定的 Models）选择探测模型，以及执行「测试有效密钥」／「测试无效密钥」／「恢复所有密钥」（恢复所有密钥不额外弹出提示）。
    - 仅当按下单卡或批量的测试按钮时，所选测试模型才会实际写入 `proxy_test_models`（仅切换下拉选单不写库，且重复测试同一模型不重复写入）；调整来源设定的 Models 清单时，只要原模型仍在清单中就不会被自动替换。
    - 页首右侧提供「Gateway 记录 ↗」按钮；下方每把密钥一张卡片（每页最多 9 把，超过时右下角显示 `<`／页码输入框（支持滚轮）／`>` 分页控件），可查看状态、连续失败次数与最近使用时间，并执行单把「测试」（非流式探测 `"only reply 1."`，失败会计数并可能禁用，**成功会立即归零失败次数并解除禁用**）、手动「禁用」（弹出确认框，不另跳 Toast）或「恢复」。测试中与测试结果会以右上角 Toast 显示（最多同时 3 个结果 Toast，成功 5 秒／失败或超时 20 秒自动淡出，也可手动关闭）。
-4. **接入调用端**：在「来源设定」添加 `openai` 或 `anthropic` 服务商时需填写「测试路径」（如 `/v1/chat/completions`、`/v1/messages`，供每日与轮询测试使用）；`google` 格式不显示测试路径，默认自动补全 `/v1beta/models/{model}:generateContent`（若 `api_base` 已含 `/v1beta` 则补 `/models/...`）。外部调用客户端请将 API 网址设为 `https://<站点域名>.pages.dev/proxy/{别名}` 并自行拼接对应接口路径：
+4. **接入调用端**：在「来源设定」添加 `openai` 或 `anthropic` 服务商时需填写「测试路径」（如 `/v1/chat/completions`、`/v1/messages`，供每日与轮询测试使用）；`google` 格式不显示测试路径，固定自动补全 `/v1beta/models/{model}:generateContent`。外部调用客户端请将 API 网址设为 `https://<站点域名>.pages.dev/proxy/{别名}` 并自行拼接对应接口路径：
 
 | Provider 类型 | 调用路径示例 |
 |---|---|
-| openai | `/chat/completions` |
-| google | `/v1beta/models/{model}:streamGenerateContent?alt=sse`（若 `api_base` 已含 `/v1beta` 则接 `/models/...`） |
-| anthropic | `/messages` |
+| openai | `/v1/chat/completions` |
+| google | `/v1beta/models/{model}:streamGenerateContent?alt=sse` |
+| anthropic | `/v1/messages` |
 
 转发密码支持通过 `Authorization: Bearer`、`x-api-key` 或 `x-goog-api-key` 传递；携带 `ADMIN_PASSWORD` 一律返回 401。
 
@@ -147,7 +147,7 @@ docs/                   规范快照、扩展计划与决策记录
 ### 2. 配置 GitHub Actions 与填写设定
 
 1. 在仓库 Settings → Secrets 添加 `PAGES_URL`（如 `https://xxx.pages.dev`）与 `ADMIN_PASSWORD`。
-2. 登录网页后，在「来源设定」添加 Provider：填入 `api_base`（填到版本前缀即可，例如 `https://api.openai.com/v1`）、Keys（每行一把，至少保留一把）与 Models（英文逗号分隔；系统保存时会自动清理多余空白与空行）。可选填 `Extra Body`、`Custom Headers`（同名覆盖默认标头）与 `Max Concurrency`。
+2. 登录网页后，在「来源设定」添加 Provider：填入 `api_base`（例如 `https://api.openai.com`）、`测试路径`（`openai` / `anthropic` 必填，例如 `/v1/chat/completions`）、Keys（每行一把，至少保留一把）与 Models（英文逗号分隔；系统保存时会自动清理多余空白与空行）。可选填 `Extra Body`、`Custom Headers`（同名覆盖默认标头）与 `Max Concurrency`。
 3. 点击顶部栏「设定」填入 GitHub Actions URL（设定后启用「测试结果」右上角「立即执行 ↗」按钮）、Discord Webhook URL（浏览器端测试通知受 CSP `connect-src` 限制仅放行 `discord.com` 与 `discordapp.com`，使用自架代理域名需同步更新 `_worker.js`），以及 AI Gateway 与转发参数。
 4. 在「测试结果」点击「立即执行 ↗」手动触发 GitHub Actions workflow，或等待每日定时任务（UTC 00:00）完成（执行期间全局标题旁显示 `⏳ 执行中`）；完成后至「测试结果」与「失效密钥」查看自动汇总与对账结果。
 

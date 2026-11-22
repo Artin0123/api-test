@@ -189,7 +189,7 @@ function mockProxyState(settings) {
       proxy_url: p.alias ? `/proxy/${p.alias}` : "",
       sample_path:
         ({
-          google: "/models/{model}:streamGenerateContent?alt=sse",
+          google: "/v1beta/models/{model}:streamGenerateContent?alt=sse",
           anthropic: "/messages",
         })[p.provider_type] || "/chat/completions",
       test_model: override.test_model || "",
