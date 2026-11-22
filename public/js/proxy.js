@@ -604,14 +604,21 @@ function renderProxyKeyCards() {
     totalPages,
     Math.max(1, Number(state.proxyPage) || 1),
   );
-  const startIdx = (state.proxyPage - 1) * PROXY_PAGE_SIZE;
-  const pageKeys = keys.slice(startIdx, startIdx + PROXY_PAGE_SIZE);
   const plainList = state.proxyPlainKeys.get(p.fp) || [];
+  // Sort active healthy keys first, then active keys with fail_count > 0, then
+  // disabled keys, keeping the original 来源设定 order within each tier.
+  const ordered = keys
+    .map((k, idx) => ({ k, idx, candidate: plainList[idx] || "" }))
+    .sort((a, b) => {
+      const tier = (k) => (k.disabled ? 2 : Number(k.fail_count || 0) > 0 ? 1 : 0);
+      return tier(a.k) - tier(b.k) || a.idx - b.idx;
+    });
+  const startIdx = (state.proxyPage - 1) * PROXY_PAGE_SIZE;
+  const pageKeys = ordered.slice(startIdx, startIdx + PROXY_PAGE_SIZE);
   dom.proxyKeyGrid.innerHTML = pageKeys
-    .map((k, ki) => {
+    .map(({ k, candidate }) => {
       const id = k.id == null ? "" : String(k.id);
       const mask = esc(k.masked || "");
-      const candidate = plainList[startIdx + ki] || "";
       const rawKey = candidate && maskKey(candidate) === k.masked ? candidate : "";
       const copyBtn = rawKey
         ? `<button class="btn btn-ghost btn-xs btn-icon copy-btn" type="button" title="复制 KEY" aria-label="复制 KEY" data-copy-val="${escAttr(rawKey)}">${COPY_ICON_SVG}</button>`
