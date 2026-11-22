@@ -129,7 +129,7 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
   const selectedModel = String(model ?? dom.proxyTestModel.value ?? "").trim();
   if (!selectedModel) {
     if (!fromBatch) {
-      showProxyToast("请先在「来源设定」填写 Models。", {
+      showProxyToast("尚未设定测试模型。", {
         type: "fail",
         duration: PROXY_TOAST_FAIL_MS,
       });
@@ -316,7 +316,7 @@ async function runProxyBatch(mode) {
   if (!p) return;
   const selectedModel = dom.proxyTestModel.value.trim();
   if (!selectedModel) {
-    showProxyToast("请先在「来源设定」填写 Models。", {
+    showProxyToast("尚未设定测试模型。", {
       type: "fail",
       duration: PROXY_TOAST_FAIL_MS,
     });
@@ -348,14 +348,39 @@ async function runProxyBatch(mode) {
 
   let ok = 0;
   let fail = 0;
+  const runOne = async (k) => {
+    const result = await testProxyKey(p.fp, k.id, {
+      fromBatch: true,
+      model: selectedModel,
+    });
+    if (result && result.ok) ok++;
+    else fail++;
+  };
   try {
-    for (let i = 0; i < keys.length; i++) {
-      const result = await testProxyKey(p.fp, keys[i].id, {
-        fromBatch: true,
-        model: selectedModel,
-      });
-      if (result && result.ok) ok++;
-      else fail++;
+    // Probe the first key solo so any proxy_test_models update writes once
+    // before the concurrent pool fans out across the remaining keys.
+    await runOne(keys[0]);
+    const rest = keys.slice(1);
+    if (rest.length) {
+      const settingProv = (state.settings?.providers || []).find(
+        (item) => item && item.alias === p.alias,
+      );
+      const configuredCap = Number(
+        settingProv?.max_concurrency ?? p.max_concurrency,
+      );
+      const concurrency = Number.isInteger(configuredCap) && configuredCap > 0
+        ? Math.min(5, configuredCap)
+        : 5;
+      let cursor = 0;
+      const workerCount = Math.min(concurrency, rest.length);
+      await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+          while (cursor < rest.length) {
+            const next = rest[cursor++];
+            await runOne(next);
+          }
+        }),
+      );
     }
   } finally {
     // Reset both flag and UI controls even if requests or reload fail.
