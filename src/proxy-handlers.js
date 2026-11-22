@@ -281,6 +281,9 @@ async function handleProxyTest(request, env) {
     return json({ error: "尚未设定测试模型" }, 400);
   }
 
+  if (provider.provider_type !== "google" && !(typeof provider.test_path === "string" && provider.test_path.trim())) {
+    return json({ error: "请先在「来源设定」填写测试路径" }, 400);
+  }
   const probe = testRequestFor(provider, testModel);
   if (!probe) return json({ error: "无效的测试模型设定" }, 400);
 

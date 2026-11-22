@@ -1858,6 +1858,7 @@ test("custom test_path is required for openai/anthropic and google defaults to v
       providers: [{
         enabled: true,
         provider_type: "openai",
+        alias: "legacy-oa",
         api_base: "https://legacy-other.example/v1",
         keys: "k-legacy",
         models: "m-legacy",
@@ -1875,6 +1876,7 @@ test("custom test_path is required for openai/anthropic and google defaults to v
   const pLegacy = {
     enabled: true,
     provider_type: "openai",
+    alias: "legacy-oa",
     api_base: "https://legacy-other.example/v1",
     keys: "k-legacy",
     models: "m-legacy",
@@ -1883,6 +1885,18 @@ test("custom test_path is required for openai/anthropic and google defaults to v
   };
   const ok = await postSettings(env, [pOpenai, pGoogle, pLegacy]);
   assert.equal(ok.status, 200);
+
+  const fpLegacy = await fingerprintOf(env, pLegacy);
+  const [kLegacy] = await getKeyRows(env, fpLegacy);
+  const missingTestPathProbe = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ fp: fpLegacy, id: kLegacy.id, model: "m-legacy" }),
+    }),
+  );
+  assert.equal(missingTestPathProbe.status, 400);
+  assert.match(missingTestPathProbe.data.error, /测试路径/);
 
   const saved = await asJson(
     await request(env, "/api/settings", { headers: adminHeaders() }),

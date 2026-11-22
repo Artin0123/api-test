@@ -133,6 +133,7 @@ function normalizeKeysString(raw) {
 function normalizeProviderForStorage(p) {
   if (!p || typeof p !== "object") return p;
   const out = { ...p };
+  if (out.provider_type === "gemini") out.provider_type = "google";
   if (typeof p.alias === "string") {
     const alias = p.alias.trim();
     if (alias) out.alias = alias;

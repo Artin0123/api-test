@@ -827,6 +827,9 @@ async def main():
                     p.get("custom_headers"), origin=f"服务商 {pt} | {ab}"
                 )
                 tp = (p.get("test_path") or "").strip()
+                if pt != "google" and not tp:
+                    print(f"\n[跳过] 服务商 {pt} | {ab} (缺少 test_path)")
+                    continue
                 providers_to_run.append(
                     (ab, pt, k_list, m_list, extra_body, mc, custom_headers, tp)
                 )
