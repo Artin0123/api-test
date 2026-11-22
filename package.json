@@ -11,7 +11,7 @@
     "build": "node scripts/build-worker.mjs",
     "check": "node scripts/build-worker.mjs && node scripts/check-syntax.mjs",
     "test": "node --test tests/",
-    "migrate": "node scripts/migrate-kv-to-d1.mjs"
+    "migrate": "node --env-file-if-exists=.env scripts/migrate-kv-to-d1.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.160.0"
