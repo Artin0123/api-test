@@ -369,10 +369,13 @@ async function runProxyBatch(mode) {
     else fail++;
   };
   try {
-    // Probe the first key solo so any proxy_test_models update writes once
-    // before the concurrent pool fans out across the remaining keys.
-    await runOne(keys[0]);
-    const rest = keys.slice(1);
+    // Only probe the first key solo when the model changed (so proxy_test_models
+    // writes once); when the model is already saved, fan out all keys at once.
+    const modelChanged = (p.test_model || "").trim() !== selectedModel;
+    const rest = modelChanged ? keys.slice(1) : keys;
+    if (modelChanged) {
+      await runOne(keys[0]);
+    }
     if (rest.length) {
       const settingProv = (state.settings?.providers || []).find(
         (item) => item && item.alias === p.alias,

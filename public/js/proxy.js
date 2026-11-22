@@ -74,10 +74,14 @@ async function loadProxyState({ preserveOrder = false } = {}) {
     dom.proxyLoading.classList.add("hidden");
     return false;
   }
-  dom.proxyKeyEmpty.classList.add("hidden");
-  dom.proxyToolbar.classList.add("hidden");
-  dom.proxyKeyGrid.classList.add("hidden");
-  dom.proxyPagination.classList.add("hidden");
+  // Keep existing toolbar/cards visible during in-place test refreshes so the
+  // layout does not collapse/flash or jump the scroll position.
+  if (!preserveOrder || !state.proxy) {
+    dom.proxyKeyEmpty.classList.add("hidden");
+    dom.proxyToolbar.classList.add("hidden");
+    dom.proxyKeyGrid.classList.add("hidden");
+    dom.proxyPagination.classList.add("hidden");
+  }
   clearProxyNotice({ keepGlobal: false });
 
   try {
