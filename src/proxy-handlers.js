@@ -227,7 +227,7 @@ async function handleProxyTest(request, env) {
 
   await ensureSchemaFor(env.DB);
   const row = await env.DB.prepare(
-    "SELECT id, fp, api_key FROM key_state WHERE id = ? AND fp = ?",
+    "SELECT id, fp, api_key, fail_count, disabled FROM key_state WHERE id = ? AND fp = ?",
   )
     .bind(id, fp)
     .first();
@@ -325,22 +325,32 @@ async function handleProxyTest(request, env) {
     let ledger = null;
     if (!response.ok) {
       detail = (await response.text()).slice(0, 300);
-      try {
-        ledger = await recordKeyFailure(
-          env.DB,
-          row.id,
-          proxyFailThreshold(settings),
-        );
-      } catch (dbErr) {
-        console.error("key_state failure write failed", dbErr);
+      const threshold = proxyFailThreshold(settings);
+      if (row.disabled || Number(row.fail_count || 0) >= threshold) {
+        ledger = {
+          fail_count: Number(row.fail_count || 0),
+          disabled: !!row.disabled,
+        };
+      } else {
+        try {
+          ledger =
+            (await recordKeyFailure(env.DB, row.id, threshold)) || {
+              fail_count: Number(row.fail_count || 0),
+              disabled: !!row.disabled,
+            };
+        } catch (dbErr) {
+          console.error("key_state failure write failed", dbErr);
+        }
       }
     } else {
       if (response.body) await response.body.cancel();
-      await env.DB.prepare(
-        "UPDATE key_state SET fail_count = 0, disabled = 0, updated_at = ? WHERE id = ?",
-      )
-        .bind(Date.now(), row.id)
-        .run();
+      if (row.disabled || Number(row.fail_count || 0) !== 0) {
+        await env.DB.prepare(
+          "UPDATE key_state SET fail_count = 0, disabled = 0, updated_at = ? WHERE id = ?",
+        )
+          .bind(Date.now(), row.id)
+          .run();
+      }
       ledger = { fail_count: 0, disabled: false };
     }
     return json({

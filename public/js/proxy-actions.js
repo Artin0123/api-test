@@ -183,9 +183,11 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
       if (rawKey.includes("bbbb")) {
         const override = mockOverrideForProvider(provider.fp);
         const prev = override.keys.get(rawKey) || {};
-        const nextFail = Number(prev.fail_count || 0) + 1;
         const threshold = Number(state.settings?.proxy_fail_threshold || 3);
-        const disabled = nextFail >= threshold;
+        const prevFail = Number(prev.fail_count || 0);
+        const alreadyBlocked = !!prev.disabled || prevFail >= threshold;
+        const nextFail = alreadyBlocked ? prevFail : Math.min(threshold, prevFail + 1);
+        const disabled = !!prev.disabled || nextFail >= threshold;
         override.keys.set(rawKey, {
           ...prev,
           disabled,

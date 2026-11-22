@@ -336,12 +336,13 @@ async function recordKeyFailure(db, id, threshold) {
   const result = await db
     .prepare(
       "UPDATE key_state " +
-        "SET fail_count = fail_count + 1, " +
+        "SET fail_count = MIN(?, fail_count + 1), " +
         "    disabled = CASE WHEN fail_count + 1 >= ? THEN 1 ELSE disabled END, " +
         "    updated_at = ? " +
-        "WHERE id = ? RETURNING fail_count, disabled",
+        "WHERE id = ? AND disabled = 0 AND fail_count < ? " +
+        "RETURNING fail_count, disabled",
     )
-    .bind(threshold, Date.now(), id)
+    .bind(threshold, threshold, Date.now(), id, threshold)
     .all();
   return (result.results || [])[0] || null;
 }

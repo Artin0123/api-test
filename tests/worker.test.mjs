@@ -913,6 +913,10 @@ test("a failed manual test charges the key and can disable it", async () => {
   assert.equal(second.data.fail_count, 2);
   assert.equal(second.data.disabled, true, "門檻到了就要禁用");
 
+  const third = await asJson(await call());
+  assert.equal(third.data.fail_count, 2, "已達門檻不應再往上加失敗次數");
+  assert.equal(third.data.disabled, true);
+
   const [after] = await getKeyRows(env, fp);
   assert.equal(after.fail_count, 2);
   assert.equal(after.disabled, true);
