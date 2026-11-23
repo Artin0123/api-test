@@ -10,12 +10,30 @@ const D1_SCHEMA = [
     "disabled INTEGER NOT NULL DEFAULT 0, " +
     "updated_at INTEGER NOT NULL, " +
     "UNIQUE (fp, api_key))",
-  "CREATE INDEX IF NOT EXISTS idx_key_state_pick " +
-    "ON key_state (fp, disabled, last_used_at)",
+  "DROP INDEX IF EXISTS idx_key_state_pick",
+  "CREATE TABLE IF NOT EXISTS proxy_logs (" +
+    "id INTEGER PRIMARY KEY, " +
+    "ts INTEGER NOT NULL, " +
+    "alias TEXT NOT NULL, " +
+    "provider_type TEXT NOT NULL, " +
+    "method TEXT NOT NULL, " +
+    "path TEXT NOT NULL, " +
+    "model TEXT, " +
+    "stream INTEGER NOT NULL DEFAULT 0, " +
+    "status INTEGER NOT NULL, " +
+    "ttfb_ms INTEGER, " +
+    "duration_ms INTEGER, " +
+    "key_id INTEGER, " +
+    "api_key TEXT, " +
+    "colo TEXT, " +
+    "user_agent TEXT, " +
+    "error TEXT, " +
+    "req_body TEXT, " +
+    "res_body TEXT)",
 ];
 
 async function ensureSchema(db) {
-  for (const sql of D1_SCHEMA) await db.prepare(sql).run();
+  await db.batch(D1_SCHEMA.map((sql) => db.prepare(sql)));
 }
 
 function storageBackendName(env) {
@@ -118,30 +136,9 @@ function kvStore(env) {
 }
 
 /** The one entry point every handler uses for settings / results / run-status /
- *  dead_keys. The proxy's own key_state table is SQL-only and lives in D1. */
+ *  dead_keys. The proxy's own key_state and proxy_logs tables live in D1. */
 function store(env) {
   return storageBackendName(env) === "d1" ? d1Store(env) : kvStore(env);
-}
-
-/** KV `list()` is paginated for real namespaces; migration must walk every page. */
-async function listAllEntries(source) {
-  const entries = [];
-  let cursor = null;
-  let pages = 0;
-  do {
-    const page = await source.list({ cursor, limit: 1000 });
-    pages++;
-    for (const key of page.keys || []) {
-      const name = key && key.name;
-      if (!name) continue;
-      const value = await source.get(name);
-      if (value !== null && value !== undefined) {
-        entries.push({ k: name, v: value });
-      }
-    }
-    cursor = page.list_complete ? null : page.cursor;
-  } while (cursor);
-  return { entries, pages };
 }
 
 function parseJsonObject(raw) {

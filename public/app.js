@@ -158,6 +158,37 @@ function bindEvents() {
     }
   });
 
+  // Request logs tab & detail modal
+  [dom.logsFAlias, dom.logsFStatus].forEach((el) =>
+    el?.addEventListener("change", () => loadProxyLogs({ resetPage: true })),
+  );
+  [dom.logsFKey, dom.logsFModel].forEach((el) =>
+    el?.addEventListener("input", scheduleLogsFilterReload),
+  );
+  bindDateFilterInput(dom.logsFTo, scheduleLogsFilterReload);
+  dom.logsTableWrap?.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest(".copy-btn");
+    if (copyBtn) {
+      if (copyBtn.dataset.copyVal) {
+        return copyText(copyBtn.dataset.copyVal, copyBtn);
+      }
+      if (copyBtn.dataset.logCopyId) {
+        return copyLogKeyById(copyBtn.dataset.logCopyId, copyBtn);
+      }
+      return;
+    }
+    const detailBtn = e.target.closest("[data-log-detail]");
+    if (detailBtn) return openLogDetail(detailBtn.dataset.logDetail);
+  });
+  dom.logDetailContent?.addEventListener("click", (e) => {
+    const copyBtn = e.target.closest(".copy-btn");
+    if (copyBtn) return copyText(copyBtn.dataset.copyVal || "", copyBtn);
+  });
+  dom.logDetailClose?.addEventListener("click", closeLogDetail);
+  dom.logDetailOverlay?.addEventListener("click", (e) => {
+    if (e.target.dataset.closeModal === "logdetail") closeLogDetail();
+  });
+
   // Result body delegated scroll (capture phase — scroll doesn't bubble from textarea)
   dom.resultsBody.addEventListener(
     "scroll",
@@ -300,19 +331,8 @@ function bindEvents() {
   [dom.dkFHost, dom.dkFCode].forEach((el) =>
     el.addEventListener("change", renderDeadKeys),
   );
-  bindDateFilterInput(dom.dkFFrom);
-  bindDateFilterInput(dom.dkFTo);
+  bindDateFilterInput(dom.dkFTo, renderDeadKeys);
   dom.dkFKey.addEventListener("input", renderDeadKeys);
-  dom.dkFReset.addEventListener("click", () => {
-    dom.dkFHost.value = "";
-    dom.dkFKey.value = "";
-    dom.dkFCode.value = "";
-    syncCustomSelect(dom.dkFHost);
-    syncCustomSelect(dom.dkFCode);
-    resetDateFilterInput(dom.dkFFrom);
-    resetDateFilterInput(dom.dkFTo);
-    renderDeadKeys();
-  });
   dom.dkTableWrap.addEventListener("click", (e) => {
     const sortTh = e.target.closest("th[data-sort]");
     if (sortTh) {
@@ -401,6 +421,7 @@ function bindEvents() {
     [dom.sampleOverlay, closeSample],
     [dom.dkConfirmOverlay, closeDkConfirm],
     [dom.errDetailOverlay, closeErrorDetail],
+    [dom.logDetailOverlay, closeLogDetail],
   ]);
 
   document.addEventListener("keydown", (e) => {
@@ -438,11 +459,11 @@ function bindEvents() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
-async function initApp() {
+async function initApp(prefetchedSettings = null) {
   // Apply current theme icon
   applyTheme(getTheme());
   // Always load settings/config first, then refresh the active tab if not config.
-  await loadConfig();
+  await loadConfig(prefetchedSettings);
   const activeBtn = Array.from(dom.tabBtns).find((b) =>
     b.classList.contains("active"),
   );
@@ -474,10 +495,9 @@ async function bootstrap() {
   // still valid, so probe it. A 401 here is handled by api() → sessionEnded().
   try {
     const probe = await api("/api/settings", { auth: true });
-    applyFetchedSettings(probe);
     markSignedIn();
     dom.authOverlay.classList.remove("active");
-    await initApp();
+    await initApp(probe);
   } catch (err) {
     // Also covers a network failure, where sessionEnded() has not run yet — the
     // pre-paint hider must come off either way or the page stays blank.

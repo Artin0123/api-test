@@ -4,6 +4,7 @@
  *
  * KV / D1 store keys:
  *     app_settings               { providers[], github_url, discord_webhook_url, ... }
+ *     proxy_test_models          { [fingerprint]: model } (D1 proxy probe model map)
  *     results:{fingerprint}      per-provider latest test results
  *     test_run_status            global { started_at } flag for running workflow (90m TTL)
  *     dead_keys                  synced dead key records (array)
@@ -34,9 +35,11 @@ const ROUTES = {
   "DELETE /api/dead-keys": handleDeleteDeadKey,
   "GET /api/proxy/state": handleGetProxyState,
   "POST /api/proxy/test": handleProxyTest,
+  "POST /api/proxy/test-commit": handleProxyTestCommit,
   "POST /api/proxy/recover": handleProxyRecover,
   "POST /api/proxy/disable": handleProxyDisable,
   "POST /api/proxy/test-model": handleProxyTestModel,
+  "GET /api/proxy/logs": handleGetProxyLogs,
 };
 
 /**
@@ -87,8 +90,18 @@ function withSecurityHeaders(response) {
   return out;
 }
 
+function runInBackground(ctx, promise) {
+  const guarded = Promise.resolve(promise).catch((err) => {
+    console.error("background task failed", err);
+  });
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(guarded);
+  }
+  return guarded;
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const isApi = url.pathname.startsWith("/api/");
     const isProxy = url.pathname.startsWith("/proxy/");
@@ -100,9 +113,8 @@ export default {
     // Pages Functions have no startup phase, so a bad storage setting can only be
     // reported per request. Static assets stay reachable on purpose — the page
     // itself has to load, otherwise the operator sees a blank 500 instead of the
-    // reason. /api/storage/* is exempt: export only needs KV and is exactly what
-    // an operator reaches for when the backend is misconfigured.
-    if (isApi && !url.pathname.startsWith("/api/storage/")) {
+    // reason.
+    if (isApi) {
       const configError = storageConfigError(env);
       if (configError) {
         return withSecurityHeaders(
@@ -113,7 +125,7 @@ export default {
 
     if (isProxy) {
       try {
-        return withSecurityHeaders(await handleProxy(request, env, url));
+        return withSecurityHeaders(await handleProxy(request, env, url, ctx));
       } catch (err) {
         if (err && err.code === "CONFIG_ERROR") {
           return withSecurityHeaders(json({ error: err.message }, 500));
@@ -130,15 +142,7 @@ export default {
     if (!handler) return withSecurityHeaders(text("Not Found", 404));
 
     try {
-      if (!url.pathname.startsWith("/api/storage/")) {
-        const configError = storageConfigError(env);
-        if (configError) {
-          return withSecurityHeaders(
-            json({ error: configError, code: "CONFIG_ERROR" }, 500),
-          );
-        }
-      }
-      return withSecurityHeaders(await handler(request, env, url));
+      return withSecurityHeaders(await handler(request, env, url, ctx));
     } catch (err) {
       if (err && err.code === "CONFIG_ERROR") {
         return withSecurityHeaders(json({ error: err.message }, 500));
@@ -147,11 +151,11 @@ export default {
       return withSecurityHeaders(json({ error: "Internal Server Error" }, 500));
     }
   },
+  __test: proxyTestHooks(),
 };
 
 // ─── storage backend (KV ⇄ D1) ─────────────────────────────────────────────
-// STORAGE_BACKEND defaults to d1 on purpose: the proxy needs single-row atomic
-// updates (key_state), which KV's final consistency and 1,000 writes/day cannot
-// provide. Existing KV-only deployments must set STORAGE_BACKEND=kv explicitly
-// until they have created D1, bound it as DB and run the migration — deploying
-// without that order turns every /api request into a 500.
+// STORAGE_BACKEND defaults to d1 on purpose: the proxy needs row-level updates
+// (key_state) and request logs (proxy_logs), which KV's final consistency and
+// 1,000 writes/day cannot provide. Existing KV-only deployments must set
+// STORAGE_BACKEND=kv explicitly.

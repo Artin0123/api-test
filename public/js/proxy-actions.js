@@ -61,8 +61,6 @@ function showProxyToast(
       dismissProxyToast(active.shift());
     }
   }
-  // Only prune excess leaving nodes on rapid burst clicks so normal transitions
-  // let the oldest toast fade upward smoothly instead of snapping.
   const leaving = Array.from(root.querySelectorAll(".proxy-toast.is-leaving"));
   while (leaving.length > 1) {
     leaving.shift().remove();
@@ -99,10 +97,11 @@ function showProxyToast(
   return toast;
 }
 
-function formatProxyTestDuration(ms) {
+function formatProxyTestDuration(ms, { compact = false } = {}) {
   const n = Math.max(0, Number(ms) || 0);
-  if (n < 1000) return `${Math.round(n)} ms`;
-  return `${(n / 1000).toFixed(2).replace(/\.?0+$/, "")} s`;
+  const sep = compact ? "" : " ";
+  if (n < 1000) return `${Math.round(n)}${sep}ms`;
+  return `${(n / 1000).toFixed(2).replace(/\.?0+$/, "")}${sep}s`;
 }
 
 function formatProxyTestError(result) {
@@ -114,15 +113,37 @@ function formatProxyTestError(result) {
   return "请求失败";
 }
 
-/** Returns the result object so the batch loop can count it. */
-async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
+function persistTestModelParallel(fp, selectedModel, providerObj) {
+  const savedModel = String(providerObj?.test_model || "").trim();
+  if (!selectedModel || selectedModel === savedModel) {
+    return Promise.resolve();
+  }
+  if (providerObj) providerObj.test_model = selectedModel;
+  if (MOCK) {
+    mockOverrideForProvider(fp).test_model = selectedModel;
+    return Promise.resolve();
+  }
+  return api("/api/proxy/test-model", {
+    method: "POST",
+    auth: true,
+    body: { fp, model: selectedModel },
+  }).catch(() => {});
+}
+
+/** Returns the result object so the batch loop can count & commit it. */
+async function testProxyKey(
+  fp,
+  id,
+  { fromBatch = false, model = null, deferWrite = false } = {},
+) {
   if (id == null || id === "") return null;
   if (!fromBatch && state.proxyBusy) return null;
   const targetId = String(id);
-  const token = `${fp}:${targetId}`;
+  const targetFp = fp || (selectedProxyProvider() || {}).fp || null;
+  if (!targetFp) return null;
+  const token = `${targetFp}:${targetId}`;
   if (state.proxyTestingKeys.has(token)) return null;
 
-  const targetFp = fp || (selectedProxyProvider() || {}).fp || null;
   const beforeProvider = (state.proxy?.providers || []).find(
     (item) => item.fp === targetFp,
   );
@@ -160,6 +181,13 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
         pending: true,
       });
 
+  // Single-card non-MOCK tests already persist `model` inside `POST /api/proxy/test`'s
+  // own `db.batch` (`defer_write` omitted), so only MOCK mode needs local override sync here.
+  if (!fromBatch && MOCK) {
+    mockOverrideForProvider(targetFp).test_model = selectedModel;
+    if (beforeProvider) beforeProvider.test_model = selectedModel;
+  }
+
   const controller = new AbortController();
   const timeoutTimer = setTimeout(
     () => controller.abort(),
@@ -186,7 +214,9 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
         const threshold = Number(state.settings?.proxy_fail_threshold || 3);
         const prevFail = Number(prev.fail_count || 0);
         const alreadyBlocked = !!prev.disabled || prevFail >= threshold;
-        const nextFail = alreadyBlocked ? prevFail : Math.min(threshold, prevFail + 1);
+        const nextFail = alreadyBlocked
+          ? prevFail
+          : Math.min(threshold, prevFail + 1);
         const disabled = !!prev.disabled || nextFail >= threshold;
         override.keys.set(rawKey, {
           ...prev,
@@ -199,21 +229,19 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
           ms: 210,
           model: selectedModel,
           error:
-            "Incorrect API key provided: sk-bb**bbbb. You can find your API key at https://platform.example.com/account/api-keys. (request id: req-mock-fail-long-message)",
+            "Incorrect API key provided: sk-bb**bbbb. You can find your API key at https://platform.example.com/account/api-keys.",
           fail_count: nextFail,
           disabled,
         };
       } else {
-        if (provider) {
-          if (rawKey) {
-            const override = mockOverrideForProvider(provider.fp);
-            const prev = override.keys.get(rawKey) || {};
-            override.keys.set(rawKey, {
-              ...prev,
-              disabled: false,
-              fail_count: 0,
-            });
-          }
+        if (provider && rawKey) {
+          const override = mockOverrideForProvider(provider.fp);
+          const prev = override.keys.get(rawKey) || {};
+          override.keys.set(rawKey, {
+            ...prev,
+            disabled: false,
+            fail_count: 0,
+          });
         }
         result = {
           ok: true,
@@ -228,7 +256,12 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
       result = await api("/api/proxy/test", {
         method: "POST",
         auth: true,
-        body: { fp, id: Number(targetId), model: selectedModel },
+        body: {
+          fp: targetFp,
+          id: Number(targetId),
+          model: selectedModel,
+          ...(deferWrite ? { defer_write: true } : {}),
+        },
         signal: controller.signal,
       });
     }
@@ -236,30 +269,23 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
     if (err && err.name === "AbortError") {
       result = {
         ok: false,
-        status: 0,
+        status: 499,
         error: "请求超时（20 秒）",
         timedOut: true,
       };
     } else {
-      result = { ok: false, status: err.status || 0, error: err.message };
+      result = {
+        ok: false,
+        status: err.status || 0,
+        error: err.message,
+        probeSkipped: true,
+      };
     }
   } finally {
     clearTimeout(timeoutTimer);
     state.proxyTestingKeys.delete(token);
     if (beforeProvider && result && result.model) {
       beforeProvider.test_model = result.model;
-    }
-    if (state.settings && result && result.model) {
-      if (
-        !state.settings.proxy_test_models ||
-        typeof state.settings.proxy_test_models !== "object"
-      ) {
-        state.settings.proxy_test_models = {};
-      }
-      state.settings.proxy_test_models[targetFp] = result.model;
-    }
-    if (state.settings && typeof result?.settings_version === "number") {
-      state.settings.version = result.settings_version;
     }
     if (!fromBatch) {
       state.proxyBusy = false;
@@ -306,7 +332,10 @@ async function testProxyKey(fp, id, { fromBatch = false, model = null } = {}) {
     }
   }
 
-  if (!fromBatch && ((result && result.disabled) || (result && result.ok && wasDirty))) {
+  if (
+    !fromBatch &&
+    ((result && result.disabled) || (result && result.ok && wasDirty))
+  ) {
     await loadProxyState({ preserveOrder: true });
   }
   return result;
@@ -336,7 +365,6 @@ async function runProxyBatch(mode) {
   }
   const keys = (p.keys || []).filter((k) => {
     if (k.id == null) return false;
-    // Only the two scopes the toolbar exposes: healthy keys or disabled keys.
     return mode === "disabled" ? k.disabled : !k.disabled;
   });
   if (!keys.length) {
@@ -358,47 +386,61 @@ async function runProxyBatch(mode) {
     { type: "info", duration: 0, pending: true },
   );
 
+  // Fire standalone model save in parallel — no solo-first-key wait needed.
+  const modelSavePromise = persistTestModelParallel(p.fp, selectedModel, p);
+
   let ok = 0;
   let fail = 0;
+  const commitResults = [];
+
   const runOne = async (k) => {
     const result = await testProxyKey(p.fp, k.id, {
       fromBatch: true,
       model: selectedModel,
+      deferWrite: true,
     });
+    if (result && !result.probeSkipped) {
+      commitResults.push({ id: Number(k.id), ok: !!result.ok });
+    }
     if (result && result.ok) ok++;
     else fail++;
   };
+
   try {
-    // Only probe the first key solo when the model changed (so proxy_test_models
-    // writes once); when the model is already saved, fan out all keys at once.
-    const modelChanged = (p.test_model || "").trim() !== selectedModel;
-    const rest = modelChanged ? keys.slice(1) : keys;
-    if (modelChanged) {
-      await runOne(keys[0]);
-    }
-    if (rest.length) {
-      const settingProv = (state.settings?.providers || []).find(
-        (item) => item && item.alias === p.alias,
-      );
-      const configuredCap = Number(
-        settingProv?.max_concurrency ?? p.max_concurrency,
-      );
-      const concurrency = Number.isInteger(configuredCap) && configuredCap > 0
+    const settingProv = (state.settings?.providers || []).find(
+      (item) =>
+        item &&
+        (cachedProviderFp(item) === p.fp ||
+          String(item.alias || "").trim() === p.alias),
+    );
+    const configuredCap = Number(
+      settingProv?.max_concurrency ?? p.max_concurrency,
+    );
+    const concurrency =
+      Number.isInteger(configuredCap) && configuredCap > 0
         ? Math.min(5, configuredCap)
         : 5;
-      let cursor = 0;
-      const workerCount = Math.min(concurrency, rest.length);
-      await Promise.all(
-        Array.from({ length: workerCount }, async () => {
-          while (cursor < rest.length) {
-            const next = rest[cursor++];
-            await runOne(next);
-          }
-        }),
-      );
-    }
+    let cursor = 0;
+    const workerCount = Math.min(concurrency, keys.length);
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (cursor < keys.length) {
+          const next = keys[cursor++];
+          await runOne(next);
+        }
+      }),
+    );
   } finally {
-    // Reset both flag and UI controls even if requests or reload fail.
+    await modelSavePromise;
+    if (!MOCK && commitResults.length) {
+      await api("/api/proxy/test-commit", {
+        method: "POST",
+        auth: true,
+        body: { fp: p.fp, results: commitResults },
+      }).catch((err) => {
+        console.error("proxy test-commit failed", err);
+      });
+    }
     state.proxyBusy = false;
     dom.proxyProvider.disabled = false;
     renderProxyToolbar();

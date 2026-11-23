@@ -92,8 +92,7 @@
         padding: 0.55rem 1rem;
     }
 
-    .btn-sm,
-    .dk-filter-actions .btn {
+    .btn-sm {
         padding: 0.45rem 0.75rem;
         font-size: var(--text-xs);
     }
@@ -209,10 +208,14 @@
         align-self: flex-start;
     }
 
-    /* Dead keys: stack full-width filters and keep date fields compact */
+    /* Dead keys & logs: stack full-width filters and keep date fields compact */
     .dk-filter-field--host,
     .dk-filter-field--key,
-    .dk-filter-field--code {
+    .dk-filter-field--code,
+    .logs-filter-field--alias,
+    .logs-filter-field--status,
+    .logs-filter-field--key,
+    .logs-filter-field--model {
         flex: 1 1 100%;
     }
 
@@ -251,7 +254,7 @@
 
     .data-table th.dk-code-col,
     .data-table td.dk-code-col {
-        width: 5rem;
+        width: 5.5rem;
         padding-left: 0.4rem;
         padding-right: 0.4rem;
     }

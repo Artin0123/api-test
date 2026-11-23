@@ -16,6 +16,7 @@ const state = {
   editorSortMode: "none",
   editorSortOrigin: "",
   proxy: null,
+  proxyStateSeq: null,
   proxySelected: null, // currently selected provider fp
   proxyPage: 1,
   proxyCardOrder: null, // { fp, indices } snapshot kept fixed during test runs
@@ -25,7 +26,9 @@ const state = {
   proxyRecoveringKeys: new Set(), // `${fp}:${id}` keys currently recovering
   proxyDisablingKeys: new Set(), // `${fp}:${id}` keys currently disabling
   mockProxyOverrides: new Map(), // fp -> { test_model, keys: Map }
-  reqSeq: { config: 0, results: 0, deadkeys: 0, proxy: 0 },
+  logsData: null,
+  logsPage: 1,
+  reqSeq: { config: 0, results: 0, deadkeys: 0, proxy: 0, logs: 0 },
   modalStack: [], // active overlay stack for closing only the topmost modal on Esc
 };
 
@@ -50,7 +53,9 @@ const dom = {
   tabBtns: Array.from(document.querySelectorAll(".tab-btn")),
   tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
   proxyTabBtn: document.querySelector('.tab-btn[data-tab="proxy"]'),
+  logsTabBtn: document.querySelector('.tab-btn[data-tab="logs"]'),
   tabProxy: $("tab-proxy"),
+  tabLogs: $("tab-logs"),
 
   // config tab
   configLoading: $("config-loading"),
@@ -108,10 +113,6 @@ const dom = {
   setProxyPassword: $("set-proxy-password"),
   setProxyPasswordToggle: $("set-proxy-password-toggle"),
   setProxyPasswordCopy: $("set-proxy-password-copy"),
-  setGatewayLogsUrl: $("set-gateway-logs-url"),
-  setGatewayToken: $("set-gateway-token"),
-  setGatewayTokenToggle: $("set-gateway-token-toggle"),
-  setGatewayTokenCopy: $("set-gateway-token-copy"),
   setProxyFailThreshold: $("set-proxy-fail-threshold"),
   setProxyMaxRetries: $("set-proxy-max-retries"),
   setProxyTimeoutMs: $("set-proxy-timeout-ms"),
@@ -129,9 +130,7 @@ const dom = {
   dkFHost: $("dk-f-host"),
   dkFKey: $("dk-f-key"),
   dkFCode: $("dk-f-code"),
-  dkFFrom: $("dk-f-from"),
   dkFTo: $("dk-f-to"),
-  dkFReset: $("dk-f-reset"),
   dkLoading: $("dk-loading"),
   dkError: $("dk-error"),
   dkEmpty: $("dk-empty"),
@@ -168,8 +167,24 @@ const dom = {
   proxyTestDisabled: $("proxy-test-disabled"),
   proxyRecoverAll: $("proxy-recover-all"),
   proxyPagination: $("proxy-pagination"),
-  proxyLogs: $("proxy-logs"),
   proxyKeyGrid: $("proxy-key-grid"),
+
+  // request logs tab & detail modal
+  logsFPanel: $("logs-filter-panel"),
+  logsFAlias: $("logs-f-alias"),
+  logsFStatus: $("logs-f-status"),
+  logsFKey: $("logs-f-key"),
+  logsFModel: $("logs-f-model"),
+  logsFTo: $("logs-f-to"),
+  logsLoading: $("logs-loading"),
+  logsError: $("logs-error"),
+  logsEmpty: $("logs-empty"),
+  logsTableWrap: $("logs-table-wrap"),
+  logsPagination: $("logs-pagination"),
+  logDetailOverlay: $("logdetail-overlay"),
+  logDetailTitle: $("logdetail-title"),
+  logDetailClose: $("logdetail-close-btn"),
+  logDetailContent: $("logdetail-content"),
 };
 
 // ── API ──────────────────────────────────────────────────────────────────

@@ -1,13 +1,12 @@
 // src/settings.js — verbatim section of public/_worker.js (assembled back by scripts/build-worker.mjs; order matters).
 const SETTINGS_KEY = "app_settings";
+const PROXY_TEST_MODELS_KEY = "proxy_test_models";
 
 const DEFAULT_SETTINGS = {
   providers: [],
   github_url: "",
   discord_webhook_url: "",
   proxy_password: "",
-  ai_gateway_logs_url: "",
-  ai_gateway_token: "",
   proxy_fail_threshold: 3,
   proxy_max_retries: 3,
   proxy_upstream_timeout_ms: 120000,
@@ -24,27 +23,98 @@ const PROXY_INT_LIMITS = {
   proxy_upstream_timeout_ms: { min: 1000, max: 600000, fallback: 120000 },
 };
 
-// Keep in sync with GATEWAY_LOGS_URL_RE in app.js.
-const GATEWAY_LOGS_URL_RE =
-  /^https:\/\/dash\.cloudflare\.com\/([^/?#]+)\/ai\/ai-gateway\/gateways\/([^/?#]+)\/logs(?:[/?#].*)?$/i;
-
 function isHttpUrl(rawUrl) {
   return /^https?:\/\/\S+/i.test(rawUrl);
 }
 
-function parseGatewayLogsUrl(rawUrl) {
-  const trimmed = typeof rawUrl === "string" ? rawUrl.trim() : "";
-  if (!trimmed) return null;
-  const match = GATEWAY_LOGS_URL_RE.exec(trimmed);
-  if (!match) return null;
+function isLoopbackHttpHost(hostname) {
+  const h = String(hostname || "").toLowerCase();
+  return h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1";
+}
+
+function isPrivateOrReservedIpLiteral(hostname) {
+  const raw = String(hostname || "")
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (!raw || isLoopbackHttpHost(raw)) return false;
+
+  // IPv4 literal check
+  const ipv4Match = raw.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4Match) {
+    const [a, b, c, d] = ipv4Match.slice(1).map(Number);
+    if (a > 255 || b > 255 || c > 255 || d > 255) return true;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+
+  // IPv6 literal check
+  if (raw.includes(":")) {
+    if (raw === "::" || raw.startsWith("::ffff:")) return true;
+    if (/^(?:fc|fd)[0-9a-f]{0,2}:/.test(raw)) return true;
+    if (/^fe[89ab][0-9a-f]:/.test(raw)) return true;
+    if (raw.startsWith("ff")) return true;
+  }
+  return false;
+}
+
+function hasPathTraversalSegment(rawPath) {
+  const s = String(rawPath || "");
+  return /(?:^|[\\/])\.\.(?:[\\/]|$)|%(?:25)*2e|%(?:25)*5c/i.test(s);
+}
+
+function validateApiBaseUrl(rawBase, selfHost = "") {
+  const trimmed = typeof rawBase === "string" ? rawBase.trim() : "";
+  if (!trimmed) return "api_base 不能为空";
+  if (hasPathTraversalSegment(trimmed)) {
+    return "api_base 不能包含路径穿越片段 (..)";
+  }
+  let parsed;
   try {
-    const accountId = decodeURIComponent(match[1]).trim();
-    const gatewayId = decodeURIComponent(match[2]).trim();
-    if (!accountId || !gatewayId) return null;
-    return { accountId, gatewayId, logsUrl: trimmed };
+    parsed = new URL(trimmed);
   } catch {
+    return `api_base "${trimmed}" 不是有效的 URL`;
+  }
+  if (parsed.username || parsed.password) {
+    return "api_base 不能包含帐号或密码 (userinfo)";
+  }
+  if (parsed.search) {
+    return "api_base 不能包含查询参数 (?query)";
+  }
+  if (parsed.hash) {
+    return "api_base 不能包含片段 (#fragment)";
+  }
+  if (
+    selfHost &&
+    parsed.host &&
+    parsed.host.toLowerCase() === String(selfHost).toLowerCase()
+  ) {
+    return "api_base 不能指向当前代理站点自身";
+  }
+  if (isPrivateOrReservedIpLiteral(parsed.hostname)) {
+    return "api_base 不能指向内网或保留 IP 位址";
+  }
+  if (parsed.protocol === "https:") {
+    return parsed.hostname ? null : "api_base 缺少有效域名";
+  }
+  if (parsed.protocol === "http:" && isLoopbackHttpHost(parsed.hostname)) {
     return null;
   }
+  return "api_base 必须使用 https://（本机测试仅允许 http://127.0.0.1 或 http://localhost）";
+}
+
+function validateProviderApiBases(providers, selfHost = "") {
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    if (!p || typeof p !== "object") continue;
+    const err = validateApiBaseUrl(p.api_base, selfHost);
+    if (err) return `providers[${i}].${err}`;
+  }
+  return null;
 }
 
 function clampOrDefaultInt(value, spec) {
@@ -77,10 +147,6 @@ function withSettingsDefaults(raw) {
     ...DEFAULT_SETTINGS,
     ...s,
     proxy_password: typeof s.proxy_password === "string" ? s.proxy_password : "",
-    ai_gateway_logs_url:
-      typeof s.ai_gateway_logs_url === "string" ? s.ai_gateway_logs_url : "",
-    ai_gateway_token:
-      typeof s.ai_gateway_token === "string" ? s.ai_gateway_token : "",
     proxy_fail_threshold: clampOrDefaultInt(
       s.proxy_fail_threshold,
       PROXY_INT_LIMITS.proxy_fail_threshold,
@@ -129,10 +195,14 @@ function normalizeKeysString(raw) {
   return splitUniqueDelimited(raw, "\n").join("\n");
 }
 
-/** Normalize keys, alias, and models formatting for storage. */
+/** Normalize keys, alias, api_base, test_path, and models formatting for storage. */
 function normalizeProviderForStorage(p) {
   if (!p || typeof p !== "object") return p;
   const out = { ...p };
+  delete out.gateway_provider;
+  if (typeof p.api_base === "string") {
+    out.api_base = p.api_base.trim().replace(/\/+$/, "");
+  }
   if (typeof p.alias === "string") {
     const alias = p.alias.trim();
     if (alias) out.alias = alias;
@@ -208,12 +278,8 @@ function validateProviderTypes(providers) {
   return null;
 }
 
-/** Every provider must keep at least one key: a keyless card can never be
- *  forwarded and would silently sit in the notebook forever. The editor already
- *  refuses it (app.js); this closes the curl/write-API path as well. */
-/** `proxy_test_models` is a { fingerprint: model } map kept *outside* providers[]:
- *  the proxy probe model is its own setting and must not inherit the daily-test
- *  model list. Empty values are dropped so the map stays small. */
+/** `proxy_test_models` is a { fingerprint: model } map kept in its own store key
+ *  (`proxy_test_models`) so saving the probe model never bumps `app_settings.version`. */
 function normalizeProxyTestModels(raw) {
   const out = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
@@ -286,8 +352,14 @@ function validateProviderTestPaths(providers) {
     if (typeof tp !== "string" || !tp.trim()) {
       return "providers[" + i + "].test_path 不能为空";
     }
-    if (/\s/.test(tp) || tp.includes("://")) {
-      return "providers[" + i + "].test_path 格式不正确：只能填相对路径";
+    if (
+      /\s/.test(tp) ||
+      tp.includes("://") ||
+      tp.includes("?") ||
+      tp.includes("#") ||
+      hasPathTraversalSegment(tp)
+    ) {
+      return "providers[" + i + "].test_path 格式不正确：只能填不含查询参数或 .. 的相对路径";
     }
   }
   return null;

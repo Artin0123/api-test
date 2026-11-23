@@ -203,11 +203,6 @@
     text-overflow: ellipsis;
 }
 
-/* No alias on this provider, so show muted placeholder text. */
-.proxy-url.is-disabled {
-    color: var(--text-muted);
-}
-
 .proxy-key-card-head {
     display: flex;
     align-items: center;

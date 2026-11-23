@@ -6,7 +6,7 @@
         "provider_type": "openai",
         "test_path": "/v1/chat/completions",
         "alias": "dashscope",
-        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode",
         "keys": "sk-aaaaaaaaaaaaaaaa\nsk-bbbbbbbbbbbbbbbb\nsk-cccccccccccccccc\nsk-dddddddddddddddd\nsk-eeeeeeeeeeeeeeee\nsk-ffffffffffffffff\nsk-gggggggggggggggg\nsk-hhhhhhhhhhhhhhhh\nsk-iiiiiiiiiiiiiiii\nsk-jjjjjjjjjjjjjjjj\nsk-kkkkkkkkkkkkkkkk",
         "models": "qwen-max,qwen-plus,qwen-turbo",
         "custom_headers": [
@@ -18,7 +18,7 @@
         "provider_type": "anthropic",
         "test_path": "/v1/messages",
         "alias": "claude-off",
-        "api_base": "https://api.anthropic.com/v1",
+        "api_base": "https://api.anthropic.com",
         "keys": "sk-ant-mockkey-1111111111111111\nsk-ant-mockkey-2222222222222222",
         "models": "claude-sonnet-4-20250514"
       },
@@ -33,18 +33,16 @@
     "github_url": "https://github.com/owner/repo/actions/workflows/main.yml",
     "discord_webhook_url": "https://discord.com/api/webhooks/000000000000000000/mock-token",
     "proxy_password": "mock-proxy-password",
-    "ai_gateway_logs_url": "https://dash.cloudflare.com/0000000000000000/ai/ai-gateway/gateways/mock-gw/logs",
-    "ai_gateway_token": "mock-gw-token",
     "proxy_fail_threshold": 3,
     "proxy_max_retries": 3,
     "proxy_upstream_timeout_ms": 120000
   },
   "results": {
-    "dashscope.aliyuncs.com": {
+    "ce4008e337b7d8b2327c88b25ae68dc85c524551fca57d085a022d525bf64e32": {
       "exists": true,
       "results": {
         "provider_type": "openai",
-        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode",
         "uploaded_at": "2026-05-20T02:15:00Z",
         "valid_keys": ["sk-aaaaaaaaaaaaaaaa", "sk-bbbbbbbbbbbbbbbb"],
         "invalid_records": [
@@ -121,13 +119,14 @@
         }
       }
     },
-    "generativelanguage.googleapis.com": {
+    "c840b6d7908bd78db2cab38c57e16959890422873884312463fb184656001900": {
       "exists": false
     }
   },
   "dead_keys": [
     {
       "id": "11111111-1111-4111-8111-111111111111",
+      "fp": "ce4008e337b7d8b2327c88b25ae68dc85c524551fca57d085a022d525bf64e32",
       "provider_host": "dashscope.aliyuncs.com",
       "api_key": "sk-cccccccccccccccc",
       "expired_at": "2026-05-20T00:00:00.000Z",
@@ -141,6 +140,7 @@
     },
     {
       "id": "22222222-2222-4222-8222-222222222222",
+      "fp": "ce4008e337b7d8b2327c88b25ae68dc85c524551fca57d085a022d525bf64e32",
       "provider_host": "dashscope.aliyuncs.com",
       "api_key": "sk-dddddddddddddddd",
       "expired_at": "2026-05-21T00:00:00.000Z",
@@ -149,7 +149,61 @@
       "created_at": "2026-05-21T03:00:00.000Z"
     },
     {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "fp": "ce4008e337b7d8b2327c88b25ae68dc85c524551fca57d085a022d525bf64e32",
+      "provider_host": "dashscope.aliyuncs.com",
+      "api_key": "sk-eeeeeeeeeeeeeeee",
+      "expired_at": "2026-05-18T00:00:00.000Z",
+      "error_code": 402,
+      "error_detail": {
+        "message": "余额不足，请充值后重试",
+        "type": "insufficient_quota",
+        "code": "402"
+      },
+      "created_at": "2026-05-18T08:30:00.000Z"
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "fp": "ce4008e337b7d8b2327c88b25ae68dc85c524551fca57d085a022d525bf64e32",
+      "provider_host": "dashscope.aliyuncs.com",
+      "api_key": "sk-ffffffffffffffff",
+      "expired_at": "2026-05-15T00:00:00.000Z",
+      "error_code": 403,
+      "error_detail": {
+        "message": "Your account has been deactivated. Please contact support.",
+        "type": "account_deactivated",
+        "code": "account_deactivated"
+      },
+      "created_at": "2026-05-15T11:20:00.000Z"
+    },
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "fp": "ce4008e337b7d8b2327c88b25ae68dc85c524551fca57d085a022d525bf64e32",
+      "provider_host": "dashscope.aliyuncs.com",
+      "api_key": "sk-gggggggggggggggg",
+      "expired_at": "2026-05-10T00:00:00.000Z",
+      "error_code": 499,
+      "error_detail": {
+        "message": "Upstream connection timed out after 20s"
+      },
+      "created_at": "2026-05-10T04:15:00.000Z"
+    },
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "fp": "81c1a40bc2c7fb6cd6cf324bf5666fb3ba091587d5066692762c721283295d62",
+      "provider_host": "api.anthropic.com",
+      "api_key": "sk-ant-mockkey-2222222222222222",
+      "expired_at": "2026-04-25T00:00:00.000Z",
+      "error_code": 401,
+      "error_detail": {
+        "message": "invalid x-api-key",
+        "type": "authentication_error"
+      },
+      "created_at": "2026-04-25T16:40:00.000Z"
+    },
+    {
       "id": "33333333-3333-4333-8333-333333333333",
+      "fp": "c840b6d7908bd78db2cab38c57e16959890422873884312463fb184656001900",
       "provider_host": "generativelanguage.googleapis.com",
       "api_key": "AIza-mockkey-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "expired_at": "2026-04-02T00:00:00.000Z",
@@ -159,6 +213,148 @@
         "status": "RESOURCE_EXHAUSTED"
       },
       "created_at": "2026-04-02T09:12:00.000Z"
+    }
+  ],
+  "proxy_logs": [
+    {
+      "id": 7,
+      "ts": 1779521685000,
+      "alias": "dashscope",
+      "provider_type": "openai",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "qwen-max",
+      "stream": true,
+      "status": 200,
+      "ttfb_ms": 342,
+      "duration_ms": 1820,
+      "key_id": 1,
+      "api_key": "sk-aaaaaaaaaaaaaaaa",
+      "colo": "TPE",
+      "user_agent": "OpenAI/Python 1.82.0",
+      "error": null,
+      "req_body": "{\n  \"model\": \"qwen-max\",\n  \"stream\": true,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"17 * 19 = ?\" }\n  ]\n}",
+      "res_body": "{\n  \"content\": \"17 × 19 = 323\",\n  \"thinking\": \"17 * 20 - 17 = 323\",\n  \"finish_reason\": \"stop\",\n  \"usage\": {\n    \"prompt_tokens\": 14,\n    \"completion_tokens\": 22,\n    \"total_tokens\": 36\n  }\n}"
+    },
+    {
+      "id": 6,
+      "ts": 1779521684800,
+      "alias": "dashscope",
+      "provider_type": "openai",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "qwen-max",
+      "stream": true,
+      "status": 429,
+      "ttfb_ms": 180,
+      "duration_ms": 180,
+      "key_id": 2,
+      "api_key": "sk-bbbbbbbbbbbbbbbb",
+      "colo": "TPE",
+      "user_agent": "OpenAI/Python 1.82.0",
+      "error": "Rate limit exceeded",
+      "req_body": "{\n  \"model\": \"qwen-max\",\n  \"stream\": true,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"17 * 19 = ?\" }\n  ]\n}",
+      "res_body": "{\n  \"error\": {\n    \"message\": \"Rate limit exceeded for qwen-max\",\n    \"type\": \"rate_limit_error\",\n    \"code\": \"429\"\n  }\n}"
+    },
+    {
+      "id": 5,
+      "ts": 1779521620000,
+      "alias": "claude-off",
+      "provider_type": "anthropic",
+      "method": "POST",
+      "path": "/v1/messages",
+      "model": "claude-sonnet-4-20250514",
+      "stream": false,
+      "status": 200,
+      "ttfb_ms": null,
+      "duration_ms": 610,
+      "key_id": 101,
+      "api_key": "sk-ant-mockkey-1111111111111111",
+      "colo": "LAX",
+      "user_agent": "Anthropic/JS 0.52.0",
+      "error": null,
+      "req_body": "{\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 64,\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"Hello\" }\n  ]\n}",
+      "res_body": "{\n  \"id\": \"msg_mock_01\",\n  \"type\": \"message\",\n  \"role\": \"assistant\",\n  \"content\": [{ \"type\": \"text\", \"text\": \"Hello!\" }]\n}"
+    },
+    {
+      "id": 4,
+      "ts": 1779521500900,
+      "alias": "dashscope",
+      "provider_type": "openai",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "qwen-turbo",
+      "stream": false,
+      "status": 499,
+      "ttfb_ms": null,
+      "duration_ms": 5000,
+      "key_id": 6,
+      "api_key": "sk-ffffffffffffffff",
+      "colo": "TPE",
+      "user_agent": "curl/8.7.1",
+      "error": "Upstream timeout (5000ms)",
+      "req_body": "{\n  \"model\": \"qwen-turbo\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"ping\" }\n  ]\n}",
+      "res_body": "{\n  \"error\": \"Upstream request failed\",\n  \"detail\": \"Upstream timeout (5000ms)\"\n}"
+    },
+    {
+      "id": 3,
+      "ts": 1779521500600,
+      "alias": "dashscope",
+      "provider_type": "openai",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "qwen-turbo",
+      "stream": false,
+      "status": 402,
+      "ttfb_ms": null,
+      "duration_ms": 195,
+      "key_id": 5,
+      "api_key": "sk-eeeeeeeeeeeeeeee",
+      "colo": "TPE",
+      "user_agent": "curl/8.7.1",
+      "error": "余额不足，请充值后重试",
+      "req_body": "{\n  \"model\": \"qwen-turbo\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"ping\" }\n  ]\n}",
+      "res_body": "{\n  \"error\": {\n    \"message\": \"余额不足，请充值后重试\",\n    \"type\": \"insufficient_quota\",\n    \"code\": \"402\"\n  }\n}"
+    },
+    {
+      "id": 2,
+      "ts": 1779521500300,
+      "alias": "dashscope",
+      "provider_type": "openai",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "qwen-turbo",
+      "stream": false,
+      "status": 401,
+      "ttfb_ms": null,
+      "duration_ms": 205,
+      "key_id": 4,
+      "api_key": "sk-dddddddddddddddd",
+      "colo": "TPE",
+      "user_agent": "curl/8.7.1",
+      "error": "Incorrect API key provided: sk-ddd***ddd",
+      "req_body": "{\n  \"model\": \"qwen-turbo\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"ping\" }\n  ]\n}",
+      "res_body": "{\n  \"error\": {\n    \"message\": \"Incorrect API key provided: sk-ddd***ddd\",\n    \"type\": \"invalid_request_error\"\n  }\n}"
+    },
+    {
+      "id": 1,
+      "ts": 1779521500000,
+      "alias": "dashscope",
+      "provider_type": "openai",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "model": "qwen-turbo",
+      "stream": false,
+      "status": 401,
+      "ttfb_ms": null,
+      "duration_ms": 215,
+      "key_id": 3,
+      "api_key": "sk-cccccccccccccccc",
+      "colo": "TPE",
+      "user_agent": "curl/8.7.1",
+      "error": "Incorrect API key provided: sk-ccc***ccc",
+      "req_body": "{\n  \"model\": \"qwen-turbo\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": \"ping\" }\n  ]\n}",
+      "res_body": "{\n  \"error\": {\n    \"message\": \"Incorrect API key provided: sk-ccc***ccc\",\n    \"type\": \"invalid_request_error\"\n  }\n}"
     }
   ],
   "run_status": {

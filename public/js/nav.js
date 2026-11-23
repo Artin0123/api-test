@@ -18,7 +18,9 @@ function toggleMobileMenu(force) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  if (name === "proxy" && isKvStorageMode()) name = "config";
+  if ((name === "proxy" || name === "logs") && isKvStorageMode()) {
+    name = "config";
+  }
   closeOpenCustomSelect();
   dom.tabBtns.forEach((b) =>
     b.classList.toggle("active", b.dataset.tab === name),
@@ -28,10 +30,16 @@ function switchTab(name) {
     p.classList.toggle("active", active);
     p.classList.toggle("hidden", !active);
   });
+  if (name === "proxy") {
+    loadProxyState();
+    startProxyLiveTimers();
+  } else {
+    stopProxyLiveTimers();
+  }
   if (name === "results") loadResults();
   if (name === "config") loadConfig();
   if (name === "deadkeys") loadDeadKeys();
-  if (name === "proxy") loadProxyState();
+  if (name === "logs") loadProxyLogs();
 
   // Close mobile menu if open
   toggleMobileMenu(false);

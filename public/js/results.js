@@ -59,7 +59,7 @@ async function loadResults() {
           let resultData = { exists: false };
           if (MOCK) {
             const mock = await getMock();
-            resultData = (mock.results || {})[host] || { exists: false };
+            resultData = (mock.results || {})[fp] || { exists: false };
           } else {
             resultData = await api(
               `/api/results?fp=${encodeURIComponent(fp)}`,
@@ -331,7 +331,7 @@ function openErrorDetail(errorCode, detail, subtitle = "") {
     : `<p class="muted">（无错误详情）</p>`;
 
   dom.errDetailContent.innerHTML = `
-    ${errorCode != null ? `<div class="errdetail-code">Error Code: <strong>${esc(errorCode)}</strong></div>` : ""}
+    ${errorCode != null ? `<div class="errdetail-code">状态码: <strong>${esc(errorCode)}</strong></div>` : ""}
     ${rows}
   `;
   openModal(dom.errDetailOverlay);

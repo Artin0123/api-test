@@ -468,6 +468,89 @@ function providersEqual(a, b) {
 }
 
 const MAX_PROVIDER_KEYS = 999;
+const FRONTEND_PROXY_ALIAS_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function hasFrontendPathTraversal(rawPath) {
+  return /(?:^|[\\/])\.\.(?:[\\/]|$)|%(?:25)*2e|%(?:25)*5c/i.test(
+    String(rawPath || ""),
+  );
+}
+
+function isFrontendPrivateIp(hostname) {
+  const raw = String(hostname || "")
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  if (
+    !raw ||
+    raw === "127.0.0.1" ||
+    raw === "localhost" ||
+    raw === "::1"
+  ) {
+    return false;
+  }
+  const m = raw.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b, c, d] = m.slice(1).map(Number);
+    if (a > 255 || b > 255 || c > 255 || d > 255) return true;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (raw.includes(":")) {
+    if (raw === "::" || raw.startsWith("::ffff:")) return true;
+    if (/^(?:fc|fd)[0-9a-f]{0,2}:/.test(raw)) return true;
+    if (/^fe[89ab][0-9a-f]:/.test(raw)) return true;
+    if (raw.startsWith("ff")) return true;
+  }
+  return false;
+}
+
+function validateFrontendApiBase(rawBase) {
+  if (!rawBase) return "请填写 API Base URL";
+  if (hasFrontendPathTraversal(rawBase)) {
+    return "API Base URL 不能包含路径穿越片段 (..)";
+  }
+  let parsed;
+  try {
+    parsed = new URL(rawBase);
+  } catch {
+    return "API Base URL 不是有效的网址";
+  }
+  if (parsed.username || parsed.password) {
+    return "API Base URL 不能包含帐号或密码";
+  }
+  if (parsed.search) {
+    return "API Base URL 不能包含查询参数 (?query)";
+  }
+  if (parsed.hash) {
+    return "API Base URL 不能包含片段 (#fragment)";
+  }
+  if (
+    typeof location !== "undefined" &&
+    location.host &&
+    parsed.host &&
+    parsed.host.toLowerCase() === location.host.toLowerCase()
+  ) {
+    return "API Base URL 不能指向当前代理站点自身";
+  }
+  const h = String(parsed.hostname || "").toLowerCase();
+  const isLoopback =
+    h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1";
+  if (isFrontendPrivateIp(h)) {
+    return "API Base URL 不能指向内网或保留 IP 位址";
+  }
+  if (parsed.protocol === "https:") {
+    return h ? null : "API Base URL 缺少有效域名";
+  }
+  if (parsed.protocol === "http:" && isLoopback) {
+    return null;
+  }
+  return "API Base URL 必须以 https:// 开头（本机测试仅允许 http://127.0.0.1 或 http://localhost）";
+}
 
 async function saveEditor() {
   const confirmed = Boolean(state.editorPendingRemoved);
@@ -488,7 +571,8 @@ async function saveEditor() {
   const { headers: customHeaders, invalid: invalidHeaders } = getEditorHeaders();
   const maxConcurrencyRaw = dom.edMaxConcurrency.value.trim();
 
-  if (!apiBase) return failValidation("请填写 API Base URL");
+  const apiBaseErr = validateFrontendApiBase(apiBase);
+  if (apiBaseErr) return failValidation(apiBaseErr);
   const dupIdx = existingProviders.findIndex(
     (p, i) =>
       i !== index &&
@@ -538,13 +622,26 @@ async function saveEditor() {
     max_concurrency: maxConcurrency,
   };
   const alias = dom.edAlias.value.trim();
+  if (alias && !FRONTEND_PROXY_ALIAS_RE.test(alias)) {
+    return failValidation(
+      "转发别名只能使用小写英文、数字与连字号，且不超过 64 个字元",
+    );
+  }
   // Omit empty alias so a provider without forwarding keeps its minimal shape.
   if (alias) entry.alias = alias;
   if (pType !== "google") {
     const rawTestPath = dom.edTestPath.value.trim();
     if (!rawTestPath) return failValidation("请填写测试路径");
-    if (/\s/.test(rawTestPath) || rawTestPath.includes("://")) {
-      return failValidation("测试路径只能填写相对路径（如 /v1/chat/completions），不能含空白或完整网址");
+    if (
+      /\s/.test(rawTestPath) ||
+      rawTestPath.includes("://") ||
+      rawTestPath.includes("?") ||
+      rawTestPath.includes("#") ||
+      hasFrontendPathTraversal(rawTestPath)
+    ) {
+      return failValidation(
+        "测试路径只能填写不含查询参数或 .. 的相对路径（如 /v1/chat/completions）",
+      );
     }
     entry.test_path = rawTestPath.startsWith("/") ? rawTestPath : "/" + rawTestPath;
   }
@@ -668,6 +765,7 @@ async function bulkToggle(enable) {
     const version = await postSettings({ providers });
     state.settings = { ...settings, providers };
     if (version !== undefined) state.settings.version = version;
+    await ensureProviderFps(providers);
     syncMockSettings(state.settings);
     state.selectedProviders.clear();
     renderProviderGrid();

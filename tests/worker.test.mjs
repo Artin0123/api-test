@@ -17,7 +17,8 @@ import worker from "../public/_worker.js";
 // ── D1 shim ────────────────────────────────────────────────────────────────
 
 class FakeStatement {
-  constructor(db, sql, params = []) {
+  constructor(owner, db, sql, params = []) {
+    this.owner = owner;
     this.db = db;
     this.sql = sql;
     this.params = params;
@@ -30,20 +31,23 @@ class FakeStatement {
         `D1 parameter limit exceeded: ${params.length} > 100 bound parameters`,
       );
     }
-    return new FakeStatement(this.db, this.sql, params);
+    return new FakeStatement(this.owner, this.db, this.sql, params);
   }
 
   async first() {
+    this.owner.queryCalls++;
     const row = this.db.prepare(this.sql).get(...this.params);
     return row === undefined ? null : row;
   }
 
   async all() {
+    this.owner.queryCalls++;
     const rows = this.db.prepare(this.sql).all(...this.params);
     return { results: rows, success: true, meta: { changes: 0 } };
   }
 
   async run() {
+    this.owner.queryCalls++;
     const result = this.db.prepare(this.sql).run(...this.params);
     return {
       success: true,
@@ -55,18 +59,25 @@ class FakeStatement {
 class FakeD1 {
   constructor() {
     this.db = new DatabaseSync(":memory:");
+    this.batchCalls = 0;
+    this.queryCalls = 0;
   }
 
   prepare(sql) {
-    return new FakeStatement(this.db, sql);
+    return new FakeStatement(this, this.db, sql);
   }
 
   async batch(stmts) {
+    this.batchCalls++;
     this.db.exec("BEGIN");
     try {
       const results = [];
       for (const stmt of stmts) {
-        results.push(await stmt.run());
+        if (/^\s*(?:SELECT|PRAGMA)\b|\bRETURNING\b/i.test(stmt.sql)) {
+          results.push(await stmt.all());
+        } else {
+          results.push(await stmt.run());
+        }
       }
       this.db.exec("COMMIT");
       return results;
@@ -121,15 +132,12 @@ class FakeKV {
 
 const ADMIN = "admin-secret";
 const PROXY = "proxy-secret";
-const DEFAULT_GW_LOGS_URL =
-  "https://dash.cloudflare.com/acct/ai/ai-gateway/gateways/gw/logs";
-const DEFAULT_GW_TOKEN = "gw-token";
 
 let server;
 let upstreamHandler;
 let captured;
-let gatewayCalls;
-let aliasBases;
+let outboundCalls;
+let pendingWaitUntil;
 let originalFetch;
 
 function defaultUpstream(req, res, body) {
@@ -145,8 +153,15 @@ function defaultUpstream(req, res, body) {
 
 function resetCaptured() {
   captured = [];
-  gatewayCalls = [];
-  aliasBases = new Map();
+  outboundCalls = [];
+  pendingWaitUntil = [];
+}
+
+async function drainWaitUntil() {
+  while (pendingWaitUntil.length > 0) {
+    const batch = pendingWaitUntil.splice(0, pendingWaitUntil.length);
+    await Promise.all(batch);
+  }
 }
 
 function useUpstream(handler) {
@@ -165,15 +180,29 @@ function makeEnv({ db = new FakeD1(), kv = new FakeKV(), vars = {} } = {}) {
   };
 }
 
-function request(env, path, { method = "GET", headers = {}, body } = {}) {
-  return worker.fetch(
+async function request(
+  env,
+  path,
+  { method = "GET", headers = {}, body, awaitWaitUntil = true } = {},
+) {
+  const ctx = {
+    waitUntil(promise) {
+      pendingWaitUntil.push(Promise.resolve(promise));
+    },
+  };
+  const res = await worker.fetch(
     new Request(`https://example.test${path}`, {
       method,
       headers,
       body,
     }),
     env,
+    ctx,
   );
+  if (awaitWaitUntil) {
+    await drainWaitUntil();
+  }
+  return res;
 }
 
 async function asJson(response) {
@@ -187,8 +216,8 @@ async function asJson(response) {
   return { status: response.status, headers: response.headers, data };
 }
 
-function adminHeaders() {
-  return { Authorization: `Bearer ${ADMIN}` };
+function adminHeaders(extra = {}) {
+  return { Authorization: `Bearer ${ADMIN}`, ...extra };
 }
 
 function proxyHeaders(extra = {}) {
@@ -221,8 +250,6 @@ async function postSettings(env, providers, settingsOverrides = {}) {
   const payload = {
     providers,
     proxy_password: PROXY,
-    ai_gateway_logs_url: DEFAULT_GW_LOGS_URL,
-    ai_gateway_token: DEFAULT_GW_TOKEN,
     proxy_fail_threshold: 3,
     proxy_max_retries: 3,
     proxy_upstream_timeout_ms: 120000,
@@ -233,18 +260,7 @@ async function postSettings(env, providers, settingsOverrides = {}) {
     headers: { ...adminHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const parsed = await asJson(response);
-  if (parsed.status === 200 && Array.isArray(providers)) {
-    for (const p of providers) {
-      if (p && p.alias && p.api_base) {
-        aliasBases.set(
-          String(p.alias).trim(),
-          String(p.api_base).trim().replace(/\/+$/, ""),
-        );
-      }
-    }
-  }
-  return parsed;
+  return asJson(response);
 }
 
 async function postTestModel(env, fp, model) {
@@ -309,42 +325,23 @@ test.before(async () => {
   originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
     const rawUrl = String(url);
-    const gwPrefix = "https://gateway.ai.cloudflare.com/v1/";
-    if (!rawUrl.startsWith(gwPrefix)) {
-      return originalFetch(url, init);
-    }
     const parsed = new URL(rawUrl);
-    const match = /^\/v1\/([^/]+)\/([^/]+)\/custom-([^/]+)(\/.*)?$/.exec(
-      parsed.pathname,
-    );
-    if (!match) {
-      throw new Error(`Unexpected AI Gateway path in test: ${parsed.pathname}`);
-    }
-    const accountId = decodeURIComponent(match[1]);
-    const gatewayId = decodeURIComponent(match[2]);
-    const slug = decodeURIComponent(match[3]);
-    const restPath = match[4] || "";
-    const gwHeaders = new Headers(init.headers);
-    gatewayCalls.push({
+    const headers = new Headers(init.headers);
+    outboundCalls.push({
       url: rawUrl,
-      accountId,
-      gatewayId,
-      slug,
-      headers: gwHeaders,
       method: init.method || "GET",
+      headers,
+      redirect: init.redirect || "follow",
     });
 
-    // Simulate Cloudflare AI Gateway stripping cf-aig-* control headers before forwarding upstream.
-    const upstreamHeaders = new Headers();
-    for (const [k, v] of gwHeaders.entries()) {
-      if (k.toLowerCase().startsWith("cf-aig-")) continue;
-      upstreamHeaders.append(k, v);
-    }
-    const base = aliasBases.get(slug) || `${upstreamBase()}/v1`;
-    return originalFetch(`${base}${restPath}${parsed.search}`, {
-      ...init,
-      headers: upstreamHeaders,
-    });
+    const isLoopback =
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "[::1]";
+    const targetUrl = isLoopback
+      ? rawUrl
+      : `${upstreamBase()}${parsed.pathname}${parsed.search}`;
+    return originalFetch(targetUrl, init);
   };
 
   server = http.createServer((req, res) => {
@@ -367,6 +364,9 @@ test.before(async () => {
 test.beforeEach(() => {
   resetCaptured();
   useUpstream(defaultUpstream);
+  worker.__test.resetClock();
+  worker.__test.setRandom(() => 0);
+  worker.__test.resetLogCleanupEvery();
 });
 
 test.after(() => {
@@ -427,8 +427,11 @@ test("kv mode disables the proxy and all /api/proxy/* endpoints without outbound
     ["/proxy/abc/chat/completions", { method: "POST", headers: proxyHeaders(), body: "{}" }],
     ["/api/proxy/state", { headers: adminHeaders() }],
     ["/api/proxy/test", { method: "POST", headers: adminHeaders(), body: "{}" }],
+    ["/api/proxy/test-commit", { method: "POST", headers: adminHeaders(), body: "{}" }],
+    ["/api/proxy/disable", { method: "POST", headers: adminHeaders(), body: "{}" }],
     ["/api/proxy/recover", { method: "POST", headers: adminHeaders(), body: "{}" }],
     ["/api/proxy/test-model", { method: "POST", headers: adminHeaders(), body: "{}" }],
+    ["/api/proxy/logs", { headers: adminHeaders() }],
   ];
   for (const [path, init] of checks) {
     const result = await asJson(await request(env, path, init));
@@ -436,6 +439,11 @@ test("kv mode disables the proxy and all /api/proxy/* endpoints without outbound
     assert.equal(result.data.code, "PROXY_DISABLED");
     assert.match(result.data.error, /d1/i);
   }
+  const delLogsRes = await request(env, "/api/proxy/logs", {
+    method: "DELETE",
+    headers: adminHeaders(),
+  });
+  assert.equal(delLogsRes.status, 404, "DELETE /api/proxy/logs is removed");
   assert.equal(captured.length, 0);
 });
 
@@ -488,17 +496,21 @@ test("proxy password is independent from the admin password and accepts all thre
   }
 });
 
-test("proxy routes through AI Gateway custom-{alias}, keeps query string and replaces auth", async () => {
+test("proxy routes directly to provider api_base, keeps query string and replaces auth", async () => {
   const env = makeEnv();
   await postSettings(env, [provider({ alias: "openai", keys: "key-aaaa" })]);
 
   const result = await proxy(env, "/proxy/openai/chat/completions?x=1");
   assert.equal(result.status, 200);
-  assert.equal(gatewayCalls.length, 1);
+  assert.equal(outboundCalls.length, 1);
   assert.equal(
-    gatewayCalls[0].url,
-    "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai/chat/completions?x=1",
+    outboundCalls[0].url,
+    `${upstreamBase()}/v1/chat/completions?x=1`,
   );
+  assert.equal(outboundCalls[0].redirect, "manual");
+  for (const [k] of outboundCalls[0].headers.entries()) {
+    assert.equal(k.toLowerCase().startsWith("cf-aig-"), false);
+  }
   assert.equal(captured.length, 1);
   assert.equal(captured[0].url, "/v1/chat/completions?x=1");
   assert.equal(captured[0].headers.authorization, "Bearer key-aaaa");
@@ -554,6 +566,7 @@ test("all keys disabled returns 503 NO_KEYS without calling upstream", async () 
   await env.DB.prepare("UPDATE key_state SET disabled = 1 WHERE fp = ?")
     .bind(fp)
     .run();
+  worker.__test.invalidateSnapshot(env.DB);
 
   const result = await proxy(env, "/proxy/alloff/chat/completions");
   assert.equal(result.status, 503);
@@ -871,11 +884,16 @@ test("proxy state masks every key and never leaks plaintext", async () => {
   assert.ok(!text.includes("12345678901"));
   assert.ok(!text.includes("1234567890"));
   const data = JSON.parse(text);
+  assert.equal(typeof data.state_seq, "number");
+  assert.equal("via_gateway" in data, false);
+  assert.equal("gateway_ready" in data, false);
+  assert.equal("logs_url_template" in data, false);
   const found = data.providers[0];
   assert.equal(found.keys_total, 5);
   assert.equal(found.keys_available, 5);
   assert.equal(found.proxy_url, "/proxy/openai");
-  assert.equal(found.sample_path, "/chat/completions");
+  assert.equal("sample_path" in found, false);
+  assert.equal("logs_url" in found, false);
   assert.equal(found.keys[0].masked, "sk-aaa***111");
   assert.equal(found.keys[1].masked, "123456***012");
   assert.equal(found.keys[2].masked, "123456**901");
@@ -960,6 +978,7 @@ test("a successful manual test clears fail_count and re-enables a disabled key",
   )
     .bind(key.id)
     .run();
+  worker.__test.invalidateSnapshot(env.DB);
 
   const result = await asJson(
     await request(env, "/api/proxy/test", {
@@ -1035,9 +1054,12 @@ test("the proxy test model is stored separately, not auto-borrowed", async () =>
     "探測要用設定的模型",
   );
 
-  // Clicking Test with a new model saves it alongside the probe, and repeating
-  // the same model avoids redundant app_settings writes.
+  // Clicking Test with a new model saves it into standalone store('proxy_test_models')
+  // without bumping app_settings.version.
   captured.length = 0;
+  const appSettingsBefore = await env.DB.prepare(
+    "SELECT v FROM store WHERE k = 'app_settings'",
+  ).first();
   const keyId = (await getKeyRows(env, fp))[0].id;
   const testWithNewModel = await asJson(
     await request(env, "/api/proxy/test", {
@@ -1048,8 +1070,18 @@ test("the proxy test model is stored separately, not auto-borrowed", async () =>
   );
   assert.equal(testWithNewModel.status, 200);
   assert.equal(testWithNewModel.data.model, "m2");
-  assert.equal(typeof testWithNewModel.data.settings_version, "number");
+  assert.equal(testWithNewModel.data.settings_version, undefined);
   assert.equal(JSON.parse(captured[0].body).model, "m2");
+
+  const appSettingsAfter = await env.DB.prepare(
+    "SELECT v FROM store WHERE k = 'app_settings'",
+  ).first();
+  assert.equal(appSettingsAfter.v, appSettingsBefore.v);
+
+  const testModelsRow = await env.DB.prepare(
+    "SELECT v FROM store WHERE k = 'proxy_test_models'",
+  ).first();
+  assert.equal(JSON.parse(testModelsRow.v)[fp], "m2");
 
   const stateUpdated = await asJson(
     await request(env, "/api/proxy/state", { headers: adminHeaders() }),
@@ -1107,6 +1139,7 @@ test("re-saving the same keys keeps fail_count and skips redundant writes", asyn
   )
     .bind(fp, "k1")
     .run();
+  worker.__test.invalidateSnapshot(env.DB);
 
   const beforeRow = await env.DB.prepare("SELECT v FROM store WHERE k = ?").bind("app_settings").first();
   const res = await postSettings(env, [p]);
@@ -1262,9 +1295,9 @@ test("dead_keys is scoped by fp so same-host different-format cards stay indepen
   assert.deepEqual(anRec.error_detail, { message: "an err" });
 });
 
-// ── AI Gateway (fetch intercepted) ─────────────────────────────────────────
+// ── Direct upstream forwarding & rollback field preservation ───────────────
 
-test("gateway mode parses Logs URL, ignores legacy env vars, and writes plaintext ASCII metadata", async () => {
+test("direct mode ignores legacy env vars, preserves existing ai_gateway_* in app_settings, and sends zero cf-aig-* headers", async () => {
   // Legacy env.* vars must be completely ignored in favor of app_settings.
   const env = makeEnv({
     vars: {
@@ -1274,50 +1307,73 @@ test("gateway mode parses Logs URL, ignores legacy env vars, and writes plaintex
       AI_GATEWAY_TOKEN: "legacy-token",
     },
   });
-  await postSettings(env, [
+  // Seed pre-migration app_settings containing ai_gateway_logs_url & ai_gateway_token
+  await request(env, "/api/settings", { headers: adminHeaders() });
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO store (k, v) VALUES ('app_settings', ?)",
+  )
+    .bind(
+      JSON.stringify({
+        providers: [],
+        proxy_password: PROXY,
+        ai_gateway_logs_url: "https://dash.cloudflare.com/acct/ai/ai-gateway/gateways/gw/logs",
+        ai_gateway_token: "preserved-gw-token",
+        version: 1,
+      }),
+    )
+    .run();
+  worker.__test.invalidateSnapshot(env.DB);
+
+  // Save new settings without sending ai_gateway_* -> preserved verbatim in D1 for 1-click rollback!
+  const saveRes = await postSettings(env, [
     provider({
       alias: "openai",
-      keys: "sk-abcdefghij1234\nsk-short\nsk-caf\u00e9-ok",
+      keys: "sk-abcdefghij1234\nsk-short\nsk-cafe-ok",
     }),
   ]);
+  assert.equal(saveRes.status, 200);
+  const rawStored = JSON.parse(
+    (await env.DB.prepare("SELECT v FROM store WHERE k = 'app_settings'").first()).v,
+  );
+  assert.equal(
+    rawStored.ai_gateway_logs_url,
+    "https://dash.cloudflare.com/acct/ai/ai-gateway/gateways/gw/logs",
+  );
+  assert.equal(rawStored.ai_gateway_token, "preserved-gw-token");
+
+  const getSettingsRes = await asJson(
+    await request(env, "/api/settings", { headers: adminHeaders() }),
+  );
+  assert.equal("ai_gateway_logs_url" in getSettingsRes.data.settings, false);
+  assert.equal("ai_gateway_token_set" in getSettingsRes.data.settings, false);
 
   const proxyState = await asJson(
     await request(env, "/api/proxy/state", { headers: adminHeaders() }),
   );
   assert.equal("tag" in proxyState.data.providers[0].keys[0], false);
-  assert.equal(proxyState.data.providers[0].logs_url, DEFAULT_GW_LOGS_URL);
+  assert.equal("logs_url" in proxyState.data.providers[0], false);
 
-  for (const expectedKey of ["sk-abcdefghij1234", "sk-short", "sk-caf-ok"]) {
-    gatewayCalls.length = 0;
+  for (const expectedKey of ["sk-abcdefghij1234", "sk-short", "sk-cafe-ok"]) {
+    outboundCalls.length = 0;
+    captured.length = 0;
     const result = await proxy(env, "/proxy/openai/chat/completions?q=1");
     assert.equal(result.status, 200);
-    assert.equal(gatewayCalls.length, 1);
-    const seen = gatewayCalls[0];
+    assert.equal(outboundCalls.length, 1);
+    const seen = outboundCalls[0];
     assert.equal(
       seen.url,
-      "https://gateway.ai.cloudflare.com/v1/acct/gw/custom-openai/chat/completions?q=1",
+      `${upstreamBase()}/v1/chat/completions?q=1`,
     );
-    assert.equal(seen.headers.get("cf-aig-skip-cache"), "true");
-    assert.equal(seen.headers.get("cf-aig-max-attempts"), "1");
-    assert.equal(seen.headers.get("cf-aig-authorization"), "Bearer gw-token");
-    const metadata = seen.headers.get("cf-aig-metadata");
-    assert.equal(
-      metadata,
-      JSON.stringify({ key: expectedKey, provider: "openai" }),
-    );
-    // eslint-disable-next-line no-control-regex
-    assert.ok(/^[\x20-\x7e]*$/.test(metadata));
+    assert.equal(seen.redirect, "manual");
+    for (const [k] of seen.headers.entries()) {
+      assert.equal(k.toLowerCase().startsWith("cf-aig-"), false);
+    }
+    assert.equal(captured[0].headers.authorization, `Bearer ${expectedKey}`);
   }
 });
 
-test("settings validate Gateway Logs URL and proxy/test require Gateway & alias with no direct fallback", async () => {
+test("settings validate proxy config and probes connect directly without Gateway", async () => {
   const env = makeEnv();
-
-  const badUrl = await postSettings(env, [], {
-    ai_gateway_logs_url: "https://example.com/not-cloudflare",
-  });
-  assert.equal(badUrl.status, 400);
-  assert.match(badUrl.data.error, /Logs URL/);
 
   const samePass = await postSettings(env, [], { proxy_password: ADMIN });
   assert.equal(samePass.status, 400);
@@ -1325,7 +1381,6 @@ test("settings validate Gateway Logs URL and proxy/test require Gateway & alias 
   const badRetry = await postSettings(env, [], { proxy_max_retries: 5 });
   assert.equal(badRetry.status, 400);
 
-  // Incomplete Gateway config blocks both /proxy/* and /api/proxy/test with 503.
   const noAliasProv = provider({ keys: "k1", models: "m1" });
   const oaAliasProv = provider({
     provider_type: "openai",
@@ -1350,23 +1405,7 @@ test("settings validate Gateway Logs URL and proxy/test require Gateway & alias 
     models: "claude-test",
   });
 
-  await postSettings(env, [oaAliasProv], { ai_gateway_token: "" });
-  const fpOaMissing = await fingerprintOf(env, oaAliasProv);
-  await postTestModel(env, fpOaMissing, "m-oa");
-  const [oaRowMissing] = await getKeyRows(env, fpOaMissing);
-  const proxyDisabled = await proxy(env, "/proxy/oa/chat/completions");
-  assert.equal(proxyDisabled.status, 503);
-  const testDisabled = await asJson(
-    await request(env, "/api/proxy/test", {
-      method: "POST",
-      headers: { ...adminHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ fp: fpOaMissing, id: oaRowMissing.id }),
-    }),
-  );
-  assert.equal(testDisabled.status, 503);
-  assert.equal(captured.length, 0);
-
-  // Valid Gateway config: alias is required for manual probe, and probes use non-streaming "only reply 1." max 8 tokens.
+  // Direct forwarding works with no Gateway config at all.
   await postSettings(env, [noAliasProv, oaAliasProv, gemAliasProv, anAliasProv]);
   const fpNoAlias = await fingerprintOfEntry(noAliasProv);
   await postTestModel(env, fpNoAlias, "m1");
@@ -1502,6 +1541,7 @@ test("POST /api/proxy/recover with all:true recovers only disabled keys of the t
   await env.DB.prepare("UPDATE key_state SET disabled = 0, fail_count = 1 WHERE fp = ? AND api_key = 'ka3'").bind(fpA).run();
   await env.DB.prepare("UPDATE key_state SET disabled = 1, fail_count = 3 WHERE fp = ? AND api_key = 'kb1'").bind(fpB).run();
   await env.DB.prepare("UPDATE key_state SET disabled = 0, fail_count = 2, updated_at = ? WHERE fp = ? AND api_key = 'kb2'").bind(now, fpB).run();
+  worker.__test.invalidateSnapshot(env.DB);
 
   const badReq = await asJson(
     await request(env, "/api/proxy/recover", {
@@ -1644,6 +1684,7 @@ test("D1 chunks IN queries under 100 params across 105-key recover, sync, and pr
   await env.DB.prepare("UPDATE key_state SET disabled = 1, fail_count = 3 WHERE fp = ?")
     .bind(fp)
     .run();
+  worker.__test.invalidateSnapshot(env.DB);
 
   const postRes = await asJson(
     await request(env, "/api/results", {
@@ -1882,21 +1923,1138 @@ test("custom test_path is required for openai/anthropic and google defaults to v
 
   const fpO = await fingerprintOf(env, pOpenai);
   const [kO] = await getKeyRows(env, fpO);
-  gatewayCalls.length = 0;
+  outboundCalls.length = 0;
   await request(env, "/api/proxy/test", {
     method: "POST",
     headers: adminHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ fp: fpO, id: kO.id, model: "gpt-4o" }),
   });
-  assert.match(gatewayCalls[0].url, /\/custom-vercel\/v1\/chat\/completions$/);
+  assert.equal(
+    outboundCalls[0].url,
+    "https://ai-gateway.vercel.sh/v1/chat/completions",
+  );
 
   const fpG = await fingerprintOf(env, pGoogle);
   const [kG] = await getKeyRows(env, fpG);
-  gatewayCalls.length = 0;
+  outboundCalls.length = 0;
   await request(env, "/api/proxy/test", {
     method: "POST",
     headers: adminHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ fp: fpG, id: kG.id, model: "gemini-2.5-flash" }),
   });
-  assert.match(gatewayCalls[0].url, /\/custom-g-root\/v1beta\/models\/gemini-2\.5-flash:generateContent$/);
+  assert.equal(
+    outboundCalls[0].url,
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+  );
+});
+
+// ── Phase 0: Direct-proxy security, snapshot TTL, batch test-commit & logs ─
+
+test("redirect: manual blocks 302 redirect following, rotates keys, and strips Location header", async () => {
+  useUpstream((req, res) => {
+    if (req.headers.authorization === "Bearer k-redir") {
+      res.writeHead(302, {
+        Location: "http://169.254.169.254/latest/meta-data",
+        "Content-Type": "text/plain",
+      });
+      res.end("redirecting");
+      return;
+    }
+    defaultUpstream(req, res, "");
+  });
+
+  const env = makeEnv();
+  const p = provider({ alias: "redir-oa", keys: "k-redir\nk-good" });
+  await postSettings(env, [p], { proxy_fail_threshold: 2 });
+  const fp = await fingerprintOf(env, p);
+
+  const rotated = await proxy(env, "/proxy/redir-oa/chat/completions");
+  assert.equal(rotated.status, 200);
+  assert.equal(outboundCalls.length, 2);
+  assert.equal(outboundCalls[0].redirect, "manual");
+  assert.equal(outboundCalls[1].redirect, "manual");
+  // Never followed 169.254.169.254
+  assert.ok(outboundCalls.every((c) => !c.url.includes("169.254.169.254")));
+  const rows = await getKeyRows(env, fp);
+  assert.equal(rows.find((r) => r.masked === "k-redir").fail_count, 1);
+
+  // When all attempts return 302, Worker returns 302 with Location stripped
+  useUpstream((req, res) => {
+    res.writeHead(302, {
+      Location: "https://evil.example/steal",
+      "Content-Type": "text/plain",
+    });
+    res.end("bounce");
+  });
+  const envAll302 = makeEnv();
+  await postSettings(envAll302, [provider({ alias: "all-302", keys: "k1" })]);
+  const raw302 = await request(envAll302, "/proxy/all-302/chat/completions", {
+    method: "POST",
+    headers: proxyHeaders(),
+    body: '{"model":"m1"}',
+  });
+  assert.equal(raw302.status, 302);
+  assert.equal(raw302.headers.get("location"), null);
+});
+
+test("validateProviderApiBases guards scheme/userinfo/query/fragment and test_path-only edits save", async () => {
+  const env = makeEnv();
+
+  for (const badBase of [
+    "http://api.openai.com/v1",
+    "https://user:pass@api.example.com/v1",
+    "https://api.example.com/v1?x=1",
+    "https://api.example.com/v1#frag",
+    "ftp://api.example.com/v1",
+  ]) {
+    const res = await postSettings(env, [
+      provider({ alias: "bad", api_base: badBase, keys: "k1" }),
+    ]);
+    assert.equal(res.status, 400, `Expected 400 for ${badBase}`);
+  }
+
+  for (const goodBase of [
+    "https://api.openai.com/v1",
+    "http://127.0.0.1:8080/v1",
+    "http://localhost:11434/v1",
+    "http://[::1]:8000/v1",
+  ]) {
+    const res = await postSettings(env, [
+      provider({ alias: "good", api_base: goodBase, keys: "k1" }),
+    ]);
+    assert.equal(res.status, 200, `Expected 200 for ${goodBase}`);
+  }
+
+  // Changing ONLY test_path must NOT be skipped as unchanged
+  const baseProv = provider({
+    alias: "tp-edit",
+    api_base: "https://tp.example/v1",
+    keys: "k1",
+    test_path: "/chat/completions",
+  });
+  const first = await postSettings(env, [baseProv]);
+  assert.equal(first.status, 200);
+  const v1 = first.data.version;
+
+  const second = await postSettings(env, [
+    { ...baseProv, test_path: "/responses" },
+  ]);
+  assert.equal(second.status, 200);
+  assert.equal(second.data.unchanged, undefined);
+  assert.equal(second.data.version, v1 + 1);
+  const got = await asJson(
+    await request(env, "/api/settings", { headers: adminHeaders() }),
+  );
+  assert.equal(got.data.settings.providers[0].test_path, "/responses");
+});
+
+test("snapshot lifecycle: cold 1-batch, warm 0 sync reads, Soft TTL waitUntil, Hard TTL sync, inflight dedup, and localMutatedAt anti-race", async () => {
+  let now = 1_700_000_000_000;
+  worker.__test.setClock(() => now);
+
+  const env = makeEnv();
+  const p = provider({ alias: "snap", keys: "k1\nk2" });
+  await postSettings(env, [p]);
+
+  // Invalidate snapshot to measure cold start on /proxy/snap/*
+  worker.__test.invalidateSnapshot(env.DB);
+  env.DB.batchCalls = 0;
+  env.DB.queryCalls = 0;
+
+  // Concurrent cold start shares single inflight load (gate upstream until both arrive)
+  let arrived = 0;
+  let releaseCold;
+  const bothArrived = new Promise((resolve) => {
+    useUpstream((req, res, body) => {
+      arrived += 1;
+      if (arrived === 2) resolve();
+      releaseCold.then(() => defaultUpstream(req, res, body));
+    });
+  });
+  let triggerRelease;
+  releaseCold = new Promise((resolve) => {
+    triggerRelease = resolve;
+  });
+
+  const coldPromiseA = request(env, "/proxy/snap/chat/completions", {
+    method: "POST",
+    headers: proxyHeaders(),
+    body: '{"model":"m1"}',
+    awaitWaitUntil: false,
+  });
+  const coldPromiseB = request(env, "/proxy/snap/chat/completions", {
+    method: "POST",
+    headers: proxyHeaders(),
+    body: '{"model":"m1"}',
+    awaitWaitUntil: false,
+  });
+  await bothArrived;
+  // Both requests passed getSnapshot() and reached upstream with ONLY 1 cold-start db.batch!
+  assert.equal(env.DB.batchCalls, 1);
+  triggerRelease();
+  const [coldA, coldB] = await Promise.all([coldPromiseA, coldPromiseB]);
+  assert.equal(coldA.status, 200);
+  assert.equal(coldB.status, 200);
+  await coldA.text();
+  await coldB.text();
+  await drainWaitUntil();
+  useUpstream(defaultUpstream);
+
+  // Warm (< 10s Soft TTL): 0 synchronous D1 reads/batches before waitUntil drains
+  now += 5_000;
+  env.DB.batchCalls = 0;
+  env.DB.queryCalls = 0;
+  const warmRes = await request(env, "/proxy/snap/chat/completions", {
+    method: "POST",
+    headers: proxyHeaders(),
+    body: '{"model":"m1"}',
+    awaitWaitUntil: false,
+  });
+  assert.equal(warmRes.status, 200);
+  assert.equal(env.DB.batchCalls, 0, "Warm request must do 0 sync D1 batches");
+  assert.equal(env.DB.queryCalls, 0, "Warm request must do 0 sync D1 queries");
+  await warmRes.text();
+  await drainWaitUntil();
+
+  // Soft TTL (10s..60s): returns cached snapshot immediately without blocking on D1,
+  // while scheduling incremental refresh in ctx.waitUntil!
+  const fp = await fingerprintOf(env, p);
+  await env.DB.prepare(
+    "UPDATE key_state SET disabled = 1, updated_at = ? WHERE fp = ?",
+  )
+    .bind(now + 100, fp)
+    .run();
+  now += 12_000;
+  const softRes = await request(env, "/proxy/snap/models", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${PROXY}` },
+    awaitWaitUntil: false,
+  });
+  // Served from warm snapshot immediately (200 OK) before background refresh applied disabled=1!
+  assert.equal(softRes.status, 200);
+  await softRes.text();
+  await drainWaitUntil();
+  // After waitUntil finishes incremental refresh, snapshot now reflects disabled=1 -> 503 NO_KEYS!
+  const afterSoftRefresh = await proxy(env, "/proxy/snap/chat/completions");
+  assert.equal(afterSoftRefresh.status, 503);
+  await request(env, "/api/proxy/recover", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp, all: true }),
+  });
+
+  // Anti-race: older D1 row updated_at must NOT overwrite newer localMutatedAt in snapshot
+  const [k1Row] = await getKeyRows(env, fp);
+  // Write an older updated_at into D1 (simulating stale read), then mutate locally at newer timestamp
+  await env.DB.prepare(
+    "UPDATE key_state SET disabled = 0, fail_count = 0, updated_at = ? WHERE id = ?",
+  )
+    .bind(now - 500, k1Row.id)
+    .run();
+  now += 1_000;
+  await request(env, "/api/proxy/disable", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp, id: k1Row.id }),
+  });
+  // Now poison D1 behind Worker's back with an OLDER updated_at (now - 200) claiming disabled = 0
+  await env.DB.prepare(
+    "UPDATE key_state SET disabled = 0, updated_at = ? WHERE id = ?",
+  )
+    .bind(now - 200, k1Row.id)
+    .run();
+  // Trigger Hard TTL (>= 60s) incremental refresh
+  now += 65_000;
+  const afterAntiRace = await getKeyRows(env, fp);
+  assert.equal(
+    afterAntiRace.find((r) => r.id === k1Row.id).disabled,
+    true,
+    "localMutatedAt must block older D1 row from clobbering newer in-memory disable",
+  );
+
+  // Newer D1 updated_at (> localMutatedAt) IS applied on Hard TTL refresh
+  await env.DB.prepare(
+    "UPDATE key_state SET disabled = 0, updated_at = ? WHERE id = ?",
+  )
+    .bind(now + 100, k1Row.id)
+    .run();
+  now += 65_000;
+  const afterHardTtl = await getKeyRows(env, fp);
+  assert.equal(
+    afterHardTtl.find((r) => r.id === k1Row.id).disabled,
+    false,
+    "Hard TTL refresh picks up genuinely newer D1 updated_at",
+  );
+});
+
+test("last_used_at updates only on /proxy/*, throttles D1 writes to 60s, and state_seq supports ?since_seq=", async () => {
+  let now = 1_710_000_000_000;
+  worker.__test.setClock(() => now);
+
+  const env = makeEnv();
+  const p = provider({ alias: "live", keys: "k-only" });
+  await postSettings(env, [p]);
+  const fp = await fingerprintOf(env, p);
+  const [keyRow] = await getKeyRows(env, fp);
+
+  // Manual test, disable, and recover must NOT touch last_used_at
+  await request(env, "/api/proxy/test", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp, id: keyRow.id, model: "m1" }),
+  });
+  await request(env, "/api/proxy/disable", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp, id: keyRow.id }),
+  });
+  await request(env, "/api/proxy/recover", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp, id: keyRow.id }),
+  });
+  const stateBeforeProxy = await asJson(
+    await request(env, "/api/proxy/state", { headers: adminHeaders() }),
+  );
+  assert.equal(stateBeforeProxy.data.providers[0].keys[0].last_used_at, null);
+  const seq0 = stateBeforeProxy.data.state_seq;
+
+  // ?since_seq= matching current stateSeq returns unchanged:true with 0 D1 queries
+  env.DB.queryCalls = 0;
+  env.DB.batchCalls = 0;
+  const unchangedState = await asJson(
+    await request(env, `/api/proxy/state?since_seq=${seq0}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(unchangedState.status, 200);
+  assert.equal(unchangedState.data.unchanged, true);
+  assert.equal(unchangedState.data.state_seq, seq0);
+  assert.equal(env.DB.queryCalls, 0);
+  assert.equal(env.DB.batchCalls, 0);
+
+  // First external /proxy/* call stamps last_used_at in memory AND persists to D1
+  await proxy(env, "/proxy/live/chat/completions");
+  const state1 = await asJson(
+    await request(env, `/api/proxy/state?since_seq=${seq0}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(state1.data.unchanged, undefined);
+  assert.ok(state1.data.state_seq > seq0);
+  assert.equal(state1.data.providers[0].keys[0].last_used_at, now);
+  const dbRow1 = await env.DB.prepare(
+    "SELECT last_used_at FROM key_state WHERE id = ?",
+  )
+    .bind(keyRow.id)
+    .first();
+  assert.equal(Number(dbRow1.last_used_at), now);
+
+  // Second /proxy/* call 5s later updates memory + stateSeq immediately, but throttles D1 key_state write
+  now += 5_000;
+  await proxy(env, "/proxy/live/chat/completions");
+  const state2 = await asJson(
+    await request(env, `/api/proxy/state?since_seq=${state1.data.state_seq}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(state2.data.providers[0].keys[0].last_used_at, now);
+  const dbRow2 = await env.DB.prepare(
+    "SELECT last_used_at FROM key_state WHERE id = ?",
+  )
+    .bind(keyRow.id)
+    .first();
+  assert.equal(
+    Number(dbRow2.last_used_at),
+    now - 5_000,
+    "D1 last_used_at write is throttled within 60s window",
+  );
+
+  // After 61s, D1 key_state.last_used_at is persisted again
+  now += 61_000;
+  await proxy(env, "/proxy/live/chat/completions");
+  const dbRow3 = await env.DB.prepare(
+    "SELECT last_used_at FROM key_state WHERE id = ?",
+  )
+    .bind(keyRow.id)
+    .first();
+  assert.equal(Number(dbRow3.last_used_at), now);
+});
+
+test("defer_write:true probes without D1 writes and POST /api/proxy/test-commit persists batch in 1 db.batch", async () => {
+  useUpstream((req, res) => {
+    const auth = req.headers.authorization || "";
+    if (auth.endsWith("sk-b000")) {
+      defaultUpstream(req, res, "");
+      return;
+    }
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end('{"error":"bad key"}');
+  });
+
+  const env = makeEnv();
+  const keys = Array.from(
+    { length: 105 },
+    (_, i) => `sk-b${String(i).padStart(3, "0")}`,
+  );
+  const p = provider({ alias: "batch-oa", keys: keys.join("\n") });
+  await postSettings(env, [p], { proxy_fail_threshold: 1 });
+  const fp = await fingerprintOf(env, p);
+  await postTestModel(env, fp, "m1");
+  const rowsBefore = await getKeyRows(env, fp);
+
+  // Mark sk-b000 disabled beforehand so we verify test-commit recovers ok keys too
+  await request(env, "/api/proxy/disable", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp, id: rowsBefore[0].id }),
+  });
+
+  // Run defer_write: true on first two keys: D1 key_state must remain untouched during probes
+  env.DB.batchCalls = 0;
+  const probeOk = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ fp, id: rowsBefore[0].id, defer_write: true }),
+    }),
+  );
+  const probeFail = await asJson(
+    await request(env, "/api/proxy/test", {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ fp, id: rowsBefore[1].id, defer_write: true }),
+    }),
+  );
+  assert.equal(probeOk.data.ok, true);
+  assert.equal(probeOk.data.deferred, true);
+  assert.equal(probeFail.data.ok, false);
+  assert.equal(probeFail.data.deferred, true);
+  assert.equal(env.DB.batchCalls, 0, "defer_write probes do 0 D1 batches");
+
+  const stillUnchanged = await env.DB.prepare(
+    "SELECT disabled, fail_count FROM key_state WHERE id = ?",
+  )
+    .bind(rowsBefore[1].id)
+    .first();
+  assert.equal(Number(stillUnchanged.fail_count), 0);
+
+  // Commit all 105 outcomes in one /api/proxy/test-commit call -> 1 atomic db.batch!
+  const commitResults = rowsBefore.map((r, idx) => ({
+    id: r.id,
+    ok: idx === 0,
+  }));
+  env.DB.batchCalls = 0;
+  const commitRes = await asJson(
+    await request(env, "/api/proxy/test-commit", {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ fp, results: commitResults }),
+    }),
+  );
+  assert.equal(commitRes.status, 200);
+  assert.equal(commitRes.data.ok, true);
+  assert.equal(commitRes.data.committed, 105);
+  assert.equal(env.DB.batchCalls, 1, "105 key outcomes committed in 1 D1 batch");
+  const rowsAfterCommit = await getKeyRows(env, fp);
+  assert.equal(rowsAfterCommit.length, 105);
+  assert.equal(rowsAfterCommit[0].disabled, false);
+  assert.equal(rowsAfterCommit[0].fail_count, 0);
+  assert.equal(rowsAfterCommit[1].disabled, true);
+  assert.equal(rowsAfterCommit[1].fail_count, 1);
+  assert.equal(rowsAfterCommit[104].disabled, true);
+});
+
+test("proxy_logs reassembles SSE streams across OpenAI Chat/Responses, Anthropic, and Google without TTFB blocking", async () => {
+  const env = makeEnv();
+  await postSettings(env, [
+    provider({ alias: "oa-sse", provider_type: "openai", keys: "k-oa" }),
+    provider({
+      alias: "ant-sse",
+      provider_type: "anthropic",
+      api_base: `${upstreamBase()}/ant/v1`,
+      keys: "k-ant",
+    }),
+    provider({
+      alias: "gem-sse",
+      provider_type: "google",
+      api_base: `${upstreamBase()}/v1beta`,
+      keys: "k-gem",
+    }),
+  ]);
+
+  // 1) OpenAI Chat SSE + zero-TTFB check (first chunk readable BEFORE stream finishes)
+  let finishSecondChunk;
+  useUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(
+      'data: {"model":"gpt-4o-2026","choices":[{"delta":{"reasoning_content":"think-1 ","content":"Hello "}}]}\n\n',
+    );
+    finishSecondChunk = () => {
+      res.write(
+        'data: {"choices":[{"delta":{"content":"world!","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"q\\":"}}]},"finish_reason":null}]}\n\n',
+      );
+      res.write(
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"ok\\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
+      );
+      res.write("data: [DONE]\n\n");
+      res.end();
+    };
+  });
+
+  const sseRes = await request(env, "/proxy/oa-sse/chat/completions", {
+    method: "POST",
+    headers: proxyHeaders(),
+    body: JSON.stringify({ model: "gpt-4o", stream: true, messages: [] }),
+    awaitWaitUntil: false,
+  });
+  assert.equal(sseRes.status, 200);
+  const reader = sseRes.body.getReader();
+  const firstChunk = await reader.read();
+  assert.equal(firstChunk.done, false);
+  assert.match(new TextDecoder().decode(firstChunk.value), /Hello /);
+
+  // Before stream finishes, proxy_logs has NOT written yet (zero TTFB blocking)
+  const countMidStream = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM proxy_logs",
+  ).first();
+  assert.equal(Number(countMidStream.n), 0);
+
+  finishSecondChunk();
+  while (!(await reader.read()).done) {
+    // consume remaining chunks
+  }
+  await drainWaitUntil();
+
+  const oaLogs = await asJson(
+    await request(env, "/api/proxy/logs?alias=oa-sse", {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(oaLogs.data.logs.length, 1);
+  assert.equal(oaLogs.data.logs[0].stream, true);
+  const oaDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${oaLogs.data.logs[0].id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  const oaReassembled = JSON.parse(oaDetail.data.log.res_body);
+  assert.equal(oaReassembled.content, "Hello world!");
+  assert.equal(oaReassembled.thinking, "think-1 ");
+  assert.equal(oaReassembled.finish_reason, "tool_calls");
+  assert.equal(oaReassembled.tool_calls[0].name, "lookup");
+  assert.equal(oaReassembled.tool_calls[0].arguments, '{"q":"ok"}');
+  assert.deepEqual(oaReassembled.usage, {
+    prompt_tokens: 10,
+    completion_tokens: 5,
+  });
+
+  // 2) OpenAI Responses SSE
+  useUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Resp "}\n\n',
+    );
+    res.write(
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"OK"}\n\n',
+    );
+    res.write(
+      'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":4,"output_tokens":2}}}\n\n',
+    );
+    res.end();
+  });
+  await proxy(env, "/proxy/oa-sse/responses", {
+    body: JSON.stringify({ model: "o3", stream: true, input: "hi" }),
+  });
+  const respLogs = await asJson(
+    await request(env, "/api/proxy/logs?model=o3", { headers: adminHeaders() }),
+  );
+  const respDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${respLogs.data.logs[0].id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  const respBody = JSON.parse(respDetail.data.log.res_body);
+  assert.equal(respBody.content, "Resp OK");
+  assert.equal(respBody.finish_reason, "completed");
+  assert.deepEqual(respBody.usage, { input_tokens: 4, output_tokens: 2 });
+
+  // 3) Anthropic Messages SSE
+  useUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(
+      'event: message_start\ndata: {"type":"message_start","message":{"model":"claude-4","usage":{"input_tokens":12}}}\n\n',
+    );
+    res.write(
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"deep thought"}}\n\n',
+    );
+    res.write(
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Claude reply"}}\n\n',
+    );
+    res.write(
+      'event: content_block_start\ndata: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_1","name":"bash"}}\n\n',
+    );
+    res.write(
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\\"cmd\\":\\"ls\\"}"}}\n\n',
+    );
+    res.write(
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":9}}\n\n',
+    );
+    res.end();
+  });
+  await proxy(env, "/proxy/ant-sse/messages", {
+    body: JSON.stringify({ model: "claude-4", stream: true, messages: [] }),
+  });
+  const antLogs = await asJson(
+    await request(env, "/api/proxy/logs?alias=ant-sse", {
+      headers: adminHeaders(),
+    }),
+  );
+  const antDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${antLogs.data.logs[0].id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  const antBody = JSON.parse(antDetail.data.log.res_body);
+  assert.equal(antBody.thinking, "deep thought");
+  assert.equal(antBody.content, "Claude reply");
+  assert.equal(antBody.finish_reason, "tool_use");
+  assert.equal(antBody.tool_calls[0].name, "bash");
+  assert.equal(antBody.tool_calls[0].arguments, '{"cmd":"ls"}');
+  assert.deepEqual(antBody.usage, { input_tokens: 12, output_tokens: 9 });
+
+  // 4) Google Gemini SSE (model extracted from URL path)
+  useUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(
+      'data: {"candidates":[{"content":{"parts":[{"thought":true,"text":"plan..."},{"text":"Gemini answer"}]}}]}\n\n',
+    );
+    res.write(
+      'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args":{"q":"cf"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":4}}\n\n',
+    );
+    res.end();
+  });
+  await proxy(
+    env,
+    "/proxy/gem-sse/models/gemini-2.5-pro:streamGenerateContent?alt=sse",
+    { body: JSON.stringify({ contents: [] }) },
+  );
+  const gemLogs = await asJson(
+    await request(env, "/api/proxy/logs?alias=gem-sse", {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(gemLogs.data.logs[0].model, "gemini-2.5-pro");
+  assert.equal(gemLogs.data.logs[0].stream, true);
+  const gemDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${gemLogs.data.logs[0].id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  const gemBody = JSON.parse(gemDetail.data.log.res_body);
+  assert.equal(gemBody.thinking, "plan...");
+  assert.equal(gemBody.content, "Gemini answer");
+  assert.equal(gemBody.finish_reason, "STOP");
+  assert.equal(gemBody.tool_calls[0].name, "search");
+  assert.deepEqual(gemBody.usage, {
+    promptTokenCount: 7,
+    candidatesTokenCount: 4,
+  });
+});
+
+test("proxy_logs sanitizes base64/oversized bodies, scrubs keys, records each retry attempt separately, enforces scope & 1980 cap, and supports filters", async () => {
+  const secretKey = "sk-supersecretkey9999";
+  const env = makeEnv();
+  const pA = provider({ alias: "logs-a", keys: secretKey });
+  const pB = provider({
+    alias: "logs-b",
+    api_base: `${upstreamBase()}/b/v1`,
+    keys: "sk-otherkey8888",
+  });
+  await postSettings(env, [pA, pB], { proxy_fail_threshold: 5 });
+  const fpA = await fingerprintOf(env, pA);
+
+  // Excluded from proxy_logs: 401 bad proxy auth, 404 unknown alias, and /api/proxy/test
+  await request(env, "/proxy/logs-a/chat/completions", {
+    method: "POST",
+    headers: { Authorization: "Bearer wrong", "Content-Type": "application/json" },
+    body: "{}",
+  });
+  await proxy(env, "/proxy/unknown-alias/chat/completions");
+  const [rowA] = await getKeyRows(env, fpA);
+  await request(env, "/api/proxy/test", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp: fpA, id: rowA.id, model: "m1" }),
+  });
+  const zeroLogs = await asJson(
+    await request(env, "/api/proxy/logs", { headers: adminHeaders() }),
+  );
+  assert.equal(zeroLogs.data.total, 0);
+
+  // Logged: sanitized base64 + >65536 clipping on 200 OK
+  const bigBase64Uri = `data:image/png;base64,${"A".repeat(400)}`;
+  const bigInlineData = `"data": "${"B".repeat(600)}"`;
+  const hugeResp = "X".repeat(70_000);
+  useUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(hugeResp);
+  });
+  await proxy(env, "/proxy/logs-a/chat/completions", {
+    headers: proxyHeaders({ "User-Agent": "TestClient/2.4" }),
+    body: `{"model":"gpt-img","uri":"${bigBase64Uri}",${bigInlineData}}`,
+  });
+
+  // Logged: upstream 401 echoing secret key -> scrubbed in error & res_body
+  useUpstream((req, res) => {
+    res.writeHead(401, { "Content-Type": "application/json" });
+    res.end(`{"error":{"message":"Incorrect API key provided: ${secretKey}"}}`);
+  });
+  await proxy(env, "/proxy/logs-a/chat/completions", {
+    body: '{"model":"gpt-err"}',
+  });
+
+  // Logged: status = 502 network error & status = 499 timeout error
+  useUpstream((req) => {
+    req.socket.destroy();
+  });
+  await proxy(env, "/proxy/logs-b/chat/completions", {
+    body: '{"model":"gpt-net"}',
+  });
+  await postSettings(env, [pA, pB], {
+    proxy_fail_threshold: 5,
+    proxy_upstream_timeout_ms: 1000,
+  });
+  useUpstream(() => {
+    // never respond so Worker aborts after timeout
+  });
+  const timeoutProxyRes = await proxy(env, "/proxy/logs-b/chat/completions", {
+    body: '{"model":"gpt-timeout"}',
+  });
+  assert.equal(timeoutProxyRes.status, 499);
+
+  // Logged: 503 NO_KEYS when all keys of logs-a are disabled
+  await request(env, "/api/proxy/disable", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp: fpA, id: rowA.id }),
+  });
+  await proxy(env, "/proxy/logs-a/chat/completions", {
+    body: '{"model":"gpt-nokeys"}',
+  });
+
+  // Verify list mode omits heavy payload columns and supports filters
+  const allList = await asJson(
+    await request(env, "/api/proxy/logs", { headers: adminHeaders() }),
+  );
+  assert.equal(allList.data.total, 5);
+  const netLogRow = allList.data.logs.find((r) => r.model === "gpt-net");
+  const timeoutLogRow = allList.data.logs.find((r) => r.model === "gpt-timeout");
+  assert.equal(netLogRow.status, 502);
+  assert.equal(timeoutLogRow.status, 499);
+  for (const item of allList.data.logs) {
+    assert.equal("req_body" in item, false);
+    assert.equal("res_body" in item, false);
+    assert.equal("attempts" in item, false);
+    assert.equal("attempts_detail" in item, false);
+    assert.equal(item.ttfb_ms, null, "non-streaming logs must report ttfb_ms as null");
+  }
+  assert.deepEqual(allList.data.facets.aliases, ["logs-a", "logs-b"]);
+  for (const item of allList.data.logs) {
+    assert.equal(
+      "api_key" in item,
+      false,
+      "GET /api/proxy/logs list rows must never expose plaintext api_key",
+    );
+  }
+
+  const okOnly = await asJson(
+    await request(env, "/api/proxy/logs?status=ok", { headers: adminHeaders() }),
+  );
+  assert.equal(okOnly.data.total, 1);
+  assert.equal(okOnly.data.logs[0].model, "gpt-img");
+
+  const failOnly = await asJson(
+    await request(env, "/api/proxy/logs?status=fail", { headers: adminHeaders() }),
+  );
+  assert.equal(failOnly.data.total, 4);
+
+  const status503 = await asJson(
+    await request(env, "/api/proxy/logs?status=503", { headers: adminHeaders() }),
+  );
+  assert.equal(status503.data.total, 1);
+  assert.equal(status503.data.logs[0].model, "gpt-nokeys");
+
+  // Time filter `to_ts` keeps only records with `ts <= to_ts`
+  const cutoffZero = await asJson(
+    await request(env, "/api/proxy/logs?to_ts=0", { headers: adminHeaders() }),
+  );
+  assert.equal(cutoffZero.data.total, 0);
+  const cutoffAll = await asJson(
+    await request(
+      env,
+      `/api/proxy/logs?to_ts=${Date.now() + 60_000}`,
+      { headers: adminHeaders() },
+    ),
+  );
+  assert.equal(cutoffAll.data.total, 5);
+
+  // Key search matches BOTH plaintext key and masked key!
+  const byPlainKey = await asJson(
+    await request(
+      env,
+      `/api/proxy/logs?key=${encodeURIComponent(secretKey)}`,
+      { headers: adminHeaders() },
+    ),
+  );
+  assert.equal(byPlainKey.data.total, 2);
+  const maskedA = byPlainKey.data.logs[0].key_masked;
+  const byMaskedKey = await asJson(
+    await request(
+      env,
+      `/api/proxy/logs?key=${encodeURIComponent(maskedA)}`,
+      { headers: adminHeaders() },
+    ),
+  );
+  assert.equal(byMaskedKey.data.total, 2);
+
+  // Inspect sanitized request/response bodies, upstream_url & scrubbed secret in detail mode
+  const imgId = okOnly.data.logs[0].id;
+  const imgDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${imgId}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(imgDetail.data.log.api_key, secretKey);
+  assert.equal(
+    imgDetail.data.log.upstream_url,
+    `${upstreamBase()}/v1/chat/completions`,
+  );
+  assert.equal(imgDetail.data.log.user_agent, "TestClient/2.4");
+  assert.equal("attempts" in imgDetail.data.log, false);
+  assert.equal("attempts_detail" in imgDetail.data.log, false);
+  assert.match(imgDetail.data.log.req_body, /<base64 omitted/);
+  assert.ok(!imgDetail.data.log.req_body.includes("AAAA"));
+  assert.ok(!imgDetail.data.log.req_body.includes("BBBB"));
+  assert.match(imgDetail.data.log.res_body, /\[\d+ chars omitted\]/);
+  assert.ok(imgDetail.data.log.res_body.length < 66_000);
+
+  const errRow = allList.data.logs.find((r) => r.model === "gpt-err");
+  const errDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${errRow.id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.ok(!errDetail.data.log.error.includes(secretKey));
+  assert.ok(errDetail.data.log.error.includes(maskedA));
+  assert.ok(!errDetail.data.log.res_body.includes(secretKey));
+
+  // Verify each attempt is recorded as an independent row (4 failed attempts -> 4 rows)
+  const pMulti = provider({
+    alias: "logs-multi",
+    api_base: `${upstreamBase()}/m/v1`,
+    keys: "sk-m11111111111\nsk-m22222222222\nsk-m33333333333\nsk-m44444444444",
+  });
+  await postSettings(env, [pA, pB, pMulti], {
+    proxy_fail_threshold: 5,
+    proxy_max_retries: 3,
+  });
+  useUpstream((_req, res) => {
+    res.writeHead(429, { "Content-Type": "application/json" });
+    res.end('{"error":"rate limit"}');
+  });
+  await proxy(env, "/proxy/logs-multi/chat/completions", {
+    body: '{"model":"gpt-retry-4"}',
+  });
+  const multiLogs = await asJson(
+    await request(env, "/api/proxy/logs?alias=logs-multi", {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(
+    multiLogs.data.total,
+    4,
+    "4 attempts (initial + 3 retries) must produce 4 separate proxy_logs rows",
+  );
+
+  // Seed >1,980 rows + trigger cleanupEvery(1) on next proxy request -> auto-capped to 1,980 rows!
+  await request(env, "/api/proxy/recover", {
+    method: "POST",
+    headers: adminHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ fp: fpA, id: rowA.id }),
+  });
+  useUpstream(defaultUpstream);
+  env.DB.db.exec("BEGIN");
+  const insertStmt = env.DB.db.prepare(
+    "INSERT INTO proxy_logs (ts, alias, provider_type, method, path, status, duration_ms) VALUES (?, 'logs-a', 'openai', 'POST', '/chat/completions', 200, 10)",
+  );
+  for (let i = 0; i < 1982; i++) {
+    insertStmt.run(1_000_000 + i);
+  }
+  env.DB.db.exec("COMMIT");
+
+  worker.__test.setLogCleanupEvery(1);
+  await proxy(env, "/proxy/logs-a/chat/completions", {
+    body: '{"model":"newest-kept"}',
+  });
+  const cappedCount = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM proxy_logs",
+  ).first();
+  assert.equal(Number(cappedCount.n), 1980);
+
+  // Page 99 returns the tail within 1980 cap, page 100 clamps to 99
+  const page99 = await asJson(
+    await request(env, "/api/proxy/logs?page=99", { headers: adminHeaders() }),
+  );
+  assert.equal(page99.data.page, 99);
+  assert.equal(page99.data.total_pages, 99);
+  assert.equal(page99.data.logs.length, 20);
+});
+
+test("review hardening: snapshot epoch anti-race, split CRLF SSE + Anthropic empty tool input, zero-tee binary stream, URL/path guards, and JSON1 test-model upsert", async () => {
+  // 1. URL / private-IP / self-origin / path-traversal / test_path guards
+  const envGuard = makeEnv();
+  for (const badBase of [
+    "https://169.254.169.254/latest/meta-data",
+    "https://10.0.0.8/v1",
+    "https://172.16.5.4/v1",
+    "https://192.168.1.10/v1",
+    "https://[fc00::1]/v1",
+    "https://[fe80::1]/v1",
+    "https://example.test/proxy/loop",
+    "https://api.openai.com/tenant-a/../tenant-b",
+    "https://api.openai.com/tenant-a/%2e%2e/tenant-b",
+  ]) {
+    const res = await asJson(
+      await request(envGuard, "/api/settings", {
+        method: "POST",
+        headers: adminHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          providers: [provider({ alias: "guard", api_base: badBase, keys: "sk-111111111111" })],
+          proxy_password: PROXY,
+        }),
+      }),
+    );
+    assert.equal(res.status, 400, `expected 400 for unsafe api_base ${badBase}`);
+  }
+
+  for (const badTestPath of [
+    "/v1/chat/completions?foo=1",
+    "/v1/chat/completions#frag",
+    "/v1/../admin",
+    "/v1/%2e%2e/admin",
+  ]) {
+    const res = await asJson(
+      await request(envGuard, "/api/settings", {
+        method: "POST",
+        headers: adminHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          providers: [provider({ alias: "tp", test_path: badTestPath, keys: "sk-111111111111" })],
+          proxy_password: PROXY,
+        }),
+      }),
+    );
+    assert.equal(res.status, 400, `expected 400 for unsafe test_path ${badTestPath}`);
+  }
+
+  // 2. Proxy encoded path traversal rejected with 400 + zero-tee binary passthrough + split CRLF SSE
+  const env = makeEnv();
+  const pAnthropic = provider({
+    alias: "ant-sse",
+    provider_type: "anthropic",
+    test_path: "/v1/messages",
+    api_base: `${upstreamBase()}/ant`,
+    keys: "sk-ant-review-key-111111111111",
+    models: "claude-sonnet-4",
+  });
+  const pBin = provider({
+    alias: "tts-bin",
+    provider_type: "openai",
+    test_path: "/v1/chat/completions",
+    api_base: `${upstreamBase()}/bin`,
+    keys: "sk-bin-review-key-222222222222",
+    models: "tts-1",
+  });
+  await postSettings(env, [pAnthropic, pBin]);
+
+  // Single-encoded %2e%2e is collapsed by WHATWG URL before alias routing (404, 0 outbound);
+  // double-encoded %252e%252e or %5c in subPath is rejected with 400 (0 outbound).
+  resetCaptured();
+  const singleEncTraversal = await asJson(
+    await request(env, "/proxy/ant-sse/%2e%2e/admin/secrets", {
+      method: "POST",
+      headers: proxyHeaders(),
+      body: "{}",
+    }),
+  );
+  assert.equal(singleEncTraversal.status, 404);
+  const doubleEncTraversal = await asJson(
+    await request(env, "/proxy/ant-sse/%252e%252e/admin/secrets", {
+      method: "POST",
+      headers: proxyHeaders(),
+      body: "{}",
+    }),
+  );
+  assert.equal(doubleEncTraversal.status, 400);
+  assert.equal(captured.length, 0);
+
+  // Binary audio response streams verbatim without buffering as text
+  const rawAudio = Buffer.from([0x49, 0x44, 0x33, 0x04, 0x00, 0xff, 0xfb]);
+  useUpstream((_req, res) => {
+    res.writeHead(200, {
+      "Content-Type": "audio/mpeg",
+      "Content-Length": String(rawAudio.length),
+    });
+    res.end(rawAudio);
+  });
+  const binRes = await request(env, "/proxy/tts-bin/v1/audio/speech", {
+    method: "POST",
+    headers: proxyHeaders(),
+    body: JSON.stringify({ model: "tts-1", input: "hello" }),
+  });
+  assert.equal(binRes.status, 200);
+  const clientAudio = Buffer.from(await binRes.arrayBuffer());
+  assert.deepEqual(clientAudio, rawAudio);
+
+  // Split `\r\n\r\n` right across chunk boundaries + Anthropic empty-input tool_use (`input: {}`)
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const u = typeof input === "string" ? input : input.url;
+    if (u.includes("/ant/v1/messages")) {
+      const enc = new TextEncoder();
+      const chunks = [
+        'event: message_start\r',
+        '\ndata: {"type":"message_start","message":{"model":"claude-sonnet-4","usage":{"input_tokens":9}}}\r',
+        '\n\r',
+        '\nevent: content_block_start\r\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_empty","name":"ping","input":{}}}\r',
+        '\n\r',
+        '\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Split CRLF OK"}}\r\n\r',
+        '\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}\r\n\r\n',
+      ];
+      let idx = 0;
+      const body = new ReadableStream({
+        pull(controller) {
+          if (idx < chunks.length) {
+            controller.enqueue(enc.encode(chunks[idx++]));
+          } else {
+            controller.close();
+          }
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    return origFetch(input, init);
+  };
+  try {
+    const sseRes = await request(env, "/proxy/ant-sse/v1/messages", {
+      method: "POST",
+      headers: proxyHeaders(),
+      body: JSON.stringify({ model: "claude-sonnet-4", stream: true }),
+    });
+    assert.equal(sseRes.status, 200);
+    await sseRes.text();
+    await drainWaitUntil();
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+
+  const logsList = await asJson(
+    await request(env, "/api/proxy/logs", { headers: adminHeaders() }),
+  );
+  assert.equal(logsList.data.total, 2);
+  const sseItem = logsList.data.logs.find((r) => r.alias === "ant-sse");
+  const binItem = logsList.data.logs.find((r) => r.alias === "tts-bin");
+  assert.ok(sseItem && binItem);
+
+  const sseDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${sseItem.id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  const parsedSse = JSON.parse(sseDetail.data.log.res_body);
+  assert.equal(parsedSse.content, "Split CRLF OK");
+  assert.equal(parsedSse.finish_reason, "tool_use");
+  assert.deepEqual(parsedSse.tool_calls, [
+    { id: "toolu_empty", type: "tool_use", name: "ping", arguments: "{}" },
+  ]);
+
+  const binDetail = await asJson(
+    await request(env, `/api/proxy/logs?id=${binItem.id}`, {
+      headers: adminHeaders(),
+    }),
+  );
+  assert.equal(
+    binDetail.data.log.res_body,
+    `[binary payload (${rawAudio.length} bytes, audio/mpeg)]`,
+  );
+
+  // 3. Atomic SQLite JSON1 `proxy_test_models` preserves concurrent updates from other isolates
+  const fpAnt = await fingerprintOf(env, pAnthropic);
+  const fpBin = await fingerprintOf(env, pBin);
+  await postTestModel(env, fpAnt, "claude-sonnet-4");
+  // Simulate another isolate writing `fpBin` directly in D1 while this isolate's snapshot is warm
+  await env.DB.prepare(
+    "UPDATE store SET v = json_set(v, ?, ?) WHERE k = 'proxy_test_models'",
+  )
+    .bind(`$.${fpBin}`, "tts-1")
+    .run();
+  // Updating `fpAnt` on this isolate must NOT clobber `fpBin` in D1!
+  await postTestModel(env, fpAnt, "claude-sonnet-4");
+  const rawModelsRow = await env.DB.prepare(
+    "SELECT v FROM store WHERE k = 'proxy_test_models'",
+  ).first();
+  const storedMap = JSON.parse(rawModelsRow.v);
+  assert.equal(storedMap[fpAnt], "claude-sonnet-4");
+  assert.equal(storedMap[fpBin], "tts-1");
+
+  // 4. Snapshot `epoch` prevents an in-flight cold load from overwriting a concurrent settings save
+  worker.__test.invalidateSnapshot(env.DB);
+  const origBatch = env.DB.batch.bind(env.DB);
+  let releaseSlowColdLoad;
+  let interceptedFirstColdLoad = false;
+  let notifyPaused;
+  const pausedPromise = new Promise((r) => {
+    notifyPaused = r;
+  });
+  env.DB.batch = async (stmts) => {
+    const res = await origBatch(stmts);
+    if (!interceptedFirstColdLoad) {
+      interceptedFirstColdLoad = true;
+      notifyPaused();
+      await new Promise((r) => {
+        releaseSlowColdLoad = r;
+      });
+    }
+    return res;
+  };
+  try {
+    useUpstream(defaultUpstream);
+    // Start a cold snapshot load that reads version = 1 and pauses before committing snapshot
+    const inflightStateReq = request(env, "/api/proxy/state", {
+      headers: adminHeaders(),
+    });
+    await pausedPromise;
+
+    // While paused, save new settings (version = 2, only pBin kept with new alias)
+    const updatedBin = { ...pBin, alias: "tts-v2" };
+    await postSettings(env, [updatedBin]);
+
+    // Release the paused cold load from epoch 0 -> must NOT overwrite snapshot with stale version 1!
+    releaseSlowColdLoad();
+    const stateRes = await asJson(await inflightStateReq);
+    assert.equal(stateRes.status, 200);
+    assert.deepEqual(
+      stateRes.data.providers.map((p) => p.alias),
+      ["tts-v2"],
+    );
+    assert.deepEqual(
+      [...worker.__test.getDbState(env.DB).snapshot.providersByAlias.keys()],
+      ["tts-v2"],
+    );
+  } finally {
+    env.DB.batch = origBatch;
+  }
 });

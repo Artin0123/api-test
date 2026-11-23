@@ -1,5 +1,207 @@
 // Split from the original app.js; loaded in original order (see index.html).
 // ── Proxy tab (rotation / forwarding) ──────────────────────────────────────
+const PROXY_LIVE_TICK_MS = 1000;
+const PROXY_STATE_POLL_MS = 2000;
+
+let _proxyClockTimer = null;
+let _proxyPollTimer = null;
+let _proxyPollInflight = false;
+let _proxyVisibilityBound = false;
+
+function isProxyTabActive() {
+  return !!(
+    state.signedIn &&
+    !isKvStorageMode() &&
+    dom.tabProxy &&
+    dom.tabProxy.classList.contains("active")
+  );
+}
+
+function tickProxyLiveLabels() {
+  if (!isProxyTabActive() || document.hidden || !dom.proxyKeyGrid) return;
+  for (const el of dom.proxyKeyGrid.querySelectorAll("[data-last-used]")) {
+    const raw = el.dataset.lastUsed;
+    if (!raw) continue;
+    const nextText = `最近使用 ${proxyTimeLabel(Number(raw))}`;
+    if (el.textContent !== nextText) el.textContent = nextText;
+  }
+}
+
+function tryPatchProxyCardsInPlace(
+  prevProvider,
+  nextProvider,
+  prevData,
+  nextData,
+) {
+  if (!prevProvider || !nextProvider || !dom.proxyKeyGrid) return false;
+  if (dom.proxyKeyGrid.classList.contains("hidden")) return false;
+  if (prevProvider.fp !== nextProvider.fp) return false;
+  if (prevProvider.alias !== nextProvider.alias) return false;
+  if (prevProvider.enabled !== nextProvider.enabled) return false;
+  if ((prevProvider.test_model || "") !== (nextProvider.test_model || "")) {
+    return false;
+  }
+  if ((prevData?.enabled ?? true) !== (nextData?.enabled ?? true)) return false;
+  if ((prevData?.disabled_reason || "") !== (nextData?.disabled_reason || "")) {
+    return false;
+  }
+
+  const prevModels = Array.isArray(prevProvider.models) ? prevProvider.models : [];
+  const nextModels = Array.isArray(nextProvider.models) ? nextProvider.models : [];
+  if (
+    prevModels.length !== nextModels.length ||
+    prevModels.some((m, i) => m !== nextModels[i])
+  ) {
+    return false;
+  }
+
+  const prevKeys = Array.isArray(prevProvider.keys) ? prevProvider.keys : [];
+  const nextKeys = Array.isArray(nextProvider.keys) ? nextProvider.keys : [];
+  if (prevKeys.length !== nextKeys.length || prevKeys.length === 0) return false;
+
+  for (let i = 0; i < prevKeys.length; i++) {
+    const pk = prevKeys[i];
+    const nk = nextKeys[i];
+    if (
+      pk.id !== nk.id ||
+      pk.masked !== nk.masked ||
+      !!pk.disabled !== !!nk.disabled
+    ) {
+      return false;
+    }
+  }
+
+  const nextById = new Map(nextKeys.map((k) => [String(k.id ?? ""), k]));
+  for (const card of dom.proxyKeyGrid.querySelectorAll("[data-key-id]")) {
+    const k = nextById.get(card.dataset.keyId || "");
+    if (!k) continue;
+    const failEl = card.querySelector("[data-proxy-fail-count]");
+    if (failEl) {
+      const nextFail = String(Number(k.fail_count || 0));
+      if (failEl.textContent !== nextFail) failEl.textContent = nextFail;
+    }
+    const usedEl = card.querySelector("[data-last-used]");
+    if (usedEl) {
+      const nextVal = k.last_used_at != null ? String(k.last_used_at) : "";
+      if (usedEl.dataset.lastUsed !== nextVal) {
+        usedEl.dataset.lastUsed = nextVal;
+      }
+      const nextTitle = proxyTimeTitle(k.last_used_at);
+      if (nextTitle) usedEl.title = nextTitle;
+      else usedEl.removeAttribute("title");
+      const nextText = `最近使用 ${proxyTimeLabel(k.last_used_at)}`;
+      if (usedEl.textContent !== nextText) usedEl.textContent = nextText;
+    }
+  }
+  return true;
+}
+
+async function pollProxyStateSeq() {
+  if (
+    MOCK ||
+    !isProxyTabActive() ||
+    document.hidden ||
+    state.proxyBusy ||
+    _proxyPollInflight
+  ) {
+    return;
+  }
+  _proxyPollInflight = true;
+  const reqSnap = state.reqSeq.proxy;
+  try {
+    const since =
+      state.proxyStateSeq != null ? String(state.proxyStateSeq) : "";
+    const path = since
+      ? `/api/proxy/state?since_seq=${encodeURIComponent(since)}`
+      : "/api/proxy/state";
+    const data = await api(path, { auth: true });
+    if (
+      !isProxyTabActive() ||
+      state.proxyBusy ||
+      state.reqSeq.proxy !== reqSnap
+    ) {
+      return;
+    }
+    if (data && data.unchanged) {
+      if (data.state_seq != null) state.proxyStateSeq = data.state_seq;
+      return;
+    }
+    if (!data || !Array.isArray(data.providers)) return;
+    await syncProxyPlainKeys(data.providers);
+    if (
+      !isProxyTabActive() ||
+      state.proxyBusy ||
+      state.reqSeq.proxy !== reqSnap
+    ) {
+      return;
+    }
+
+    const prevData = state.proxy;
+    const prevProvider = selectedProxyProvider();
+    const prevProviderCount = proxyProviders().length;
+    const prevSelectedModel = dom.proxyTestModel
+      ? dom.proxyTestModel.value
+      : "";
+
+    state.proxyStateSeq = data.state_seq ?? null;
+    state.proxy = data;
+    const visibleProviders = proxyProviders();
+    const active =
+      visibleProviders.find((p) => p.fp === state.proxySelected) ||
+      visibleProviders[0] ||
+      null;
+    state.proxySelected = active ? active.fp : null;
+
+    if (
+      visibleProviders.length === prevProviderCount &&
+      tryPatchProxyCardsInPlace(prevProvider, active, prevData, data)
+    ) {
+      return;
+    }
+
+    renderProxyState(data, {
+      preserveOrder: true,
+      keepModelChoice: prevSelectedModel,
+    });
+  } catch {
+    // Transient background poll errors must not flash banners over active cards.
+  } finally {
+    _proxyPollInflight = false;
+  }
+}
+
+function stopProxyLiveTimers() {
+  if (_proxyClockTimer !== null) {
+    clearInterval(_proxyClockTimer);
+    _proxyClockTimer = null;
+  }
+  if (_proxyPollTimer !== null) {
+    clearInterval(_proxyPollTimer);
+    _proxyPollTimer = null;
+  }
+}
+
+function startProxyLiveTimers() {
+  stopProxyLiveTimers();
+  if (!isProxyTabActive() || document.hidden) return;
+  _proxyClockTimer = setInterval(tickProxyLiveLabels, PROXY_LIVE_TICK_MS);
+  if (!MOCK) {
+    _proxyPollTimer = setInterval(pollProxyStateSeq, PROXY_STATE_POLL_MS);
+  }
+  if (!_proxyVisibilityBound && typeof document.addEventListener === "function") {
+    _proxyVisibilityBound = true;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopProxyLiveTimers();
+      } else if (isProxyTabActive()) {
+        tickProxyLiveLabels();
+        pollProxyStateSeq();
+        startProxyLiveTimers();
+      }
+    });
+  }
+}
+
 function proxyProviders() {
   return ((state.proxy && state.proxy.providers) || []).filter(
     (p) => p && String(p.alias || "").trim(),
@@ -29,7 +231,7 @@ function clearProxyNotice({ keepGlobal = true } = {}) {
   dom.proxyNotice.classList.add("hidden");
 }
 
-async function syncProxyPlainKeys(proxyProviders) {
+async function syncProxyPlainKeys(providersList) {
   if (MOCK) return;
 
   const listMatchesProvider = (list, pp) => {
@@ -54,7 +256,7 @@ async function syncProxyPlainKeys(proxyProviders) {
 
   let byFp = await buildByFp(false);
   if (
-    (proxyProviders || []).some(
+    (providersList || []).some(
       (pp) => pp && !listMatchesProvider(byFp.get(pp.fp), pp),
     )
   ) {
@@ -62,7 +264,7 @@ async function syncProxyPlainKeys(proxyProviders) {
   }
 
   const map = new Map();
-  for (const pp of proxyProviders || []) {
+  for (const pp of providersList || []) {
     if (pp && pp.fp) map.set(pp.fp, byFp.get(pp.fp) || []);
   }
   state.proxyPlainKeys = map;
@@ -82,6 +284,7 @@ async function loadProxyState({ preserveOrder = false } = {}) {
     dom.proxyKeyGrid.classList.add("hidden");
     dom.proxyPagination.classList.add("hidden");
   }
+  dom.proxyError.classList.add("hidden");
   clearProxyNotice({ keepGlobal: false });
 
   try {
@@ -101,6 +304,7 @@ async function loadProxyState({ preserveOrder = false } = {}) {
       data = await api("/api/proxy/state", { auth: true });
     }
     if (reqId !== state.reqSeq.proxy) return false;
+    state.proxyStateSeq = data.state_seq ?? null;
     const providers = data.providers || [];
     if (!MOCK) {
       await syncProxyPlainKeys(providers);
@@ -142,75 +346,62 @@ function mockOverrideForProvider(fp) {
 }
 
 function mockProxyState(settings) {
-  const logsUrl = String(settings.ai_gateway_logs_url || "").trim();
-  const gwToken = String(settings.ai_gateway_token || "").trim();
   const proxyPass = String(settings.proxy_password || "").trim();
-  const gatewayReady = !!(isValidGatewayLogsUrl(logsUrl) && gwToken);
-  let proxyMessage = "";
-  if (!proxyPass) proxyMessage = "代理密码未设定，请到右上角「设定」填写后再启用转发";
-  else if (!isValidGatewayLogsUrl(logsUrl))
-    proxyMessage = "AI Gateway Logs URL 未设定或格式无效，请到右上角「设定」填写";
-  else if (!gwToken) proxyMessage = "AI Gateway Token 未设定，请到右上角「设定」填写";
+  const proxyMessage = proxyPass
+    ? ""
+    : "代理密码未设定，请到右上角「设定」填写后再启用转发";
 
   const providers = (settings.providers || [])
     .filter((p) => p && String(p.alias || "").trim())
     .map((p, i) => {
-    const fp = cachedProviderFp(p) || `mock-${i}`;
-    const override = mockOverrideForProvider(fp);
-    const keys = splitKeyLines(p.keys);
-    const keyEntries = keys.map((key, ki) => {
-      let entryState = override.keys.get(key);
-      if (!entryState) {
-        const disabled = keys.length > 1 && ki === keys.length - 1;
-        entryState = {
-          disabled,
-          fail_count: disabled ? 3 : 0,
-          last_used_at: disabled
-            ? Date.now() - 3 * 3600 * 1000
-            : ki === 0
-              ? Date.now() - 25 * 1000
-              : null,
+      const fp = cachedProviderFp(p) || `mock-${i}`;
+      const override = mockOverrideForProvider(fp);
+      const keys = splitKeyLines(p.keys);
+      const keyEntries = keys.map((key, ki) => {
+        let entryState = override.keys.get(key);
+        if (!entryState) {
+          const disabled = keys.length > 1 && ki === keys.length - 1;
+          entryState = {
+            disabled,
+            fail_count: disabled ? 3 : 0,
+            last_used_at: disabled
+              ? Date.now() - 3 * 3600 * 1000
+              : ki === 0
+                ? Date.now() - 12 * 1000
+                : null,
+          };
+          override.keys.set(key, entryState);
+        }
+        return {
+          id: i * 100 + ki + 1,
+          masked: maskKey(key),
+          disabled: !!entryState.disabled,
+          fail_count: Number(entryState.fail_count || 0),
+          last_used_at: entryState.last_used_at,
+          synced: true,
         };
-        override.keys.set(key, entryState);
-      }
+      });
       return {
-        id: i * 100 + ki + 1,
-        masked: maskKey(key),
-        disabled: !!entryState.disabled,
-        fail_count: Number(entryState.fail_count || 0),
-        last_used_at: entryState.last_used_at,
-        synced: true,
+        fp,
+        _mockPlainKeys: keys,
+        alias: p.alias || "",
+        host: extractHost(p.api_base),
+        provider_type: p.provider_type || "openai",
+        enabled: p.enabled !== false,
+        proxy_url: p.alias ? `/proxy/${p.alias}` : "",
+        test_model: override.test_model || "",
+        models: splitModels(p.models),
+        keys_total: keyEntries.length,
+        keys_available: keyEntries.filter((k) => !k.disabled).length,
+        keys: keyEntries,
       };
     });
-    return {
-      fp,
-      _mockPlainKeys: keys,
-      alias: p.alias || "",
-      host: extractHost(p.api_base),
-      provider_type: p.provider_type || "openai",
-      enabled: p.enabled !== false,
-      via_gateway: !!(gatewayReady && p.alias),
-      proxy_url: p.alias ? `/proxy/${p.alias}` : "",
-      sample_path:
-        ({
-          google: "/v1beta/models/{model}:streamGenerateContent?alt=sse",
-          anthropic: "/messages",
-        })[p.provider_type] || "/chat/completions",
-      test_model: override.test_model || "",
-      logs_url: isValidGatewayLogsUrl(logsUrl) ? logsUrl : "",
-      models: splitModels(p.models),
-      keys_total: keyEntries.length,
-      keys_available: keyEntries.filter((k) => !k.disabled).length,
-      keys: keyEntries,
-    };
-  });
   return {
     ok: true,
     backend: "d1",
+    state_seq: Date.now(),
     proxy_enabled: !proxyMessage,
     proxy_message: proxyMessage,
-    gateway_ready: gatewayReady,
-    logs_url_template: logsUrl,
     providers,
   };
 }
@@ -220,7 +411,7 @@ function proxyTimeLabel(ms) {
   const ts = Number(ms);
   if (!Number.isFinite(ts)) return "—";
   const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (diffSec < 60) return "60 秒前";
+  if (diffSec < 60) return `${Math.max(1, diffSec)} 秒前`;
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin} 分钟前`;
   const diffHour = Math.floor(diffMin / 60);
@@ -235,7 +426,10 @@ function proxyTimeTitle(ms) {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 }
 
-function renderProxyState(data, { preserveOrder = false } = {}) {
+function renderProxyState(
+  data,
+  { preserveOrder = false, keepModelChoice = "" } = {},
+) {
   const providers = proxyProviders();
   if (!data.proxy_enabled) {
     setProxyNotice(data.proxy_message || "转发功能目前停用", "error");
@@ -246,7 +440,6 @@ function renderProxyState(data, { preserveOrder = false } = {}) {
     dom.proxyKeyGrid.classList.add("hidden");
     dom.proxyKeyEmpty.classList.add("hidden");
     dom.proxyPagination.classList.add("hidden");
-    renderProxyLogsLink();
     return;
   }
 
@@ -265,7 +458,7 @@ function renderProxyState(data, { preserveOrder = false } = {}) {
 
   dom.proxyEmpty.classList.add("hidden");
   dom.proxyToolbar.classList.remove("hidden");
-  renderProxyToolbar();
+  renderProxyToolbar({ keepModelChoice });
   renderProxyKeyCards({ preserveOrder });
 }
 
@@ -283,7 +476,7 @@ function proxyModelOptions(p) {
   return models;
 }
 
-function renderProxyModelSelect(p) {
+function renderProxyModelSelect(p, keepModelChoice = "") {
   const models = proxyModelOptions(p);
   const saved = String(p.test_model || "").trim();
   dom.proxyTestModel.replaceChildren();
@@ -297,10 +490,14 @@ function renderProxyModelSelect(p) {
     opt.textContent = model;
     dom.proxyTestModel.appendChild(opt);
   }
-  // Default to the saved model while still listed, otherwise the first option.
-  // The chosen model is persisted only when the operator clicks a Test button.
-  dom.proxyTestModel.value =
-    saved && models.includes(saved) ? saved : models[0];
+  // Preserve an in-progress dropdown pick across background polls; otherwise
+  // default to the saved model while still listed, or the first option.
+  if (keepModelChoice && models.includes(keepModelChoice)) {
+    dom.proxyTestModel.value = keepModelChoice;
+  } else {
+    dom.proxyTestModel.value =
+      saved && models.includes(saved) ? saved : models[0];
+  }
   syncCustomSelect(dom.proxyTestModel);
 }
 
@@ -319,7 +516,7 @@ function proxyCardTitles() {
   };
 }
 
-function renderProxyToolbar() {
+function renderProxyToolbar({ keepModelChoice = "" } = {}) {
   const p = selectedProxyProvider();
   if (!p) return;
   const blockReason = proxyDisabledReason();
@@ -329,8 +526,6 @@ function renderProxyToolbar() {
   const available = Number(p.keys_available || 0);
   const total = Number(p.keys_total || 0);
   const disabled = Math.max(total - available, 0);
-  // Single neutral label + control-height segmented two-cell readout so counts
-  // stay framed alongside the adjacent select/button row and hover reveals meaning.
   const labelSpan = document.createElement("span");
   labelSpan.className = "proxy-summary-label";
   labelSpan.textContent = "密钥状态";
@@ -354,11 +549,10 @@ function renderProxyToolbar() {
   );
   dom.proxySummary.replaceChildren(labelSpan, countsGroup);
   dom.proxyUrl.textContent = url;
-  dom.proxyUrl.classList.remove("is-disabled");
   dom.proxyUrlCopy.dataset.copyVal = url;
   dom.proxyUrlCopy.disabled = false;
   dom.proxyTestModel.disabled = !enabled;
-  renderProxyModelSelect(p);
+  renderProxyModelSelect(p, keepModelChoice);
 
   const hasKeys = (p.keys || []).some((k) => k.id != null);
   const hasDisabledKeys = (p.keys || []).some((k) => k.disabled && k.id != null);
@@ -375,29 +569,6 @@ function renderProxyToolbar() {
     (!hasDisabledKeys
       ? "当前供应商没有已失效的密钥"
       : "恢复当前供应商下的所有失效密钥");
-  renderProxyLogsLink();
-}
-
-/** The Gateway log shortcut sits in the results/proxy panel header: it is a
- *  whole-provider/gateway view, not one of the probe controls. When there is no
- *  Logs URL or no provider, the link turns aria-disabled cleanly. */
-function renderProxyLogsLink() {
-  const p = selectedProxyProvider();
-  const url = p && p.logs_url;
-  if (url) {
-    dom.proxyLogs.href = url;
-    dom.proxyLogs.removeAttribute("aria-disabled");
-    const filtered = /(?:\?|&)provider=/i.test(url);
-    dom.proxyLogs.title = filtered
-      ? "打开 AI Gateway 日志（已按服务商过滤）"
-      : "打开 AI Gateway 日志";
-    return;
-  }
-  dom.proxyLogs.removeAttribute("href");
-  dom.proxyLogs.setAttribute("aria-disabled", "true");
-  dom.proxyLogs.title = p
-    ? "请在右上角「设定」填写 AI Gateway Logs URL 后可用"
-    : "尚无服务商，先到「来源设定」添加";
 }
 
 function updateProxyCardButtonsDisabled() {
@@ -445,18 +616,13 @@ const PAGE_NEXT_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="c
 const PAGE_CANCEL_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
 const PAGE_GO_SVG = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
 
-function goToProxyPage(page, totalPages) {
-  const next = Math.min(totalPages, Math.max(1, Number(page) || 1));
-  if (next === state.proxyPage) return;
-  state.proxyPage = next;
-  renderProxyKeyCards();
-}
-
-function renderProxyPagination(totalPages) {
-  if (!dom.proxyPagination) return;
+/** Shared numeric/wheel stepper pagination used by both `#proxy-pagination`
+ *  (9 key cards/page) and `#logs-pagination` (20 log rows/page, max 99 pages). */
+function renderStepperPagination(container, currentPage, totalPages, onGoPage) {
+  if (!container) return;
   if (totalPages <= 1) {
-    dom.proxyPagination.replaceChildren();
-    dom.proxyPagination.classList.add("hidden");
+    container.replaceChildren();
+    container.classList.add("hidden");
     return;
   }
 
@@ -473,7 +639,7 @@ function renderProxyPagination(totalPages) {
   input.inputMode = "numeric";
   input.maxLength = 3;
   input.className = "proxy-page-input";
-  input.value = String(state.proxyPage);
+  input.value = String(currentPage);
   input.setAttribute("aria-label", "页码");
 
   const sepSpan = document.createElement("span");
@@ -494,7 +660,7 @@ function renderProxyPagination(totalPages) {
   const syncPaginationControls = () => {
     const raw = input.value.trim();
     const parsed = Number(raw);
-    isDirty = raw !== String(state.proxyPage);
+    isDirty = raw !== String(currentPage);
     if (isDirty) {
       prevBtn.innerHTML = PAGE_CANCEL_SVG;
       prevBtn.title = "取消";
@@ -508,11 +674,11 @@ function renderProxyPagination(totalPages) {
       prevBtn.innerHTML = PAGE_PREV_SVG;
       prevBtn.title = "上一页";
       prevBtn.setAttribute("aria-label", "上一页");
-      prevBtn.disabled = state.proxyPage <= 1;
+      prevBtn.disabled = currentPage <= 1;
       nextBtn.innerHTML = PAGE_NEXT_SVG;
       nextBtn.title = "下一页";
       nextBtn.setAttribute("aria-label", "下一页");
-      nextBtn.disabled = state.proxyPage >= totalPages;
+      nextBtn.disabled = currentPage >= totalPages;
     }
   };
 
@@ -521,11 +687,11 @@ function renderProxyPagination(totalPages) {
     const parsed = Number(raw);
     if (!raw || !Number.isInteger(parsed)) return;
     const clamped = Math.min(totalPages, Math.max(1, parsed));
-    if (clamped === state.proxyPage) {
-      input.value = String(state.proxyPage);
+    if (clamped === currentPage) {
+      input.value = String(currentPage);
       syncPaginationControls();
     } else {
-      goToProxyPage(clamped, totalPages);
+      onGoPage(clamped);
     }
   };
 
@@ -538,7 +704,7 @@ function renderProxyPagination(totalPages) {
     "wheel",
     (e) => {
       e.preventDefault();
-      const cur = Number.parseInt(input.value, 10) || state.proxyPage;
+      const cur = Number.parseInt(input.value, 10) || currentPage;
       const next = Math.min(
         totalPages,
         Math.max(1, cur + (e.deltaY < 0 ? 1 : -1)),
@@ -553,7 +719,7 @@ function renderProxyPagination(totalPages) {
       e.preventDefault();
       submitPage();
     } else if (e.key === "Escape") {
-      input.value = String(state.proxyPage);
+      input.value = String(currentPage);
       syncPaginationControls();
     } else if (
       e.key.length === 1 &&
@@ -567,23 +733,39 @@ function renderProxyPagination(totalPages) {
   });
   prevBtn.addEventListener("click", () => {
     if (isDirty) {
-      input.value = String(state.proxyPage);
+      input.value = String(currentPage);
       syncPaginationControls();
     } else {
-      goToProxyPage(state.proxyPage - 1, totalPages);
+      onGoPage(Math.max(1, currentPage - 1));
     }
   });
   nextBtn.addEventListener("click", () => {
     if (isDirty) {
       submitPage();
     } else {
-      goToProxyPage(state.proxyPage + 1, totalPages);
+      onGoPage(Math.min(totalPages, currentPage + 1));
     }
   });
 
   syncPaginationControls();
-  dom.proxyPagination.replaceChildren(prevBtn, pageBox, nextBtn);
-  dom.proxyPagination.classList.remove("hidden");
+  container.replaceChildren(prevBtn, pageBox, nextBtn);
+  container.classList.remove("hidden");
+}
+
+function goToProxyPage(page, totalPages) {
+  const next = Math.min(totalPages, Math.max(1, Number(page) || 1));
+  if (next === state.proxyPage) return;
+  state.proxyPage = next;
+  renderProxyKeyCards();
+}
+
+function renderProxyPagination(totalPages) {
+  renderStepperPagination(
+    dom.proxyPagination,
+    state.proxyPage,
+    totalPages,
+    (next) => goToProxyPage(next, totalPages),
+  );
 }
 
 function renderProxyKeyCards({ preserveOrder = false } = {}) {
@@ -592,8 +774,6 @@ function renderProxyKeyCards({ preserveOrder = false } = {}) {
   const keys = p.keys || [];
   const enabled = !proxyDisabledReason();
   if (!keys.length) {
-    // Sibling of the grid, not a grid item: a .state-card dropped inside the
-    // grid used to render as one 280px column instead of a full-width notice.
     dom.proxyKeyGrid.replaceChildren();
     dom.proxyKeyGrid.classList.add("hidden");
     dom.proxyKeyEmpty.classList.remove("hidden");
@@ -614,9 +794,6 @@ function renderProxyKeyCards({ preserveOrder = false } = {}) {
     state.proxyCardOrder &&
     state.proxyCardOrder.fp === p.fp &&
     state.proxyCardOrder.indices.length === keys.length;
-  // Sort active keys before disabled ones on fresh loads, keeping fail_count > 0
-  // active keys in their original 来源设定 order, and keep card positions fixed
-  // when reloading right after manual/batch tests.
   const ordered = keepSnapshot
     ? state.proxyCardOrder.indices.map((idx) => ({
         k: keys[idx],
@@ -662,6 +839,8 @@ function renderProxyKeyCards({ preserveOrder = false } = {}) {
         : "";
       const timeTitle = proxyTimeTitle(k.last_used_at);
       const timeAttr = timeTitle ? ` title="${escAttr(timeTitle)}"` : "";
+      const lastUsedVal =
+        k.last_used_at != null ? escAttr(String(k.last_used_at)) : "";
       return `
         <article class="proxy-key-card${k.disabled ? " proxy-key-card--disabled" : ""}" data-key-id="${escAttr(id)}">
           <div class="proxy-key-card-head">
@@ -670,7 +849,7 @@ function renderProxyKeyCards({ preserveOrder = false } = {}) {
           </div>
           <div class="proxy-key-card-meta">
             <span>失败 <strong data-proxy-fail-count>${Number(k.fail_count || 0)}</strong></span>
-            <span${timeAttr}>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
+            <span data-last-used="${lastUsedVal}"${timeAttr}>最近使用 ${esc(proxyTimeLabel(k.last_used_at))}</span>
           </div>
           <div class="proxy-key-card-actions">
             ${stateTag}

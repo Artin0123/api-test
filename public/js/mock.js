@@ -36,9 +36,7 @@ async function ensureProviderFps(providers) {
 }
 
 function dkRecordScope(rec) {
-  return typeof rec?.fp === "string" && rec.fp.trim()
-    ? rec.fp.trim()
-    : rec?.provider_host || "";
+  return typeof rec?.fp === "string" ? rec.fp.trim() : "";
 }
 
 function rebalanceDeadKeyDetails(removed, remaining) {
@@ -74,25 +72,18 @@ function syncMockSettings(settings) {
   const providers = Array.isArray(settings.providers) ? settings.providers : [];
   if (Array.isArray(_mockData.dead_keys) && _mockData.dead_keys.length) {
     const byFp = new Map();
-    const byHost = new Map();
     for (const p of providers) {
       const keys = new Set(splitKeyLines(p?.keys));
       const fp = cachedProviderFp(p);
       if (fp) byFp.set(fp, keys);
-      const host = extractHost(p?.api_base);
-      if (host) {
-        if (!byHost.has(host)) byHost.set(host, new Set());
-        for (const k of keys) byHost.get(host).add(k);
-      }
     }
     const kept = [];
     const removed = [];
     for (const r of _mockData.dead_keys) {
       if (!r) continue;
       const key = String(r.api_key || "").trim();
-      const configured = r.fp
-        ? !!key && !!byFp.get(r.fp)?.has(key)
-        : !!key && !!byHost.get(r.provider_host)?.has(key);
+      const recFp = dkRecordScope(r);
+      const configured = !!(recFp && key && byFp.get(recFp)?.has(key));
       if (configured) kept.push(r);
       else removed.push(r);
     }

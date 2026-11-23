@@ -68,7 +68,8 @@ class AsyncEngineRegressionTests(unittest.TestCase):
                 key="sk-test",
                 model="gpt-4o",
                 provider_type="openai",
-                api_base="https://mock.example/v1",
+                api_base="https://mock.example",
+                test_path="/v1/chat/completions",
             )
         )
         success, status, err, *_ = result
@@ -90,7 +91,7 @@ class AsyncEngineRegressionTests(unittest.TestCase):
                 out_path = Path(tmpdir) / "out.json"
                 ckpt_data = {
                     "provider_type": "openai",
-                    "api_base": "https://resume.example/v1",
+                    "api_base": "https://resume.example",
                     "total_tasks": 4,
                     "completed_tasks": 2,
                     "dead_keys": ["sk-dead-401"],
@@ -153,10 +154,11 @@ class AsyncEngineRegressionTests(unittest.TestCase):
                 ):
                     asyncio.run(
                         engine.run_provider(
-                            api_base="https://resume.example/v1",
+                            api_base="https://resume.example",
                             provider_type="openai",
                             keys=["sk-dead-401", "sk-good"],
                             models=["m1", "m2"],
+                            test_path="/v1/chat/completions",
                         )
                     )
 
@@ -181,7 +183,7 @@ class AsyncEngineRegressionTests(unittest.TestCase):
             out_path = Path(tmpdir) / "out.json"
             other_ckpt = {
                 "provider_type": "anthropic",
-                "api_base": "https://other.example/v1",
+                "api_base": "https://other.example",
                 "total_tasks": 2,
                 "completed_tasks": 1,
                 "dead_keys": [],
@@ -210,16 +212,58 @@ class AsyncEngineRegressionTests(unittest.TestCase):
             ):
                 asyncio.run(
                     engine.run_provider(
-                        api_base="https://first.example/v1",
+                        api_base="https://first.example",
                         provider_type="openai",
                         keys=["sk-1", "sk-2"],
                         models=["m1"],
+                        test_path="/v1/chat/completions",
                     )
                 )
 
             self.assertTrue(ckpt_path.exists())
             saved = json.loads(ckpt_path.read_text(encoding="utf-8"))
-            self.assertEqual(saved["api_base"], "https://other.example/v1")
+            self.assertEqual(saved["api_base"], "https://other.example")
+
+    def test_timeout_error_records_status_499_and_counts_timeout_stats(self):
+        engine = load_async_engine()
+
+        class TimeoutSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def post(self, *args, **kwargs):
+                raise asyncio.TimeoutError()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "out.json"
+            ckpt_path = Path(tmpdir) / "checkpoint.json"
+            with (
+                mock.patch.object(engine, "CHECKPOINT_PATH", str(ckpt_path)),
+                mock.patch.object(engine, "OUTPUT_JSON_PATH", str(out_path)),
+                mock.patch.object(
+                    engine.aiohttp, "ClientSession", return_value=TimeoutSession()
+                ),
+            ):
+                asyncio.run(
+                    engine.run_provider(
+                        api_base="https://timeout.example",
+                        provider_type="openai",
+                        keys=["sk-timeout-1", "sk-timeout-2"],
+                        models=["m-timeout"],
+                        test_path="/v1/chat/completions",
+                    )
+                )
+
+            report = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(report["invalid_records"]), 2)
+            for rec in report["invalid_records"]:
+                self.assertEqual(rec["error_code"], 499)
+            self.assertEqual(
+                report["model_performance"]["m-timeout"]["timeout_count"], 2
+            )
 
 
 if __name__ == "__main__":

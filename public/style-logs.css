@@ -1,0 +1,163 @@
+/* Request logs tab & log detail modal (loaded after style-proxy.css, before style-rwd.css). */
+.logs-filter-field--alias {
+    flex: 0 0 12.5rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.logs-filter-field--status {
+    flex: 0 0 8.5rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.logs-filter-field--key {
+    flex: 1 1 9.5rem;
+    min-width: 0;
+}
+
+.logs-filter-field--model {
+    flex: 1 1 9.5rem;
+    min-width: 0;
+}
+
+.logs-table {
+    table-layout: fixed;
+    width: 100%;
+    min-width: 58rem;
+}
+
+.logs-table th,
+.logs-table td {
+    overflow: hidden;
+    vertical-align: middle;
+}
+
+.data-table th.logs-time-col,
+.data-table td.logs-time-col {
+    width: 7.5rem;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.data-table th.logs-alias-col,
+.data-table td.logs-alias-col {
+    width: 11.5rem;
+}
+
+.data-table th.logs-status-col,
+.data-table td.logs-status-col {
+    width: 5.5rem;
+    white-space: nowrap;
+}
+
+.data-table th.logs-model-col,
+.data-table td.logs-model-col {
+    min-width: 8rem;
+}
+
+.data-table th.logs-key-col,
+.data-table td.logs-key-col {
+    width: 11.5rem;
+}
+
+.data-table th.logs-latency-col,
+.data-table td.logs-latency-col {
+    width: 5.5rem;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.data-table th.logs-stream-col,
+.data-table td.logs-stream-col {
+    width: 4.5rem;
+    white-space: nowrap;
+}
+
+.data-table th.logs-action-col,
+.data-table td.logs-action-col {
+    width: 5rem;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.logs-ellipsis {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.logs-model-line {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.logs-model-name {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+/* ── Log detail modal ──────────────────────────────────────────────────── */
+.logdetail-route-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.logdetail-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.logdetail-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.logdetail-meta-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.logdetail-meta-val {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text);
+    overflow-wrap: anywhere;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.logdetail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.logdetail-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}

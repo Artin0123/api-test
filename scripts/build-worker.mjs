@@ -18,6 +18,8 @@ const order = [
   "results.js",
   "run-status.js",
   "dead-keys.js",
+  "proxy-state.js",
+  "proxy-logs.js",
   "proxy.js",
   "proxy-handlers.js",
 ];

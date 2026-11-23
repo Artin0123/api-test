@@ -5,6 +5,8 @@ async function handleGetSettings(request, env) {
   const kv = store(env);
   const raw = await kv.get(SETTINGS_KEY);
   const settings = withSettingsDefaults(parseJsonOrNull(raw));
+  delete settings.ai_gateway_logs_url;
+  delete settings.ai_gateway_token;
   settings.version = settingsVersion(settings);
   return json({
     ok: true,
@@ -52,6 +54,22 @@ async function handlePostSettings(request, env) {
     : Array.isArray(existing.providers)
       ? existing.providers
       : [];
+
+  // Preserve legacy ai_gateway_* fields verbatim during Phase 2 rollback window
+  // so rolling back to the previous deployment restores Gateway mode cleanly.
+  const preservedGwLogsUrl =
+    typeof body.ai_gateway_logs_url === "string"
+      ? body.ai_gateway_logs_url.trim()
+      : typeof existing.ai_gateway_logs_url === "string"
+        ? existing.ai_gateway_logs_url
+        : undefined;
+  const preservedGwToken =
+    typeof body.ai_gateway_token === "string"
+      ? body.ai_gateway_token.trim()
+      : typeof existing.ai_gateway_token === "string"
+        ? existing.ai_gateway_token
+        : undefined;
+
   const next = {
     providers: sourceProviders.map(normalizeProviderForStorage),
     github_url:
@@ -72,23 +90,12 @@ async function handlePostSettings(request, env) {
         : typeof existing.proxy_password === "string"
           ? existing.proxy_password
           : "",
-    ai_gateway_logs_url:
-      typeof body.ai_gateway_logs_url === "string"
-        ? body.ai_gateway_logs_url.trim()
-        : typeof existing.ai_gateway_logs_url === "string"
-          ? existing.ai_gateway_logs_url
-          : "",
-    ai_gateway_token:
-      typeof body.ai_gateway_token === "string"
-        ? body.ai_gateway_token.trim()
-        : typeof existing.ai_gateway_token === "string"
-          ? existing.ai_gateway_token
-          : "",
-    proxy_test_models: normalizeProxyTestModels(
-      body.proxy_test_models !== undefined
-        ? body.proxy_test_models
-        : existing.proxy_test_models,
-    ),
+    ...(preservedGwLogsUrl !== undefined
+      ? { ai_gateway_logs_url: preservedGwLogsUrl }
+      : {}),
+    ...(preservedGwToken !== undefined
+      ? { ai_gateway_token: preservedGwToken }
+      : {}),
     version: currentVersion + 1,
   };
 
@@ -118,23 +125,22 @@ async function handlePostSettings(request, env) {
       400,
     );
   }
-  if (next.ai_gateway_logs_url && !parseGatewayLogsUrl(next.ai_gateway_logs_url)) {
-    return json(
-      {
-        error:
-          "AI Gateway Logs URL 格式无效，请填写 https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs",
-      },
-      400,
-    );
-  }
-
-  const aliasError = validateProviderAliases(next.providers || []);
-  if (aliasError) return json({ error: aliasError }, 400);
-  const testPathError = validateProviderTestPaths(next.providers || []);
-  if (testPathError) return json({ error: testPathError }, 400);
 
   const typeError = validateProviderTypes(next.providers || []);
   if (typeError) return json({ error: typeError }, 400);
+
+  let selfHost = "";
+  try {
+    selfHost = new URL(request.url).host;
+  } catch {}
+  const apiBaseError = validateProviderApiBases(next.providers || [], selfHost);
+  if (apiBaseError) return json({ error: apiBaseError }, 400);
+
+  const aliasError = validateProviderAliases(next.providers || []);
+  if (aliasError) return json({ error: aliasError }, 400);
+
+  const testPathError = validateProviderTestPaths(next.providers || []);
+  if (testPathError) return json({ error: testPathError }, 400);
 
   const keyError = validateProviderKeys(next.providers || []);
   if (keyError) return json({ error: keyError }, 400);
@@ -145,13 +151,8 @@ async function handlePostSettings(request, env) {
   const dupError = validateProviderDuplicates(next.providers || []);
   if (dupError) return json({ error: dupError }, 400);
 
-  // Drop test-model entries whose provider no longer exists, so editing api_base
-  // (new fingerprint) or deleting a provider cannot leave the map growing.
   const nextEntries = await providerFpEntries(next.providers || []);
   const liveFps = new Set(nextEntries.map((e) => e.fp));
-  next.proxy_test_models = Object.fromEntries(
-    Object.entries(next.proxy_test_models).filter(([fp]) => liveFps.has(fp)),
-  );
 
   // Skip store / D1 writes when the stored settings already match the payload.
   if (raw !== null && settingsDataEqual(existing, next)) {
@@ -175,6 +176,25 @@ async function handlePostSettings(request, env) {
     next.providers || [],
   );
 
+  // Prune removed providers from standalone `proxy_test_models` (and migrate any
+  // legacy `existing.proxy_test_models` map out of `app_settings`).
+  const rawTestModels = await kv.get(PROXY_TEST_MODELS_KEY);
+  const mergedTestModels = {
+    ...normalizeProxyTestModels(existing.proxy_test_models),
+    ...normalizeProxyTestModels(parseJsonOrNull(rawTestModels)),
+    ...(body.proxy_test_models !== undefined
+      ? normalizeProxyTestModels(body.proxy_test_models)
+      : {}),
+  };
+  const prunedTestModels = Object.fromEntries(
+    Object.entries(mergedTestModels).filter(([fp]) => liveFps.has(fp)),
+  );
+  const shouldWriteTestModels =
+    body.proxy_test_models !== undefined ||
+    existing.proxy_test_models !== undefined ||
+    (rawTestModels !== null &&
+      !deepEqual(normalizeProxyTestModels(parseJsonOrNull(rawTestModels)), prunedTestModels));
+
   if (storageBackendName(env) === "d1") {
     const db = env.DB;
     await ensureSchemaFor(db);
@@ -189,6 +209,16 @@ async function handlePostSettings(request, env) {
         )
         .bind(SETTINGS_KEY, JSON.stringify(next)),
     ];
+    if (shouldWriteTestModels) {
+      stmts.push(
+        db
+          .prepare(
+            "INSERT INTO store (k, v) VALUES (?, ?) " +
+              "ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+          )
+          .bind(PROXY_TEST_MODELS_KEY, JSON.stringify(prunedTestModels)),
+      );
+    }
     for (const staleFp of staleFps) {
       stmts.push(
         db.prepare("DELETE FROM store WHERE k = ?").bind(`results:${staleFp}`),
@@ -209,12 +239,16 @@ async function handlePostSettings(request, env) {
         db,
         nextEntries,
         current.results || [],
-        Date.now(),
+        nowMs(),
       ),
     );
     await db.batch(stmts);
+    invalidateSnapshot(db);
   } else {
     await kv.put(SETTINGS_KEY, JSON.stringify(next));
+    if (shouldWriteTestModels) {
+      await kv.put(PROXY_TEST_MODELS_KEY, JSON.stringify(prunedTestModels));
+    }
     if (staleFps.length) {
       await Promise.all(
         staleFps.map((staleFp) => kv.delete(`results:${staleFp}`)),
@@ -234,10 +268,20 @@ async function handlePostSettings(request, env) {
 
 function canonicalProviderForCompare(p) {
   if (!p || typeof p !== "object") return p;
+  const type = typeof p.provider_type === "string" ? p.provider_type : "";
   return {
     enabled: p.enabled !== false,
-    provider_type: typeof p.provider_type === "string" ? p.provider_type : "",
-    api_base: typeof p.api_base === "string" ? p.api_base : "",
+    provider_type: type,
+    api_base:
+      typeof p.api_base === "string"
+        ? p.api_base.trim().replace(/\/+$/, "")
+        : "",
+    test_path:
+      type === "google"
+        ? ""
+        : typeof p.test_path === "string"
+          ? p.test_path
+          : "",
     keys: typeof p.keys === "string" ? p.keys : "",
     models: typeof p.models === "string" ? p.models : "",
     extra_body: typeof p.extra_body === "string" ? p.extra_body : "",
@@ -249,9 +293,6 @@ function canonicalProviderForCompare(p) {
       : [],
     max_concurrency: p.max_concurrency != null ? p.max_concurrency : null,
     alias: typeof p.alias === "string" ? p.alias : "",
-    ...(Object.prototype.hasOwnProperty.call(p, "gateway_provider")
-      ? { gateway_provider: p.gateway_provider }
-      : {}),
   };
 }
 
@@ -282,15 +323,13 @@ function settingsDataEqual(existing, next) {
     proxy_password:
       typeof cur.proxy_password === "string" ? cur.proxy_password : "",
     ai_gateway_logs_url:
-      typeof cur.ai_gateway_logs_url === "string" ? cur.ai_gateway_logs_url : "",
+      typeof existing?.ai_gateway_logs_url === "string"
+        ? existing.ai_gateway_logs_url
+        : "",
     ai_gateway_token:
-      typeof cur.ai_gateway_token === "string" ? cur.ai_gateway_token : "",
-    proxy_test_models:
-      cur.proxy_test_models &&
-      typeof cur.proxy_test_models === "object" &&
-      !Array.isArray(cur.proxy_test_models)
-        ? cur.proxy_test_models
-        : {},
+      typeof existing?.ai_gateway_token === "string"
+        ? existing.ai_gateway_token
+        : "",
     proxy_fail_threshold: cur.proxy_fail_threshold,
     proxy_max_retries: cur.proxy_max_retries,
     proxy_upstream_timeout_ms: cur.proxy_upstream_timeout_ms,
@@ -302,9 +341,12 @@ function settingsDataEqual(existing, next) {
     github_url: next.github_url,
     discord_webhook_url: next.discord_webhook_url,
     proxy_password: next.proxy_password,
-    ai_gateway_logs_url: next.ai_gateway_logs_url,
-    ai_gateway_token: next.ai_gateway_token,
-    proxy_test_models: next.proxy_test_models,
+    ai_gateway_logs_url:
+      typeof next.ai_gateway_logs_url === "string"
+        ? next.ai_gateway_logs_url
+        : "",
+    ai_gateway_token:
+      typeof next.ai_gateway_token === "string" ? next.ai_gateway_token : "",
     proxy_fail_threshold: next.proxy_fail_threshold,
     proxy_max_retries: next.proxy_max_retries,
     proxy_upstream_timeout_ms: next.proxy_upstream_timeout_ms,

@@ -15,6 +15,7 @@ function markSignedIn() {
 
 function sessionEnded() {
   state.signedIn = false;
+  if (typeof stopProxyLiveTimers === "function") stopProxyLiveTimers();
   try {
     localStorage.removeItem(SIGNED_IN_HINT);
   } catch {}
@@ -51,6 +52,7 @@ async function logout() {
   try {
     await api("/api/logout", { method: "POST" });
   } catch {}
+  if (typeof stopProxyLiveTimers === "function") stopProxyLiveTimers();
   state.settings = null;
   state.storageBackend = "d1";
   state.selectedProviders.clear();
@@ -59,11 +61,14 @@ async function logout() {
   state.dkSelected.clear();
   state.dkPendingDelete = null;
   state.proxy = null;
+  state.proxyStateSeq = null;
   state.proxySelected = null;
   state.proxyPage = 1;
   state.proxyCardOrder = null;
   state.proxyBusy = false;
   state.proxyPlainKeys.clear();
+  state.logsData = null;
+  state.logsPage = 1;
   if (typeof closeOpenCustomSelect === "function") closeOpenCustomSelect();
   while (state.modalStack.length) {
     closeModal(state.modalStack[state.modalStack.length - 1]);

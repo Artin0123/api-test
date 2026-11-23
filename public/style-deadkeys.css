@@ -136,19 +136,6 @@
     outline-offset: -2px;
 }
 
-.dk-filter-actions {
-    flex: 1 1 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-}
-
-.dk-filter-actions .btn {
-    flex-shrink: 0;
-}
-
 /* 内层跟着格子走。改栏宽请改下面 .dk-host-col 的 width，不要改这里。 */
 .dk-host-cell {
     display: block;
@@ -277,10 +264,10 @@
     width: 8rem;
 }
 
-/* 够放「Code▲」；fixed 表里不要用 1%（会变成整表的 1%）。 */
+/* 够放「状态码▲」；fixed 表里不要用 1%（会变成整表的 1%）。 */
 .data-table th.dk-code-col,
 .data-table td.dk-code-col {
-    width: 5rem;
+    width: 5.5rem;
     white-space: nowrap;
     padding-left: 0.5rem;
     padding-right: 0.5rem;

@@ -1,8 +1,4 @@
 // Split from the original app.js; loaded in original order (see index.html).
-// Keep in sync with GATEWAY_LOGS_URL_RE in _worker.js.
-const GATEWAY_LOGS_URL_RE =
-  /^https:\/\/dash\.cloudflare\.com\/([^/?#]+)\/ai\/ai-gateway\/gateways\/([^/?#]+)\/logs(?:[/?#].*)?$/i;
-
 const HTTP_URL_RE = /^https?:\/\/\S+/i;
 
 const PROXY_SETTING_SPECS = {
@@ -10,10 +6,6 @@ const PROXY_SETTING_SPECS = {
   proxy_max_retries: { label: "最多重试次数", fallback: 3, min: 0, max: 3 },
   proxy_upstream_timeout_ms: { label: "上游超时 (ms)", fallback: 120000, min: 1000, max: 600000 },
 };
-
-function isValidGatewayLogsUrl(url) {
-  return !!url && GATEWAY_LOGS_URL_RE.test(url);
-}
 
 // ── Settings modal ────────────────────────────────────────────────────────
 function settingsSecretFields() {
@@ -24,13 +16,6 @@ function settingsSecretFields() {
       copy: dom.setProxyPasswordCopy,
       showLabel: "显示密码",
       hideLabel: "隐藏密码",
-    },
-    {
-      input: dom.setGatewayToken,
-      toggle: dom.setGatewayTokenToggle,
-      copy: dom.setGatewayTokenCopy,
-      showLabel: "显示 Token",
-      hideLabel: "隐藏 Token",
     },
   ];
 }
@@ -73,9 +58,7 @@ function openSettings() {
   applySettingsToUI();
   dom.setDiscordUrl.value = s.discord_webhook_url || "";
   dom.setGithubUrl.value = s.github_url || "";
-  dom.setGatewayLogsUrl.value = s.ai_gateway_logs_url || "";
   dom.setProxyPassword.value = s.proxy_password || "";
-  dom.setGatewayToken.value = s.ai_gateway_token || "";
   dom.setProxyFailThreshold.value = String(
     s.proxy_fail_threshold ?? PROXY_SETTING_SPECS.proxy_fail_threshold.fallback,
   );
@@ -130,15 +113,6 @@ async function saveSettings() {
   }
 
   const kvMode = isKvStorageMode();
-  let logsUrl = "";
-  if (!kvMode) {
-    logsUrl = dom.setGatewayLogsUrl.value.trim();
-    if (logsUrl && !isValidGatewayLogsUrl(logsUrl)) {
-      dom.settingsError.textContent =
-        "AI Gateway Logs URL 格式无效，请填写 https://dash.cloudflare.com/{account_id}/ai/ai-gateway/gateways/{gateway_id}/logs";
-      return;
-    }
-  }
 
   const parseSettingInt = (input, spec) => {
     const raw = input.value.trim();
@@ -158,9 +132,7 @@ async function saveSettings() {
       discord_webhook_url: discordUrl,
     };
     if (!kvMode) {
-      patch.ai_gateway_logs_url = logsUrl;
       patch.proxy_password = dom.setProxyPassword.value.trim();
-      patch.ai_gateway_token = dom.setGatewayToken.value.trim();
       patch.proxy_fail_threshold = parseSettingInt(
         dom.setProxyFailThreshold,
         PROXY_SETTING_SPECS.proxy_fail_threshold,
@@ -194,7 +166,7 @@ async function saveSettings() {
     syncMockSettings(state.settings);
     applySettingsToUI();
     closeSettings();
-    if (!kvMode && state.proxy) loadProxyState({ preserveResults: true });
+    if (!kvMode && state.proxy) loadProxyState({ preserveOrder: true });
   } catch (err) {
     dom.settingsError.textContent = err.message;
   } finally {
@@ -240,6 +212,9 @@ function applySettingsToUI() {
   if (dom.proxyTabBtn) {
     dom.proxyTabBtn.classList.toggle("hidden", kvMode);
   }
+  if (dom.logsTabBtn) {
+    dom.logsTabBtn.classList.toggle("hidden", kvMode);
+  }
   if (dom.tabProxy) {
     if (kvMode && dom.tabProxy.classList.contains("active")) {
       switchTab("config");
@@ -248,11 +223,22 @@ function applySettingsToUI() {
       dom.tabProxy.classList.remove("active");
     }
   }
+  if (dom.tabLogs) {
+    if (kvMode && dom.tabLogs.classList.contains("active")) {
+      switchTab("config");
+    } else if (kvMode) {
+      dom.tabLogs.classList.add("hidden");
+      dom.tabLogs.classList.remove("active");
+    }
+  }
   if (dom.settingsProxyFields) {
     dom.settingsProxyFields.classList.toggle("hidden", kvMode);
   }
   if (kvMode) {
     state.proxy = null;
+    state.proxyStateSeq = null;
+    state.logsData = null;
+    if (typeof stopProxyLiveTimers === "function") stopProxyLiveTimers();
   }
 
   const url = String(s.github_url || "").trim();
@@ -268,7 +254,7 @@ function applySettingsToUI() {
 }
 
 // ── Config tab ─────────────────────────────────────────────────────────────
-async function loadConfig() {
+async function loadConfig(prefetchedData = null) {
   const reqId = ++state.reqSeq.config;
   dom.configLoading.classList.remove("hidden");
   dom.configError.classList.add("hidden");
@@ -278,7 +264,9 @@ async function loadConfig() {
 
   try {
     let data;
-    if (MOCK) {
+    if (prefetchedData) {
+      data = prefetchedData;
+    } else if (MOCK) {
       const mock = await getMock();
       data = {
         settings: state.settings || mock.settings,
@@ -289,6 +277,8 @@ async function loadConfig() {
     }
     if (reqId !== state.reqSeq.config) return;
     applyFetchedSettings(data);
+    await ensureProviderFps((state.settings || {}).providers || []);
+    if (reqId !== state.reqSeq.config) return;
     syncMockSettings(state.settings);
     renderProviderGrid();
   } catch (err) {

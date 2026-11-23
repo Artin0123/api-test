@@ -20,7 +20,7 @@ INPUT_FILE_PATH = r"valid_keys\keys.txt"
 MODELS_FILE_PATH = r"models_list\models.txt"
 OUTPUT_JSON_PATH = "async_test_results.json"
 CHECKPOINT_PATH = "checkpoint.json"
-API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+API_BASE = "https://dashscope.aliyuncs.com/compatible-mode"
 PROVIDER_TYPE = "openai"  # 支援: 'openai', 'google', 'anthropic'
 EXTRA_BODY_JSON = ""  # 选填，JSON 字符串，会合并覆盖请求体，例：'{"temperature": 0.7}'
 CUSTOM_HEADERS = []  # 选填，例：[{"key": "HTTP-Referer", "value": "https://example.com"}]
@@ -350,7 +350,7 @@ async def test_single_request(
             )
 
     except asyncio.TimeoutError:
-        return False, 408, "Timeout", None, False, False, "", ""
+        return False, 499, "Timeout", None, False, False, "", ""
     except Exception as e:
         return False, 500, str(e), None, False, False, "", ""
 
@@ -558,7 +558,7 @@ async def run_provider(
                     dead_keys.add(key)
 
                 model_test_counts[model] += 1
-                if status in (429, 408):
+                if status in (429, 499):
                     model_timeout_stats[model] += 1
 
             task_queue.task_done()

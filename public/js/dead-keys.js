@@ -31,9 +31,7 @@ function dkProviderForRecord(rec) {
     const recFp = typeof rec.fp === "string" ? rec.fp.trim() : "";
     if (recFp) return entries.find((e) => e.fp === recFp) || null;
   }
-  const host = typeof rec === "string" ? rec : rec?.provider_host || "";
-  const byHost = entries.filter((e) => e.host === host);
-  return byHost.length === 1 ? byHost[0] : null;
+  return null;
 }
 
 function dkProvidersByHost(host) {
@@ -134,19 +132,13 @@ function fillHostSelect(select, { includeAll = false, selected = "" } = {}) {
   syncCustomSelect(select);
 }
 
-// Empty <select> value is "all codes"; a second empty cannot mean "no code".
-const DK_CODE_NONE = "__none__";
+// ── Dead keys tab ─────────────────────────────────────────────────────────
 
 function fillCodeSelect() {
   const selected = dom.dkFCode.value;
   const codes = [];
-  let hasNone = false;
   for (const r of state.deadKeys) {
-    if (!r) continue;
-    if (r.error_code == null) {
-      hasNone = true;
-      continue;
-    }
+    if (!r || r.error_code == null) continue;
     const n = Number(r.error_code);
     if (!Number.isFinite(n)) continue;
     if (!codes.includes(n)) codes.push(n);
@@ -157,13 +149,8 @@ function fillCodeSelect() {
   for (const c of codes) {
     opts.push(`<option value="${escAttr(String(c))}">${esc(String(c))}</option>`);
   }
-  if (hasNone) {
-    opts.push(`<option value="${DK_CODE_NONE}">无 Code</option>`);
-  }
   dom.dkFCode.innerHTML = opts.join("");
-  if (selected === DK_CODE_NONE && hasNone) {
-    dom.dkFCode.value = DK_CODE_NONE;
-  } else if (selected && codes.includes(Number(selected))) {
+  if (selected && codes.includes(Number(selected))) {
     dom.dkFCode.value = selected;
   }
   syncCustomSelect(dom.dkFCode);
@@ -316,7 +303,8 @@ function formatDateFilterInput(raw, caret, inputType) {
   return { value, caret: nextCaret };
 }
 
-function bindDateFilterInput(input) {
+function bindDateFilterInput(input, onChange = renderDeadKeys) {
+  if (!input) return;
   const wrap = input.closest(".dk-date-wrap");
   const picker = wrap ? wrap.querySelector(".dk-date-picker") : null;
   const btn = wrap ? wrap.querySelector(".dk-date-btn") : null;
@@ -344,7 +332,7 @@ function bindDateFilterInput(input) {
       } catch {}
     }
     sync(false);
-    renderDeadKeys();
+    onChange();
   };
 
   input.addEventListener("input", handleInput);
@@ -357,14 +345,14 @@ function bindDateFilterInput(input) {
       input.value = `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
     }
     sync(true);
-    renderDeadKeys();
+    onChange();
   });
 
   if (picker) {
     picker.addEventListener("change", () => {
       input.value = picker.value ? picker.value.replace(/-/g, "/") : "";
       sync(false);
-      renderDeadKeys();
+      onChange();
     });
   }
 
@@ -383,14 +371,6 @@ function bindDateFilterInput(input) {
   }
 }
 
-function resetDateFilterInput(input) {
-  input.value = "";
-  input.classList.remove("is-invalid");
-  const wrap = input.closest(".dk-date-wrap");
-  const picker = wrap ? wrap.querySelector(".dk-date-picker") : null;
-  if (picker) picker.value = "";
-}
-
 function filteredDeadKeys() {
   const scope = dom.dkFHost.value;
   const scopeEntry = scope
@@ -398,12 +378,7 @@ function filteredDeadKeys() {
     : null;
   const q = dom.dkFKey.value.trim().toLowerCase();
   const code = dom.dkFCode.value;
-  const from = parseFilterDate(dom.dkFFrom.value);
   const to = parseFilterDate(dom.dkFTo.value);
-  // One bound alone stays open-ended; the same day twice narrows to that day.
-  const swap = from && to && from > to;
-  const lo = swap ? to : from;
-  const hi = swap ? from : to;
 
   return state.deadKeys.filter((r) => {
     if (!r) return false;
@@ -417,22 +392,16 @@ function filteredDeadKeys() {
       }
     }
     if (q && !String(r.api_key || "").toLowerCase().includes(q)) return false;
-    if (code === DK_CODE_NONE) {
-      if (r.error_code != null) return false;
-    } else if (code) {
-      if (Number(r.error_code) !== Number(code)) return false;
-    }
-    if (lo || hi) {
+    if (code && Number(r.error_code) !== Number(code)) return false;
+    if (to) {
       const d = dkDateOf(r);
-      if (!d) return false;
-      if (lo && d < lo) return false;
-      if (hi && d > hi) return false;
+      if (!d || d > to) return false;
     }
     return true;
   });
 }
 
-/** Order rows by provider order (providers that are gone go last), keeping
+/**Order rows by provider order (providers that are gone go last), keeping
  *  the stored order within each provider so newest entries stay at the bottom. */
 function sortByProviderOrder(rows) {
   const entries = dkProviderEntries();
@@ -461,28 +430,6 @@ function deadKeyIndexById(rows) {
   const map = new Map();
   sortByProviderOrder(rows).forEach((r, i) => map.set(r.id, i + 1));
   return map;
-}
-
-/** Null dates/codes stay last in both directions. Negating the whole
- *  comparator for desc would flip them to the top. */
-function compareDeadKeyNullsLast(a, b, col) {
-  if (col === "expired_at") {
-    const da = dkDateOf(a);
-    const db = dkDateOf(b);
-    if (!da && !db) return 0;
-    if (!da) return 1;
-    if (!db) return -1;
-    return 0;
-  }
-  if (col === "code") {
-    const aNull = a.error_code == null;
-    const bNull = b.error_code == null;
-    if (aNull && bNull) return 0;
-    if (aNull) return 1;
-    if (bNull) return -1;
-    return 0;
-  }
-  return 0;
 }
 
 function compareDeadKey(a, b, col) {
@@ -520,8 +467,6 @@ function sortDeadKeyRows(rows, indexById) {
   return rows
     .map((r, i) => ({ r, i }))
     .sort((a, b) => {
-      const nullCmp = compareDeadKeyNullsLast(a.r, b.r, col);
-      if (nullCmp !== 0) return nullCmp;
       const cmp = compareDeadKey(a.r, b.r, col);
       if (cmp !== 0) return desc ? -cmp : cmp;
       return a.i - b.i;
@@ -603,7 +548,7 @@ function renderDeadKeysTable(rows, indexById) {
           ${dkSortHead("host", "供应商", "dk-host-col")}
           ${dkSortHead("key", "KEY", "dk-key-col")}
           ${dkSortHead("expired_at", "失效时间", "dk-date-col")}
-          ${dkSortHead("code", "Code", "dk-code-col")}
+          ${dkSortHead("code", "状态码", "dk-code-col")}
           <th class="dk-msg-col">错误讯息</th>
         </tr></thead>
         <tbody>${body}</tbody>

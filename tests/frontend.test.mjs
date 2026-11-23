@@ -110,29 +110,39 @@ test("dead keys filter panel is always visible without manual add row or toggle"
     "dk-filter-toggle",
     "dk-filter-count",
     "dk-form-error",
+    "dk-f-from",
+    "dk-f-reset",
   ]) {
     assert.ok(!html.includes(`id="${removedId}"`), `index.html still has #${removedId}`);
     assert.ok(!app.includes(`"${removedId}"`), `app.js still references #${removedId}`);
   }
-  for (const dateId of ["dk-f-from", "dk-f-to"]) {
+  for (const dateId of ["dk-f-to", "logs-f-to"]) {
     const tag = html.match(new RegExp(`<input[^>]*\\bid="${dateId}"[^>]*>`));
     assert.ok(tag, `#${dateId} input not found`);
     assert.match(tag[0], /\btype="text"/, `#${dateId} must be type="text" to hide yyyy/mm/dd`);
     assert.doesNotMatch(tag[0], /\bplaceholder=/, `#${dateId} must not have a placeholder`);
   }
-  const actionsBlock = html.match(/<div\s+class="dk-filter-actions">([\s\S]*?)<\/div>/);
-  assert.ok(actionsBlock, "dk-filter-actions container not found inside filter panel");
-  const delIdx = actionsBlock[1].indexOf('id="dk-bulk-del-btn"');
-  const resetIdx = actionsBlock[1].indexOf('id="dk-f-reset"');
-  assert.ok(delIdx >= 0 && resetIdx > delIdx, "dk-bulk-del-btn must sit left of dk-f-reset");
-  const resetBtn = actionsBlock[1].match(/<button[\s\S]*?id="dk-f-reset"[\s\S]*?>/);
-  assert.ok(resetBtn, "dk-f-reset button not found");
-  assert.match(resetBtn[0], /\bbtn-secondary\b/, "dk-f-reset must use btn-secondary");
-  assert.doesNotMatch(resetBtn[0], /\bbtn-(?:ghost|sm)\b/, "dk-f-reset must match normal button styling");
-  const delBtn = actionsBlock[1].match(/<button[\s\S]*?id="dk-bulk-del-btn"[\s\S]*?>/);
-  assert.ok(delBtn, "dk-bulk-del-btn button not found");
-  assert.match(delBtn[0], /\bbtn-danger\b/, "dk-bulk-del-btn must use btn-danger");
-  assert.doesNotMatch(delBtn[0], /\bbtn-danger-solid\b/, "dk-bulk-del-btn must not use btn-danger-solid");
+  const dkSection = html.match(/<section id="tab-deadkeys"[\s\S]*?<\/section>/);
+  assert.ok(dkSection, "#tab-deadkeys not found");
+  const headMatch = dkSection[0].match(/<div class="panel-head">([\s\S]*?)<\/div>\s*<div id="dk-filter-panel"/);
+  assert.ok(headMatch, "tab-deadkeys panel-head not found");
+  const delBtn = headMatch[1].match(/<button[\s\S]*?id="dk-bulk-del-btn"[\s\S]*?>/);
+  assert.ok(delBtn, "dk-bulk-del-btn must live in panel-head of tab-deadkeys");
+  assert.match(delBtn[0], /\bbtn-danger-solid\b/, "dk-bulk-del-btn must use btn-danger-solid (red background, white text)");
+  assert.doesNotMatch(delBtn[0], /\bbtn-danger\b(?!-solid)/, "dk-bulk-del-btn must not use ghost/tinted btn-danger");
+
+  const filterPanelBlock = dkSection[0].match(/<div id="dk-filter-panel"[^>]*>([\s\S]*?)<\/div>\s*<div id="dk-loading"/);
+  assert.ok(filterPanelBlock, "dk-filter-panel inner markup not found");
+  const hostIdx = filterPanelBlock[1].indexOf('id="dk-f-host"');
+  const codeIdx = filterPanelBlock[1].indexOf('id="dk-f-code"');
+  const keyIdx = filterPanelBlock[1].indexOf('id="dk-f-key"');
+  const toIdx = filterPanelBlock[1].indexOf('id="dk-f-to"');
+  assert.ok(
+    hostIdx >= 0 && codeIdx > hostIdx && keyIdx > codeIdx && toIdx > keyIdx,
+    "dead-keys filter order must be 供应商 -> 状态码 -> Key 搜寻 -> 时间早于",
+  );
+  assert.match(filterPanelBlock[1], /<span class="field-label">状态码<\/span>[\s\S]*?id="dk-f-code"/);
+  assert.match(filterPanelBlock[1], /<label class="field-label" for="dk-f-to">时间早于<\/label>/);
 });
 
 test("proxy toolbar keeps an outer frame with inner spacing", () => {
@@ -168,9 +178,10 @@ test("shared button borders, select height, and mobile compact button rules stay
   }
 });
 
-test("async tab loaders guard stale requests and proxy batch keeps key results", () => {
+test("async tab loaders guard stale requests and proxy batch keeps key order", () => {
   assert.match(app, /reqSeq\s*:\s*\{/);
-  assert.match(app, /loadProxyState\(\{\s*preserveResults:\s*true\s*\}\)/);
+  assert.match(app, /loadProxyState\(\{\s*preserveOrder:\s*true\s*\}\)/);
+  assert.doesNotMatch(app, /preserveResults/);
   assert.match(app, /clearProxyNotice\(\{\s*keepGlobal:\s*true\s*\}\)/);
 });
 
@@ -252,21 +263,31 @@ test("Batch 1 simplifications remove dead-key editor, gateway_provider, and _uiK
   assert.match(app, /已存在相同的 \$\{pType\} 与 API Base 服务商/);
 });
 
-test("Batch 2 moves gateway and proxy config into settings modal without env reads", () => {
+test("Direct proxy removes AI Gateway fields while keeping proxy settings in settings modal", () => {
   for (const id of [
     "set-proxy-password",
-    "set-gateway-logs-url",
-    "set-gateway-token",
     "set-proxy-fail-threshold",
     "set-proxy-max-retries",
     "set-proxy-timeout-ms",
   ]) {
     assert.ok(html.includes(`id="${id}"`), `index.html missing #${id}`);
   }
+  for (const removedId of [
+    "set-gateway-logs-url",
+    "set-gateway-token",
+    "set-gateway-token-toggle",
+    "set-gateway-token-copy",
+    "proxy-logs",
+  ]) {
+    assert.ok(!html.includes(`id="${removedId}"`), `index.html must not keep #${removedId}`);
+    assert.ok(!app.includes(removedId), `app.js must not reference #${removedId}`);
+  }
   assert.ok(css.includes(".settings-grid-3"), "style.css missing .settings-grid-3");
   assert.doesNotMatch(worker, /env\.(?:AI_GATEWAY_|PROXY_)/, "_worker.js must not read env gateway/proxy vars");
   assert.ok(!worker.includes("metadataKeyTag"), "_worker.js still has metadataKeyTag");
-  assert.ok(!app.includes("AI_GATEWAY_LOGS_URL"), "app.js should not refer to env AI_GATEWAY_LOGS_URL");
+  assert.ok(!worker.includes("parseGatewayLogsUrl"), "_worker.js must not keep parseGatewayLogsUrl");
+  assert.ok(!worker.includes("cf-aig-metadata"), "_worker.js must not send cf-aig-metadata");
+  assert.ok(!app.includes("GATEWAY_LOGS_URL_RE"), "app.js must not keep GATEWAY_LOGS_URL_RE");
 });
 
 test("Batch 3 removes refresh buttons, checkpoint bars, avg TTFT, and unifies copy icon buttons", () => {
@@ -358,7 +379,7 @@ test("editor and settings modals replace inline hint text with info tooltips and
   const editorTips = [...editorMatch[0].matchAll(/class="info-tooltip"/g)];
   const settingsTips = [...settingsMatch[0].matchAll(/class="info-tooltip"/g)];
   assert.equal(editorTips.length, 7, "editor modal should have 7 info tooltips");
-  assert.equal(settingsTips.length, 2, "settings modal should have 2 info tooltips");
+  assert.equal(settingsTips.length, 1, "settings modal should have 1 info tooltip (proxy password)");
   assert.match(editorMatch[0], /id="ed-extra-body-status"/, "Extra Body live JSON status must stay intact");
 
   assert.match(app, /function normalizeModels[\s\S]*?\.split\(\/\[,\\r\\n\]\+\/\)/);
@@ -373,7 +394,7 @@ test("editor and settings modals replace inline hint text with info tooltips and
 });
 
 test("dead keys host menu uses Name - Format, date filters stay empty, proxy summary uses segmented readout + count tooltips, and results copy buttons sit on titles", () => {
-  const fillHostFn = app.slice(app.indexOf("function fillHostSelect"), app.indexOf("const DK_CODE_NONE"));
+  const fillHostFn = app.slice(app.indexOf("function fillHostSelect"), app.indexOf("function fillCodeSelect"));
   assert.match(fillHostFn, /providerFormatLabel\(e\.provider,\s*e\.host\)/);
   assert.doesNotMatch(fillHostFn, /e\.multiOnHost/);
 
@@ -411,7 +432,7 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   }
   const proxyHeadDesc = html.match(/<section id="tab-proxy"[\s\S]*?<p class="muted">([\s\S]*?)<\/p>/);
   assert.ok(proxyHeadDesc, "#tab-proxy subtitle not found");
-  assert.equal(proxyHeadDesc[1].trim(), "金钥自动轮用，连续失败达门槛后禁用。");
+  assert.equal(proxyHeadDesc[1].trim(), "密钥自动轮用，连续失败达门槛后禁用。");
   assert.doesNotMatch(proxyHeadDesc[1], /<br/);
 
   const modelHeading = html.match(/<span class="proxy-model-heading">([\s\S]*?)<\/span>\s*<select id="proxy-test-model"/);
@@ -430,7 +451,7 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   const mobileCss = css.slice(css.indexOf("/* ── RWD"));
   assert.match(mobileCss, /\.topbar-actions\s*\{[^}]*\bmargin-top:\s*auto;/s);
   assert.match(mobileCss, /\.proxy-url-group,[\s\S]*?flex:\s*none;[^}]*flex-direction:\s*column;/s);
-  assert.match(app, /body:\s*\{\s*fp,\s*id:\s*Number\(targetId\),\s*model:\s*selectedModel\s*\}/);
+  assert.match(app, /deferWrite \? \{ defer_write: true \} : \{\}/);
 
   const recoverFn = app.slice(app.indexOf("async function recoverProxyKey("), app.indexOf("async function recoverAllProxyKeys("));
   assert.doesNotMatch(recoverFn, /confirm\(/, "single-key recoverProxyKey must recover directly without confirm");
@@ -481,7 +502,7 @@ test("dead keys host menu uses Name - Format, date filters stay empty, proxy sum
   assert.match(css, /\.btn\.proxy-url-copy\s*\{[^}]*width:\s*var\(--control-h\);[^}]*height:\s*var\(--control-h\);/s);
   assert.match(css, /\.btn\.proxy-url-copy svg\s*\{[^}]*width:\s*1\.15rem;[^}]*height:\s*1\.15rem;/s);
 
-  const summaryFn = app.slice(app.indexOf("function renderProxyToolbar()"), app.indexOf("function renderProxyLogsLink()"));
+  const summaryFn = app.slice(app.indexOf("function renderProxyToolbar("), app.indexOf("function updateProxyCardButtonsDisabled("));
   assert.match(summaryFn, /"密钥状态"/);
   assert.match(summaryFn, /makeCount\("proxy-summary-ok",\s*available,\s*"有效数量"\)/);
   assert.match(summaryFn, /makeCount\("proxy-summary-fail",\s*disabled,\s*"无效数量"\)/);
@@ -516,37 +537,36 @@ test("editor deduplicates keys/models keeping first occurrence, results CTA upda
   // 2. Results header CTA text
   assert.match(html, /id="run-now-btn"[^>]*>立即执行 \/ 查看记录<span class="btn-ext"/);
 
-  // 3. KV mode hides proxy tab, panel, and settings block + skips proxy fields on save
+  // 3. KV mode hides proxy & logs tabs, panels, and settings block + skips proxy fields on save
   assert.ok(html.includes('id="settings-proxy-fields"'), "index.html missing #settings-proxy-fields");
   assert.match(css, /\.settings-proxy-fields\s*\{[^}]*flex-direction:\s*column;[^}]*gap:\s*1\.25rem;/s);
   assert.match(app, /function isKvStorageMode\(\)/);
-  assert.match(app, /if \(name === "proxy" && isKvStorageMode\(\)\) name = "config";/);
+  assert.match(app, /if \(\(name === "proxy" \|\| name === "logs"\) && isKvStorageMode\(\)\)/);
   assert.match(app, /dom\.proxyTabBtn\.classList\.toggle\("hidden",\s*kvMode\)/);
+  assert.match(app, /dom\.logsTabBtn\.classList\.toggle\("hidden",\s*kvMode\)/);
   assert.match(app, /dom\.settingsProxyFields\.classList\.toggle\("hidden",\s*kvMode\)/);
   assert.match(app, /if \(isKvStorageMode\(\)\) \{\s*dom\.proxyLoading\.classList\.add\("hidden"\);\s*return false;/s);
 
-  // 4 & 5. Settings field order (Discord before GitHub, Logs URL before Proxy Password) + secret eye/copy controls
+  // 4 & 5. Settings field order (Discord before GitHub, Proxy Password before grid-3) + secret eye/copy controls
   const settingsBody = html.match(/<div id="settings-overlay"[\s\S]*?<div class="modal-body">([\s\S]*?)<\/div>\s*<div class="modal-footer">/);
   assert.ok(settingsBody, "#settings-overlay .modal-body not found");
   const body = settingsBody[1];
   const discordIdx = body.indexOf('id="set-discord-url"');
   const githubIdx = body.indexOf('id="set-github-url"');
   const proxyWrapIdx = body.indexOf('id="settings-proxy-fields"');
-  const logsIdx = body.indexOf('id="set-gateway-logs-url"');
   const passIdx = body.indexOf('id="set-proxy-password"');
-  const tokenIdx = body.indexOf('id="set-gateway-token"');
   const gridIdx = body.indexOf('class="settings-grid-3"');
   assert.ok(discordIdx >= 0 && githubIdx > discordIdx, "Discord Webhook URL must sit before GitHub Actions URL");
   assert.ok(proxyWrapIdx > githubIdx, "#settings-proxy-fields must sit after GitHub Actions URL");
-  assert.ok(logsIdx > proxyWrapIdx && tokenIdx > logsIdx && passIdx > tokenIdx && gridIdx > passIdx,
-    "Proxy settings order inside #settings-proxy-fields must be Logs URL -> Gateway Token -> Proxy Password -> grid-3");
+  assert.ok(passIdx > proxyWrapIdx && gridIdx > passIdx,
+    "Proxy settings order inside #settings-proxy-fields must be Proxy Password -> grid-3");
   assert.match(app, /icon\.closest\("\.proxy-toolbar"\)/);
   assert.match(app, /PROXY_PAGE_SIZE\s*=\s*9/);
   assert.match(css, /\.proxy-page-btn\s*\{[^}]*width:\s*var\(--control-h\);[^}]*height:\s*var\(--control-h\);[^}]*justify-content:\s*center;/s);
   assert.match(css, /\.proxy-page-input\s*\{[^}]*width:\s*3ch;[^}]*text-align:\s*right;/s);
   assert.match(css, /\.proxy-page-total\s*\{[^}]*width:\s*3ch;[^}]*text-align:\s*left;/s);
 
-  for (const secretId of ["set-proxy-password", "set-gateway-token"]) {
+  for (const secretId of ["set-proxy-password"]) {
     assert.ok(body.includes(`id="${secretId}-toggle"`), `missing #${secretId}-toggle`);
     assert.ok(body.includes(`id="${secretId}-copy"`), `missing #${secretId}-copy`);
     const copyTag = body.match(new RegExp(`<button[^>]*id="${secretId}-copy"[^>]*>`));
@@ -559,7 +579,7 @@ test("editor deduplicates keys/models keeping first occurrence, results CTA upda
   assert.match(app, /openModal\(dom\.settingsOverlay,\s*dom\.setDiscordUrl\)/);
 });
 
-test("proxy hides providers without alias, prioritizes disabled reasons, fixes input underscore clipping, and styles select scrollbar", () => {
+test("proxy hides providers without alias, runs batch probes in parallel with single test-commit, and styles select scrollbar", () => {
   const html = read("index.html");
   const css = read("style-forms.css");
   const baseCss = read("style.css");
@@ -568,14 +588,16 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
   assert.match(proxyJs, /function proxyProviders\(\)/);
   assert.match(proxyJs, /String\(p\.alias \|\| ""\)\.trim\(\)/);
   assert.doesNotMatch(proxyJs, /尚未设定转发别名|填写转发别名（alias）/);
-  assert.match(proxyJs, /dom\.proxyTestModel\.disabled\s*=\s*!enabled;\s*renderProxyModelSelect\(p\);/);
+  assert.match(proxyJs, /dom\.proxyTestModel\.disabled\s*=\s*!enabled;\s*renderProxyModelSelect\(p,\s*keepModelChoice\);/);
   assert.match(proxyJs, /const da = a\.k\.disabled \? 1 : 0;[\s\S]*return da - db \|\| a\.idx - b\.idx;/);
   assert.match(proxyJs, /preserveOrder &&[\s\S]*state\.proxyCardOrder/);
   assert.doesNotMatch(proxyJs, /此服务商已停用，请先在「来源设定」启用/);
   assert.doesNotMatch(proxyJs, /来源设定未填 Models|请先在「来源设定」填写 Models/);
 
   const proxyActionsJs = read("js/proxy-actions.js");
-  assert.match(proxyActionsJs, /modelChanged[\s\S]*await runOne\(keys\[0\]\);[\s\S]*Promise\.all\(/);
+  assert.doesNotMatch(proxyActionsJs, /await runOne\(keys\[0\]\)/, "batch test must not block on solo first key");
+  assert.match(proxyActionsJs, /persistTestModelParallel\(/);
+  assert.match(proxyActionsJs, /\/api\/proxy\/test-commit/);
   assert.match(proxyActionsJs, /loadProxyState\(\{ preserveOrder: true \}\)/);
   assert.match(read("js/auth.js"), /state\.proxySelected\s*=\s*null;[\s\S]*state\.proxyCardOrder\s*=\s*null;/);
   assert.match(read("app.js"), /if \(activeTab !== "config"\)\s*\{\s*switchTab\(activeTab\);\s*\}/);
@@ -588,9 +610,6 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
   assert.match(proxyJs, /data-proxy-disable="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);
   assert.match(proxyJs, /data-proxy-recover="\$\{escAttr\(id\)\}"[^>]*\$\{cardManageTitleAttr\}/);
 
-  assert.match(html, /格式：https:\/\/dash\.cloudflare\.com\/\{account_id\}\/ai\/ai-gateway\/gateways\/\{gateway_id\}\/logs<br>/);
-  assert.match(html, /id="set-gateway-token"[^>]*placeholder="cfut_\.\.\."/);
-
   assert.match(css, /\.input-text,\s*\.input-select\s*\{[^}]*height:\s*var\(--control-h\);[^}]*padding:\s*0 0\.9rem;/);
   assert.match(css, /\.input-mono,\s*\.custom-header-row \.input-text\s*\{[^}]*font-family:\s*var\(--mono\);/);
   assert.match(baseCss, /\*::after\s*\{[^}]*scrollbar-width:\s*thin;/s);
@@ -602,4 +621,127 @@ test("proxy hides providers without alias, prioritizes disabled reasons, fixes i
   assert.doesNotMatch(read("js/providers.js"), /placeholder\s*=\s*"值"/);
   assert.match(read("js/results.js"), /esc\(failedModels\.join\(", "\)\) : "\(none\)"/);
   assert.match(read("style-modals.css"), /code\s*\{[^}]*font-size:\s*1em;/);
+});
+
+test("5th navbar tab 请求记录, live per-second proxyTimeLabel, stateSeq polling, api_base URL guard, and mock.json fp alignment", () => {
+  // 5th tab & log detail modal markup + CSS
+  assert.match(html, /<button class="tab-btn" data-tab="logs" type="button">\s*请求记录\s*<\/button>/);
+  assert.match(html, /自动记录经由代理转发的请求详情与串流重组结果（每页 20 笔，最多保留 99 页）。/);
+  for (const id of [
+    "tab-logs",
+    "logs-filter-panel",
+    "logs-f-alias",
+    "logs-f-status",
+    "logs-f-key",
+    "logs-f-model",
+    "logs-f-to",
+    "logs-pagination",
+    "logdetail-overlay",
+    "logdetail-close-btn",
+    "logdetail-content",
+  ]) {
+    assert.ok(html.includes(`id="${id}"`), `index.html missing #${id}`);
+  }
+  for (const removedId of [
+    "logs-refresh-btn",
+    "logs-clear-btn",
+    "logs-f-reset",
+    "logdetail-subtitle",
+  ]) {
+    assert.ok(!html.includes(`id="${removedId}"`), `index.html must not include #${removedId}`);
+    assert.ok(!app.includes(`"${removedId}"`), `JS must not reference #${removedId}`);
+  }
+  assert.ok(!app.includes("logsRefreshBtn"), "JS must not reference removed logsRefreshBtn");
+  assert.ok(!app.includes("clearProxyLogs"), "JS must not contain manual clearProxyLogs");
+  for (const cls of [
+    "logs-table",
+    "logs-time-col",
+    "logs-alias-col",
+    "logs-status-col",
+    "logs-model-col",
+    "logs-key-col",
+    "logs-latency-col",
+    "logs-stream-col",
+    "logs-action-col",
+    "logdetail-route-box",
+    "logdetail-meta-grid",
+  ]) {
+    assert.ok(css.includes(`.${cls}`), `stylesheets missing .${cls}`);
+  }
+  const actionColRule = css.match(/\.data-table th\.logs-action-col,\s*\.data-table td\.logs-action-col\s*\{([^}]+)\}/);
+  assert.ok(actionColRule, ".logs-action-col rule not found");
+  assert.match(actionColRule[1], /\btext-align:\s*center;/, ".logs-action-col must center header and action cell");
+
+  const proxyLogsJs = read("js/proxy-logs.js");
+  assert.match(
+    proxyLogsJs,
+    /<th class="logs-time-col" scope="col">时间<\/th>\s*<th class="logs-alias-col" scope="col">供应商<\/th>\s*<th class="logs-status-col" scope="col">状态码<\/th>\s*<th class="logs-model-col" scope="col">模型<\/th>\s*<th class="logs-key-col" scope="col">密钥<\/th>\s*<th class="logs-latency-col" scope="col">耗时<\/th>\s*<th class="logs-stream-col" scope="col">串流<\/th>\s*<th class="logs-action-col" scope="col">详情<\/th>/,
+    "logs table header order must be 时间 供应商 状态码 模型 密钥 耗时 串流 详情",
+  );
+  assert.match(proxyLogsJs, /请求格式[\s\S]*?请求上游[\s\S]*?User Agent[\s\S]*?时间[\s\S]*?供应商 \/ 格式[\s\S]*?状态码[\s\S]*?模型[\s\S]*?密钥[\s\S]*?TTFB \/ 总耗时[\s\S]*?串流[\s\S]*?边缘节点/);
+  assert.match(proxyLogsJs, /renderPayloadSection\("请求内容",\s*reqFormatted\)/);
+  assert.match(proxyLogsJs, /renderPayloadSection\("响应内容",\s*resFormatted\)/);
+  assert.match(proxyLogsJs, /<option value="ok">成功<\/option>[\s\S]*?<option value="fail">失败<\/option>/);
+  assert.doesNotMatch(proxyLogsJs, /Request Payload|Response Payload|SSE 重组|尝试历程|logs-attempts-col|成功 \(2xx\)|失败 \(非 2xx\)|0 \(网络\/超时\)/);
+  assert.doesNotMatch(
+    proxyLogsJs.slice(proxyLogsJs.indexOf("function renderLogDetailModal")),
+    /log\.error/,
+    "renderLogDetailModal must not render a standalone red log.error banner",
+  );
+
+  // Evaluate proxyTimeLabel directly for 1..59s, minutes, hours, days
+  const proxyJs = read("js/proxy.js");
+  const fnStart = proxyJs.indexOf("function proxyTimeLabel(");
+  const fnEnd = proxyJs.indexOf("function proxyTimeTitle(");
+  const proxyTimeLabel = new Function(
+    `${proxyJs.slice(fnStart, fnEnd)}\nreturn proxyTimeLabel;`,
+  )();
+  const now = Date.now();
+  assert.equal(proxyTimeLabel(null), "从未");
+  assert.equal(proxyTimeLabel(now), "1 秒前");
+  assert.equal(proxyTimeLabel(now - 7000), "7 秒前");
+  assert.equal(proxyTimeLabel(now - 59000), "59 秒前");
+  assert.equal(proxyTimeLabel(now - 61000), "1 分钟前");
+  assert.equal(proxyTimeLabel(now - 3700_000), "1 小时前");
+
+  assert.match(proxyJs, /PROXY_LIVE_TICK_MS\s*=\s*1000/);
+  assert.match(proxyJs, /PROXY_STATE_POLL_MS\s*=\s*2000/);
+  assert.match(proxyJs, /since_seq=/);
+  assert.match(proxyJs, /data-last-used="/);
+  assert.match(proxyJs, /function tryPatchProxyCardsInPlace\(/);
+  assert.match(proxyJs, /state\.reqSeq\.proxy !== reqSnap/);
+
+  const proxyActionsJs = read("js/proxy-actions.js");
+  assert.match(proxyActionsJs, /fp:\s*targetFp/);
+  assert.match(proxyActionsJs, /probeSkipped:\s*true/);
+  assert.match(proxyActionsJs, /if \(result && !result\.probeSkipped\)/);
+
+  assert.match(proxyLogsJs, /function resolveLogPlainKeyLocally\(/);
+  assert.match(proxyLogsJs, /async function copyLogKeyById\(/);
+  assert.match(proxyLogsJs, /data-log-copy-id=/);
+
+  const settingsJs = read("js/settings.js");
+  assert.match(
+    settingsJs,
+    /applyFetchedSettings\(data\);[\s\S]*?await ensureProviderFps\(\(state\.settings \|\| \{\}\)\.providers \|\| \[\]\);[\s\S]*?syncMockSettings\(state\.settings\);/,
+    "loadConfig must populate fpCache before syncMockSettings so mock.dead_keys are not wiped",
+  );
+  const providersJs = read("js/providers.js");
+  assert.match(providersJs, /function validateFrontendApiBase\(/);
+  assert.match(providersJs, /function isFrontendPrivateIp\(/);
+  assert.match(providersJs, /FRONTEND_PROXY_ALIAS_RE/);
+
+  // mock.json invariants: clean api_base, no ai_gateway_*, fp-keyed results & dead_keys, populated proxy_logs
+  const mockJson = JSON.parse(read("mock.json"));
+  assert.equal("ai_gateway_logs_url" in mockJson.settings, false);
+  assert.equal("ai_gateway_token" in mockJson.settings, false);
+  assert.equal(mockJson.settings.providers[0].api_base, "https://dashscope.aliyuncs.com/compatible-mode");
+  assert.equal(mockJson.settings.providers[1].api_base, "https://api.anthropic.com");
+  for (const key of Object.keys(mockJson.results)) {
+    assert.match(key, /^[0-9a-f]{64}$/, `mock.json results key ${key} must be a SHA-256 fp`);
+  }
+  for (const dk of mockJson.dead_keys) {
+    assert.match(dk.fp, /^[0-9a-f]{64}$/, `mock.json dead_key ${dk.id} must carry SHA-256 fp`);
+  }
+  assert.ok(Array.isArray(mockJson.proxy_logs) && mockJson.proxy_logs.length >= 3);
 });
